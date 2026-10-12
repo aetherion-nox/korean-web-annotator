@@ -4,7 +4,7 @@
 
 Read Korean pages with Hanja in the main text and original Hangul above it, or loanword origins above unchanged Korean.
 
-After importing a dictionary, the extension performs basic annotation locally in your browser. An optional model API uses context to resolve uncertain origins or meanings left by the local algorithm, and lets you explicitly request model review of selected text. Local-only annotation needs no API, and no server needs to be started.
+After importing a dictionary, the extension performs basic annotation in your browser. You can optionally connect a cloud or compatible local model API to use context to resolve uncertain word origins or meanings, or explicitly request model review of selected text. Basic annotation does not require an API.
 
 ## Install and update
 
@@ -27,7 +27,8 @@ Alternatively, download the official JSON ZIP from the [Korean Basic Dictionary]
 - Annotate a page from the extension, page toolbar, or context menu; select text to annotate a selection.
 - **Undo** cancels the last annotation; **Restore** returns to the original text.
 - Copy the displayed body, body plus annotations, original Korean (default), or annotations only.
-- **Ignore cache and analyze the text again** reruns text processing.
+- **Ignore cache and analyze the text again** bypasses saved annotation results for the next operation.
+- Set the page toolbar to appear on text selection or remain visible. With Hangul-only detection enabled, selection mode shows it only for selections containing Hangul or annotated Korean words.
 
 ## Model API (optional)
 
@@ -44,8 +45,10 @@ Choose from these built-in providers and models:
 
 Select a provider and model, enter your API key, **Save settings**, then **Test API**. Thinking controls reflect model capabilities; custom models use server defaults. Compatible endpoints need the full URL, usually ending in `/chat/completions`.
 
-- **Model review** resolves ambiguities left by local processing during normal annotation.
+- Enable **Model review** in **Engine / API settings** to resolve ambiguities left by local processing during normal annotation. Changes to this switch are saved automatically.
 - **Review selection** explicitly asks the model to reconsider selected text. It needs an API configuration, but the model-review switch can remain off.
+
+Model features send the relevant text and dictionary candidates to your configured API. Cloud API usage is billed by the provider.
 
 ## Acknowledgements and dictionary source
 
