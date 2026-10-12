@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <div class="topbar">
+      <h1 data-i18n="title">API 设置</h1>
+      <label class="language-picker" title="简体中文 / 繁體中文 / 日本語 / 한국어 / English">
+        <span class="language-hint" aria-hidden="true">简 / 繁 / 日 / 한 / EN</span>
+        <select id="uiLocale" aria-label="简体中文 / 繁體中文 / 日本語 / 한국어 / English">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+    </div>
+    <p class="intro" data-i18n="intro"></p>
+
+
+    <section id="enginePanel">
+      <h2 data-engine-i18n="title"></h2>
+      <label class="inline"><input id="enableModelReview" type="checkbox"><span data-engine-i18n="model"></span></label>
+      <p data-engine-i18n="instructions"></p>
+      <p><a href="https://krdict.korean.go.kr/download/downloadPopup" target="_blank" rel="noopener" data-engine-i18n="download"></a></p>
+      <p data-engine-i18n="import"></p>
+      <label><span data-engine-i18n="file"></span><input id="dictionaryFile" type="file" accept=".zip,.db,.sqlite,.sqlite3,application/zip,application/vnd.sqlite3,application/x-sqlite3,application/octet-stream"></label>
+      <progress id="dictionaryProgress" hidden aria-label="Dictionary import progress"></progress>
+      <div class="buttons"><button id="importDictionary" type="button" data-engine-i18n="importButton"></button><button id="clearDictionary" type="button" data-engine-i18n="clear"></button><button id="saveEngine" type="button" data-engine-i18n="save"></button></div>
+      <pre id="engineStatus" role="status"></pre>
+    </section>
+    <section class="profile-panel" aria-labelledby="profileHeading">
+      <h2 id="profileHeading" data-i18n="profiles">API / 模型配置档案</h2>
+      <div class="profile-grid">
+        <label><span data-i18n="profile">当前配置</span><select id="profileSelect"></select></label>
+        <label><span data-i18n="profileName">配置名称</span><input id="profileName" type="text" maxlength="80" placeholder="GLM / DeepSeek / Ollama"></label>
+      </div>
+      <div class="inline-buttons profile-actions">
+        <button id="newProfileButton" type="button" data-i18n="newProfile">新建配置</button>
+        <button id="deleteProfileButton" type="button" data-i18n="deleteProfile">删除当前配置</button>
+      </div>
+      <p class="profile-note" data-i18n="profileHint">每个配置分别保存接口、模型和 API Key 保存方式；切换后立即作为当前模型使用。</p>
+    </section>
+
+    <label><span data-i18n="providerLabel">服务商</span><select id="provider"></select></label>
+    <label><span data-i18n="modelChoice">模型</span><select id="modelSelect"></select></label>
+    <label><span data-i18n="endpoint">接口完整地址</span><input id="endpoint" type="url" placeholder="https://api.example.com/v1/chat/completions"></label>
+    <label id="customModelRow"><span data-i18n="model">模型名</span><input id="model" type="text" placeholder="your-model-name"></label>
+    <label><span data-i18n="apiKey">API Key</span><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="sk-..."></label>
+
+    <fieldset>
+      <legend data-i18n="keyStorage">API Key 保存方式</legend>
+      <label class="inline"><input name="keyStorageMode" type="radio" value="session" checked><span data-i18n="sessionOnly">仅保存在当前浏览器会话中（推荐）</span></label>
+      <label class="inline"><input name="keyStorageMode" type="radio" value="local"><span data-i18n="localPlain">保存在本机，浏览器重启后自动可用</span></label>
+      <label class="inline"><input name="keyStorageMode" type="radio" value="encrypted"><span data-i18n="encryptedLocal">使用口令加密后保存到本地</span></label>
+      <div id="encryptedControls" class="encrypted-controls" hidden>
+        <label><span data-i18n="passphrase">加密口令</span><input id="passphrase" type="password" autocomplete="new-password"></label>
+        <label><span data-i18n="confirmPassphrase">确认加密口令</span><input id="confirmPassphrase" type="password" autocomplete="new-password"></label>
+        <div class="inline-buttons"><button id="unlockButton" type="button" data-i18n="unlock">解锁已保存的 Key</button><button id="lockButton" type="button" data-i18n="lock">立即锁定</button></div>
+      </div>
+      <p class="security-note" data-i18n="securityWarning"></p>
+    </fieldset>
+
+    <label id="disableThinkingRow" class="inline"><input id="disableThinking" type="checkbox" checked><span data-i18n="reduceReasoning">关闭思考（不支持关闭的模型使用最低强度）</span></label>
+
+    <label id="reasoningEffortRow" hidden><span data-i18n="effortLabel">思考强度</span><select id="reasoningEffort"></select></label>
+
+    <p class="profile-note"><span id="modelCapabilityNote"></span> <a id="modelDocs" target="_blank" rel="noopener noreferrer" hidden>官方文档</a></p>
+
+    <div class="buttons"><button id="saveButton" type="button" data-i18n="save">保存设置</button><button id="testButton" type="button" data-i18n="test">测试 API</button></div>
+    <p id="status" role="status"></p>
+  </main>
+  <script src="api-profiles.js"></script>
+  <script src="model-catalog.js"></script>
+  <script src="options.js"></script>
+  <script type="module" src="engine-settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+body { margin:0; font:14px/1.5 system-ui,sans-serif; color:#202124; background:#f7f8fa; }
+main { max-width:720px; margin:30px auto; padding:24px; background:#fff; border:1px solid #e1e4e8; border-radius:12px; box-sizing:border-box; }
+.topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+h1 { margin:0; font-size:24px; }
+.intro { color:#5f6368; margin:8px 0 20px; }
+label:not(.inline) { display:block; margin:14px 0; font-weight:600; }
+input[type="text"], input[type="url"], input[type="password"], input[type="number"], select { box-sizing:border-box; width:100%; margin-top:6px; padding:9px 10px; border:1px solid #c9ccd1; border-radius:8px; font:inherit; background:#fff; }
+.topbar select { width:auto; min-width:130px; margin:0; }
+.language-picker { display:flex !important; flex-direction:column; align-items:flex-end; gap:4px; margin:0 !important; font-weight:400 !important; flex:0 0 auto; }
+.language-hint { font-size:11px; line-height:1.1; letter-spacing:.02em; color:#5f6368; white-space:nowrap; }
+fieldset { margin:18px 0; padding:14px; border:1px solid #d9dce1; border-radius:10px; }
+legend { padding:0 5px; font-weight:700; }
+.inline { display:flex; align-items:flex-start; gap:9px; margin:10px 0; font-weight:400; }
+.inline input { margin-top:3px; }
+.encrypted-controls { margin-top:12px; padding-top:10px; border-top:1px solid #e5e7eb; }
+.inline-buttons, .buttons { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+button { min-height:38px; padding:0 14px; border:1px solid #c9ccd1; border-radius:8px; background:#f8f9fa; font:inherit; cursor:pointer; }
+#saveButton { background:#1a73e8; color:#fff; border-color:#1a73e8; }
+.security-note { margin:12px 0 0; padding:10px 12px; border-radius:8px; background:#fff7e6; color:#6b4b00; }
+#status { min-height:22px; margin-top:14px; white-space:pre-wrap; }
+@media (max-width:760px) { main { margin:0; border:0; border-radius:0; min-height:100vh; } .topbar { align-items:flex-start; } }
+
+.profile-panel { margin:18px 0 22px; padding:14px; border:1px solid #d9dce1; border-radius:10px; background:#fbfcfe; }
+.profile-panel h2 { margin:0 0 10px; font-size:16px; }
+.profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.profile-grid label { margin:0 !important; }
+.profile-actions { margin-top:10px; }
+.profile-note { margin:10px 0 0; color:#5f6368; font-size:12px; }
+#deleteProfileButton { color:#a12b25; }
+@media (max-width:600px) { .profile-grid { grid-template-columns:1fr; } }
+
+[hidden] { display: none !important; }
+#provider, #modelSelect, #reasoningEffort { width: 100%; }

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Korean Hanja & Loanword Annotator</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <div class="topbar">
+      <h1 data-i18n="title">韩语汉字·外来语标注</h1>
+      <label class="language-picker" title="简体中文 / 繁體中文 / 日本語 / 한국어 / English">
+        <span class="language-hint" aria-hidden="true">简 / 繁 / 日 / 한 / EN</span>
+        <select id="uiLocale" aria-label="简体中文 / 繁體中文 / 日本語 / 한국어 / English">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+    </div>
+
+    <label class="choice"><input id="hanjaMode" type="checkbox" checked><span data-i18n="hanjaMode">汉字词：用汉字替换正文中的对应韩文</span></label>
+    <label class="choice"><input id="loanwordMode" type="checkbox" checked><span data-i18n="loanwordMode">外来语：在韩文正上方显示原词</span></label>
+
+    <fieldset class="copy-settings">
+      <legend>选择与复制文字时</legend>
+      <label class="choice"><input type="radio" name="copyMode" value="base"><span data-i18n="copyBase">只复制当前显示的正文</span></label>
+      <label class="choice"><input type="radio" name="copyMode" value="annotated"><span data-i18n="copyAnnotated">复制正文和标注</span></label>
+      <label class="choice"><input type="radio" name="copyMode" value="hangul" checked><span data-i18n="copyHangul">只复制原韩语（谚文）</span></label>
+      <label class="choice"><input type="radio" name="copyMode" value="annotation"><span data-i18n="copyAnnotation">只复制上方标注</span></label>
+    </fieldset>
+
+    <label class="choice"><input id="stopAutoAfterPageComplete" type="checkbox" checked><span>整页完成后停止自动标注</span></label>
+    <label class="choice"><input id="clearCacheOnExit" type="checkbox" checked><span>退出浏览器后清除标注缓存</span></label>
+    <label class="choice force-choice"><input id="forceRegenerate" type="checkbox"><span data-i18n="forceRegenerate">本次忽略缓存，重新分析词典</span></label>
+    <label class="choice">工具条显示 <select id="toolbarDisplay"><option value="selection">选中文字时显示</option><option value="always">始终显示</option></select></label>
+    <label class="choice mobile-choice"><input id="mobileSelectionToolbar" type="checkbox" checked><span data-i18n="mobileToolbar">启用网页工具条</span></label>
+
+    <label class="choice"><input id="toolbarHangulOnly" type="checkbox" checked><span>仅检测到谚文时显示工具条</span></label>
+
+    <div class="buttons">
+      <button id="selectionButton" class="primary" data-i18n="annotateSelection">标注所选文字</button>
+      <button id="runButton" data-i18n="annotatePage">一键标注整页</button>
+      <button id="reviewSelectionButton">模型重审选区</button>
+      <button id="undoButton" data-i18n="undo">撤销上次标注</button>
+      <button id="restoreButton" data-i18n="restore">还原全部</button>
+      <button id="clearCacheButton" class="danger-subtle" data-i18n="clearCache">清除标注缓存</button>
+    </div>
+
+    <button id="optionsButton" class="link-button" data-i18n="apiSettings">引擎 / API 设置</button>
+    <p id="status" role="status"></p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

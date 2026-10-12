@@ -1,5 +1,7 @@
 # 韩语网页标注器 3.3.5
 
+**简体中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
+
 保留 3.3.0 已验证的原生 ruby/rt 标注方式，恢复工具条和插件页的原有操作及设置。韩语词典、本地引擎、可选模型审核和 API 配置继续沿用。
 
 ## 标注与操作
@@ -37,3 +39,19 @@
 旧版说明文件仅作为历史记录；当前行为以本 README 和 V3.3.5-POPUP-START.txt 为准。
 
 3.3.5：插件主页整页按钮立即把启动请求交给后台。启动前不再重复执行引擎检查；设置保存与任务启动并行，页面设置随启动消息应用。弹窗关闭不影响后台接手，启动期间重复点击合并。打开弹窗本身不注入脚本或预热引擎。新增移动视口单次点击、关闭弹窗继续完成、冷页面注入和重复点击测试；测试使用模拟扩展接口和分析结果。
+
+## 在电脑上把词典转为 DB
+
+转换代码位于 `python/backend/upstream/scripts/import_dictionary.py`，从插件内嵌源码原样提取，配套数据库结构代码也已包含。使用 Python 3.10 或以上，无需安装第三方包。在仓库根目录运行：
+
+```sh
+python python/backend/upstream/scripts/import_dictionary.py "你的词典.zip"
+```
+
+生成 `python/backend/upstream/hanja_dict.db`，在插件设置页直接导入；手机可先从电脑传入 DB，省去手机解析 ZIP 和建库的时间。可通过环境变量 `HANJA_DB_PATH` 指定输出路径。转换器检查数据计数、外键、词典快照日期和数据库完整性，成功后替换目标文件，并备份已有数据库。词典下载：<https://krdict.korean.go.kr/download/downloadPopup>。
+
+可读 Python 源码在 `python/`，浏览器实际加载对应的 `runtime/python-sources.json`。
+
+## GitHub 下载说明
+
+受上传接口单次大小限制，较大的运行时文件和原始安装 ZIP 以分片保存。下载整个仓库后先运行 `python restore_distribution.py`，校验并还原运行时文件，再加载插件。原始安装 ZIP 会还原到 `distribution/Korean-Web-Annotator-v3.3.5-Extension.zip`。已有安装包无需此步骤。

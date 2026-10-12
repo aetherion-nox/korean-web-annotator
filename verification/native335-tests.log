@@ -1,0 +1,41 @@
+✔ same sentence and context reuse model cache; changed surrounding context does not (2.905369ms)
+✔ oversized-context fallback is cached against the context actually sent (9.672734ms)
+✔ right click routes to page, selection and undo with clicked frame preserved (5.212357ms)
+✔ right click installation recreates dynamic menu and initializes title (1.560305ms)
+✔ one popup click hands off immediately without engine preflight and repeated click does not restart (4.779762ms)
+✔ popup can hand off before slow settings persistence finishes (2.369681ms)
+✔ background dispatch survives popup lifetime and starts before persistence; duplicate handoffs share one start (1.696698ms)
+✔ cold page injects once and starts without a second click (1.242682ms)
+✔ background failure is reported and permits retry (1.286968ms)
+✔ popup does not inject or preflight just by opening (1.179458ms)
+✔ buffers results and commits native fragments only at DONE (322.596491ms)
+✔ uses Furiganator default layout and never installs mutation observers (210.190802ms)
+✔ site repaint remains original text without restoration or automatic requests (1314.803135ms)
+✔ restores Korean and leaves foreign ruby and existing links intact (205.2226ms)
+✔ does not overwrite text changed while analysis is pending (202.973677ms)
+✔ restore cancels a pending commit even if late messages arrive (190.302769ms)
+✔ toolbar stays closed through results and completion (221.745176ms)
+✔ skips existing ruby and its Hangul reading on subsequent runs (249.06316ms)
+✔ selection annotation and review send bounded selected ranges (176.974771ms)
+✔ annotation selection switch updates native rt selection without layout styles (197.203379ms)
+✔ restored toolbar actions exclude copy buttons (148.96951ms)
+✔ selected plain text gets only selected annotations (200.623615ms)
+✔ undo removes only the most recent committed operation (274.232598ms)
+✔ review KEEP restores selected ruby only when analysis completes (290.112002ms)
+✔ optional automatic annotation handles new text but does not restore old repaint (2421.882978ms)
+✔ popup restores controls, persists selection switch and starts model review (389.672898ms)
+✔ undoing a reannotation preserves the earlier operation undo (267.998684ms)
+✔ original Hangul copy restores Hanja and loanwords while preserving plain text and links (210.078207ms)
+✔ original Hangul copy does not override unrelated selections (113.78982ms)
+✔ Hangul selection mode selects original readings rather than displayed Hanja or foreign origin (232.430356ms)
+✔ four copy modes produce distinct clipboard text (183.97138ms)
+✔ right click state distinguishes unannotated selection, annotated selection and page (184.883089ms)
+✔ mobile popup tap starts the page through the worker even when engine preflight would stall (336.20046ms)
+ℹ tests 33
+ℹ suites 0
+ℹ pass 33
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8940.131283

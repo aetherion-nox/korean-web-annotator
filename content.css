@@ -1,0 +1,41 @@
+/* Furiganator default: browser-native ruby layout, rt excluded from selection.
+   Deliberately no ruby/rt sizing, display, line-height or page-container rules. */
+.kra-unselectable { user-select: none; }
+
+/* Control UI is separate from the annotated document's layout. */
+.kra-mobile-selection-bar {
+  position: fixed !important;
+  left: 50% !important;
+  bottom: 12px !important;
+  transform: translateX(-50%) !important;
+  z-index: 2147483647 !important;
+  width: min(350px, calc(100vw - 24px)) !important;
+  box-sizing: border-box !important;
+  padding: 10px !important;
+  border-radius: 10px !important;
+  background: rgba(28,28,30,.96) !important;
+  color: #fff !important;
+  font: 13px/1.4 system-ui,sans-serif !important;
+}
+.kra-mobile-selection-bar[hidden] { display: none !important; }
+.kra-task-status { display: flex !important; flex-direction: column !important; gap: 5px !important; }
+.kra-task-label { overflow-wrap: anywhere !important; }
+.kra-task-progress { width: 100% !important; height: 6px !important; }
+.kra-mobile-actions { display: flex !important; gap: 8px !important; margin-top: 8px !important; }
+.kra-mobile-actions button { min-height: 40px !important; border: 0 !important; border-radius: 7px !important; padding: 0 14px !important; background: #3a3a40 !important; color: #fff !important; font: inherit !important; touch-action: manipulation !important; }
+.kra-mobile-actions .kra-mobile-page { background: #2f6fbd !important; flex: 1 !important; }
+.kra-mobile-actions .kra-mobile-close { font-size: 20px !important; }
+html[data-kra-select-annotations] .kra-annotation { user-select: text; }
+.kra-mobile-actions { flex-wrap: wrap !important; }
+.kra-diagnostics { position:fixed !important;right:12px !important;top:12px !important;z-index:2147483647 !important;max-width:min(420px,calc(100vw - 24px)) !important;max-height:50vh !important;overflow:auto !important;padding:12px !important;border-radius:10px !important;background:#172033 !important;color:#fff !important;font:13px/1.5 system-ui,sans-serif !important; }
+.kra-diagnostics[hidden] { display:none !important; }
+.kra-diagnostics li { white-space:pre-wrap !important;overflow-wrap:anywhere !important; }
+
+/* Original Hangul selection takes precedence over selecting all readings. */
+html[data-kra-select-hangul] ruby.kra-ruby[data-kra-type="hanja"] { user-select: none; }
+html[data-kra-select-hangul] ruby.kra-ruby[data-kra-type="hanja"] > rt { user-select: text; }
+html[data-kra-select-hangul] ruby.kra-ruby[data-kra-type="loanword"] { user-select: text; }
+html[data-kra-select-hangul] ruby.kra-ruby[data-kra-type="loanword"] > rt { user-select: none; }
+
+html[data-kra-copy-mode="annotation"] .kra-ruby { user-select:none; }
+html[data-kra-copy-mode="annotation"] .kra-ruby > rt { user-select:text; }

@@ -1,0 +1,1 @@
+{"kiwi_version": "0.23.2", "kiwipiepy_model": "0.23.0", "pyodide_version": "0.29.3", "model_files": ["nounchr.mdl", "cong.mdl", "sj.morph", "typo.dict", "default.dict", "multi.dict", "extract.mdl", "combiningRule.txt", "dialect.dict"], "model_type": "cong"}

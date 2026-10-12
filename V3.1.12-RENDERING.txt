@@ -1,0 +1,7 @@
+v3.1.12 — restore v2.1.0 annotation rendering
+
+The annotation CSS and updateRubyLayoutSafety implementation are copied from the supplied v2.1.0 package. The outer wrapper uses display: contents; real body text stays inline and selectable; the upper label is positioned relative to the body. No canvas-based size measurement or copy-mode-dependent visual row remains.
+
+Touch selection toolbar keeps the three direct-copy actions. Select the displayed body, then choose original Hangul, displayed body, or displayed body plus annotation.
+
+Validation: 55 DOM/clipboard tests pass; JavaScript syntax and archive integrity pass. Four older regression assertions expecting body-to-Hangul replacement were updated to verify persistent real Hanja plus correctly reconstructed clipboard output. Rendering CSS and layout updater match v2.1.0 exactly. No Quetta device testing was possible, so the scrolling issue remains to be confirmed on-device. Long annotation crowding may return with the original layout.

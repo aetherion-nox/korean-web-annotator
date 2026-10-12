@@ -1,0 +1,18 @@
+body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: #202124; background: #fff; }
+main { width: 360px; box-sizing: border-box; padding: 16px; }
+.topbar { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+h1 { margin:0; font-size:18px; line-height:1.25; }
+select { max-width:130px; padding:5px 6px; border:1px solid #c9ccd1; border-radius:7px; background:#fff; }
+.language-picker { display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex:0 0 auto; }
+.language-hint { font-size:10px; line-height:1.1; letter-spacing:.02em; color:#5f6368; white-space:nowrap; }
+.choice { display:flex; gap:9px; align-items:flex-start; margin:10px 0; }
+.choice input { margin-top:3px; }
+fieldset { margin:14px 0; padding:10px 12px; border:1px solid #d9dce1; border-radius:9px; }
+legend { padding:0 5px; font-weight:650; }
+.compact-choice { margin:7px 0; }
+.buttons { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; }
+button { min-height:36px; border:1px solid #c9ccd1; border-radius:8px; background:#f8f9fa; color:inherit; font:inherit; cursor:pointer; }
+button.primary { background:#1a73e8; color:#fff; border-color:#1a73e8; }
+button.danger-subtle { color:#a50e0e; }
+.link-button { width:100%; margin-top:12px; background:transparent; }
+#status { min-height:20px; margin:10px 0 0; color:#4a4d52; white-space:pre-wrap; }
