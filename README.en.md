@@ -1,4 +1,4 @@
-# Korean Web Annotator 1.0.2
+# Korean Web Annotator 1.0.3
 
 [简体中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
 
@@ -6,7 +6,7 @@ Read Korean web pages with Hanja and loanword-origin annotations. After importin
 
 ## Install
 
-1. Open [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) and download `Korean-Web-Annotator-v1.0.2.zip` from the 1.0.2 release's **Assets**.
+1. Open [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) and download `Korean-Web-Annotator-v1.0.3.zip` from the 1.0.3 release's **Assets**.
 2. Extract the ZIP. It includes the complete runtime; Python and the restoration script are not needed.
 3. In Chrome, open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`. On mobile, use Quetta's extension loading feature.
 

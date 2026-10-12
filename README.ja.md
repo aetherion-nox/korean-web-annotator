@@ -1,4 +1,4 @@
-# 韓国語ウェブ注釈ツール 1.0.2
+# 韓国語ウェブ注釈ツール 1.0.3
 
 [简体中文](README.md) · [English](README.en.md) · **日本語** · [한국어](README.ko.md)
 
@@ -6,7 +6,7 @@
 
 ## インストール
 
-1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) を開き、正式版 1.0.2 の **Assets** から `Korean-Web-Annotator-v1.0.2.zip` をダウンロードします。
+1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) を開き、正式版 1.0.3 の **Assets** から `Korean-Web-Annotator-v1.0.3.zip` をダウンロードします。
 2. ZIP を展開します。実行に必要なファイルをすべて含むため、Python のインストールや復元スクリプトの実行は不要です。
 3. Chrome の `chrome://extensions` でデベロッパーモードを有効にし、「パッケージ化されていない拡張機能を読み込む」から `manifest.json` があるフォルダーを選択します。スマートフォンでは Quetta の拡張機能読み込み機能を使用します。
 
