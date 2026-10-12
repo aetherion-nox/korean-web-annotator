@@ -52,13 +52,28 @@
     configureAutomaticAnnotation();
   }
 
+  function selectionHasHangul(ranges) {
+    const hangul = /[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]/u;
+    return Boolean(ranges?.some(range => {
+      const fragment = range.cloneContents();
+      if(hangul.test(fragment.textContent || ''))return true;
+      // A selection of the converted base still represents the original Korean.
+      if(Array.from(fragment.querySelectorAll(OWN_RUBY)).some(ruby => hangul.test(ruby.getAttribute('data-kra-original') || '')))return true;
+      const container = range.commonAncestorContainer;
+      const parent = container.nodeType === 1 ? container : container.parentElement;
+      return hangul.test(parent?.closest(OWN_RUBY)?.getAttribute('data-kra-original') || '');
+    }));
+  }
+
   function refreshToolbar() {
     if(!document.body)return;
     const selected=captureSelection();
     if(selected)selectionSnapshot=selected;
+    const always = uiSettings.toolbarDisplay === 'always';
+    const eligible = uiSettings.toolbarHangulOnly === false ||
+      (always ? pageHasHangul : selectionHasHangul(selected));
     const show=!toolbarDismissed&&uiSettings.mobileSelectionToolbar!==false&&
-      (currentTask||((uiSettings.toolbarHangulOnly===false||pageHasHangul)&&
-      (uiSettings.toolbarDisplay==='always'||Boolean(selected))));
+      (currentTask||(eligible&&(always||Boolean(selected))));
     if(!toolbar&&!show)return;
     const bar=getToolbar();bar.hidden=!show;
     for(const button of bar.querySelectorAll('.kra-mobile-primary,.kra-mobile-review'))button.disabled=!selected&&!selectionSnapshot;
