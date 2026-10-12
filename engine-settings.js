@@ -9,13 +9,13 @@ const copy={
 const $=id=>document.getElementById(id),status=$('engineStatus');
 const t=key=>(copy[$('uiLocale').value]||copy.en)[key];
 function translate(){for(const el of document.querySelectorAll('[data-engine-i18n]'))el.textContent=t(el.dataset.engineI18n);}
-async function save(){await chrome.storage.local.set({enableModelReview:$('enableModelReview').checked});await refreshDictionaryStatus();}
+async function save(){await chrome.storage.local.set({enableModelReview:$('enableModelReview').checked});status.textContent=t('saved');}
 const dictionaryLabels={en:['Dictionary imported','Dictionary not imported'],'zh-CN':['词典已导入','词典未导入，请选择 ZIP 或 DB 文件。'],'zh-TW':['詞典已匯入','詞典未匯入，請選擇 ZIP 或 DB 檔案。'],ja:['辞書を取り込み済み','辞書は未取り込みです。JSON ZIP を選択してください。'],ko:['사전 가져오기 완료','사전이 없습니다. JSON ZIP을 가져오세요.']};
 let importedDictionary=false;
 function show(result){importedDictionary=result.imported;status.textContent=(dictionaryLabels[$('uiLocale').value]||dictionaryLabels.en)[importedDictionary?0:1];}
 async function refreshDictionaryStatus(){show(await readDictionaryInfo());}
 function busy(value){$('dictionaryProgress').hidden=!value;for(const id of ['importDictionary','clearDictionary','dictionaryFile'])$(id).disabled=value;}
-$('saveEngine').addEventListener('click',()=>save().catch(e=>status.textContent=e.message));
+$('enableModelReview').addEventListener('change',()=>save().catch(e=>status.textContent=e.message));
 $('importDictionary').addEventListener('click',async()=>{const file=$('dictionaryFile').files?.[0];if(!file){status.textContent=t('missing');return;}busy(true);status.textContent=t('busy');try{await importBrowserDictionary(file);await refreshDictionaryStatus();}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('clearDictionary').addEventListener('click',async()=>{busy(true);try{await clearBrowserDictionary();await refreshDictionaryStatus();}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('uiLocale').addEventListener('change',()=>{translate();show({imported:importedDictionary});});
