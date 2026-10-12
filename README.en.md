@@ -1,47 +1,54 @@
-# Korean Web Annotator 1.1.0
+# Korean Web Annotator
 
 [简体中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-Read Korean web pages with Hanja and loanword-origin annotations. After importing a dictionary, the extension runs inside your browser without a local server. Optional model review is available through your own API configuration.
+Read Korean pages with Hanja in the main text and original Hangul above it, or loanword origins above unchanged Korean. Import a dictionary to annotate locally; no server or model API is required.
 
-## Install
+## Install and update
 
-1. Open [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) and download `Korean-Web-Annotator-v1.1.0.zip` from the 1.1.0 release's **Assets**.
-2. Extract the ZIP. It includes the complete runtime; Python and the restoration script are not needed.
-3. In Chrome, open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`. On mobile, use Quetta's extension loading feature.
+1. Download `Korean-Web-Annotator-v1.1.0.zip` from **Assets** on the [Release page](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0) and extract it.
+2. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`. On mobile, use Quetta's extension loading feature.
+3. To update, replace the extension files, reload the extension, and refresh web pages.
 
-After updating, reload the extension and refresh open web pages.
-
-If you download the source using **Code → Download ZIP**, install Python 3.10 or newer and run `python restore_distribution.py` in the extracted folder before loading the extension.
+Use the complete Release package; Python is not required.
 
 ## Import a dictionary
 
-Download the prepared database from the [1.1.0 Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0): under **Assets**, choose [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip). **Extract it first**, then select `hanja_dict.db` in **Engine / API settings** and click **Import dictionary**. No conversion is required. This is a database archive, not an official JSON ZIP; do not import the archive directly.
+1. Download [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip) from the same Release's **Assets**.
+2. **Extract it first** to obtain `hanja_dict.db`.
+3. In **Engine / API settings**, select the DB and click **Import dictionary**.
 
-Converted from the National Institute of Korean Language's Korean Basic Dictionary snapshot dated 2026-09-19; this is an unofficial distribution. Text data is distributed under [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/). Links to images or audio do not grant the same license to those media.
+Alternatively, download the official JSON ZIP from the [Korean Basic Dictionary](https://krdict.korean.go.kr/download/downloadPopup) and import it directly without extracting it. Use either method.
 
-Alternatively, download the official JSON ZIP from the [Korean Basic Dictionary](https://krdict.korean.go.kr/download/downloadPopup) and import it directly without extracting it.
+## Everyday use
 
-If importing on your phone is slow, convert the ZIP on your computer first:
+- Annotate a page from the extension, page toolbar, or context menu; select text to annotate a selection.
+- **Undo** cancels the last annotation; **Restore** returns to the original text.
+- Copy the displayed body, body plus annotations, original Korean (default), or annotations only.
+- **Ignore cache and analyze the text again** reruns text processing.
 
-```sh
-python python/backend/upstream/scripts/import_dictionary.py "path/to/dictionary.zip"
-```
+## Model API (optional)
 
-Transfer the resulting `python/backend/upstream/hanja_dict.db` to your phone and import it on the same settings page.
+Choose from these built-in providers and models:
 
-## Use
+| Provider | Models |
+| --- | --- |
+| OpenAI | GPT-6.1 Sol / GPT-6 Astra / GPT-6 Luna |
+| Claude (Anthropic) | Sonnet 5.5 / Opus 5.5 / Haiku 5.5 / Fable 5.1 |
+| GLM (Z.AI) | GLM-5.3 / GLM-5.3-Flash / GLM-5.3-FlashX |
+| Xiaomi MiMo | MiMo-V2.6-Flash / V2.6-Pro / V2.6-Pro-Ultraspeed / V2.5 / V2.5-Pro |
+| DeepSeek | deepseek-flash / deepseek-v4-pro |
+| Custom | Enter an OpenAI Chat Completions-compatible endpoint, model name, and API key |
 
-- Open a Korean web page and start whole-page annotation from the extension, toolbar, or context menu.
-- Select text to annotate or reannotate a selection. Use undo or restore to remove annotations.
-- Choose a copy mode: displayed body text, body plus annotations, original Korean (default), or annotations only.
-- API providers include OpenAI and Claude, with the latest model families verified against official documentation on 2026-10-12. Thinking controls follow each model’s capabilities.
-- **Model review**: during normal annotation, the model resolves ambiguities that the local algorithm cannot settle. Configure your provider, model, and API key, then enable review.
-- **Model reannotation (review selection)**: select text and explicitly ask the model to reconsider it. This also requires a configured model API, but the model-review switch can remain off.
-- Local-only annotation does not require a model API.
+Select a provider and model, enter your API key, **Save settings**, then **Test API**. Thinking controls reflect model capabilities; custom models use server defaults. Compatible endpoints need the full URL, usually ending in `/chat/completions`.
 
-## Acknowledgements
+- **Model review** resolves ambiguities left by local processing during normal annotation.
+- **Review selection** explicitly asks the model to reconsider selected text. It needs an API configuration, but the model-review switch can remain off.
 
-- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script): this extension directly uses and adapts its Korean Hanja conversion and dictionary-processing code. Thank you for making it open source.
-- [Furiganator (Chrome Web Store)](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa): an extension that adds furigana to Japanese web pages. It inspired this extension's annotation display and text selection.
-- Thanks to Kiwi, Pyodide, and the National Institute of Korean Language for their tools and dictionary resources.
+## Acknowledgements and dictionary source
+
+- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script): its Korean Hanja conversion and dictionary-processing code is directly used and adapted.
+- [Furiganator (Chrome Web Store)](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa): a Japanese furigana extension that inspired annotation display and text selection.
+- Thanks to Kiwi, Pyodide, and the National Institute of Korean Language.
+
+The prepared DB is an unofficial conversion of the Institute's Korean Basic Dictionary snapshot dated 2026-09-19. Text data: [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/). Linked media have separate licensing.

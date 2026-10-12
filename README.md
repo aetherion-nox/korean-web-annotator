@@ -1,47 +1,54 @@
-# 韩语网页标注器 1.1.0
+# 韩语网页标注器
 
 **简体中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-为韩语网页标注汉字词和外来语原词，帮助阅读韩语。导入词典后即可在浏览器内使用，无需启动本地服务器；也可自行配置 API，启用大模型审核。
+为韩语网页显示汉字词和外来语原词：汉字词正文显示汉字、上方保留谚文；外来语正文保留韩文、上方显示原词。导入词典后即可本地标注，无需服务器或大模型 API。
 
-## 安装
+## 安装与更新
 
-1. 打开 [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)，在 1.1.0 正式版的 **Assets** 中下载 `Korean-Web-Annotator-v1.1.0.zip`。
-2. 解压 ZIP。安装包包含完整运行时，无需安装 Python，也无需运行还原脚本。
-3. Chrome 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”，选择 `manifest.json` 所在文件夹。手机 Quetta 使用其扩展加载功能。
+1. 在 [Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0) 的 **Assets** 下载 `Korean-Web-Annotator-v1.1.0.zip`，解压。
+2. Chrome 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”，选择 `manifest.json` 所在文件夹。手机 Quetta 使用其扩展加载功能。
+3. 更新时替换原插件文件，重新加载插件，并刷新网页。
 
-更新后重新加载插件，并刷新已打开的网页。
-
-若下载的是 **Code → Download ZIP** 源码包，则需 Python 3.10 或以上，在解压后的文件夹中先运行 `python restore_distribution.py`，再加载插件。
+请下载 Release 中的完整安装包，无需 Python。
 
 ## 导入词典
 
-推荐下载现成数据库：打开 [1.1.0 Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0)，在 **Assets** 中下载 [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip)。**先解压**得到 `hanja_dict.db`，再在“引擎 / API 设置”中选择这个 DB 文件并点击“导入词典”，无需自行转换。此 ZIP 是数据库压缩包，请勿作为官方 JSON ZIP 直接导入。
+1. 从同一 Release 的 **Assets** 下载 [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip)。
+2. **先解压**得到 `hanja_dict.db`。
+3. 打开“引擎 / API 设置”，选择 DB 文件，点击“导入词典”。
 
-数据库由韩国国立国语院《韩国语基础词典》2026-09-19 官方快照转换而来，非官方发布；文字数据按 [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/) 发布。图片、音频等链接不代表相应媒体获得同样许可。
+也可从[韩国语基础词典官网](https://krdict.korean.go.kr/download/downloadPopup)下载官方 JSON ZIP，直接导入，无需解压。两种方式任选一种。
 
-也可从[韩国语基础词典官网](https://krdict.korean.go.kr/download/downloadPopup)下载 JSON 格式的词典 ZIP，在同一设置页直接导入，无需先解压。
+## 日常使用
 
-手机导入较慢时，可先在电脑上转换为 DB：
+- 点击插件、网页工具条或右键菜单中的“标注整页”；也可选中文字后标注选区。
+- “撤销”取消上次标注，“还原”恢复原文。
+- “选择与复制文字时”可选择：当前正文、正文和标注、原韩语（默认）、只复制上方标注。
+- “本次忽略缓存，重新分析文本”用于重新处理文字。
 
-```sh
-python python/backend/upstream/scripts/import_dictionary.py "你的词典.zip"
-```
+## 大模型 API（可选）
 
-将生成的 `python/backend/upstream/hanja_dict.db` 传到手机，再在同一设置页导入。
+内置以下服务商和模型，可在设置页直接选择：
 
-## 使用
+| 服务商 | 模型 |
+| --- | --- |
+| OpenAI | GPT-6.1 Sol / GPT-6 Astra / GPT-6 Luna |
+| Claude (Anthropic) | Sonnet 5.5 / Opus 5.5 / Haiku 5.5 / Fable 5.1 |
+| GLM (Z.AI) | GLM-5.3 / GLM-5.3-Flash / GLM-5.3-FlashX |
+| Xiaomi MiMo | MiMo-V2.6-Flash / V2.6-Pro / V2.6-Pro-Ultraspeed / V2.5 / V2.5-Pro |
+| DeepSeek | deepseek-flash / deepseek-v4-pro |
+| 自定义 | 手动填写支持 OpenAI Chat Completions 格式的接口地址、模型名和 API Key |
 
-- 打开韩语网页，点击插件里的“标注整页”，或通过工具条、右键菜单开始标注。
-- 选中文字可进行选区标注或重新标注；需要恢复时使用“撤销”或“还原”。
-- 在“选择与复制文字时”选择复制方式：当前正文、正文和标注、原韩语（默认），或上方标注。
-- API 服务商支持 OpenAI 和 Claude；模型列表包含截至 2026-10-12 官方文档中的最新系列。思考开关和强度按模型能力显示，不能关闭思考的模型仅显示强度。
-- **审核**：普通标注时，让大模型处理本地算法未能解决的歧义。需要配置服务商、模型和 API Key，并开启审核。
-- **模型重标（模型重审选区）**：选中文字后，主动交给大模型重新判断。同样需要配置大模型 API，但无需开启“审核”。
-- 只使用本地算法标注时，无需大模型 API。
+选择服务商和模型、填写 API Key，点击“保存设置”，再用“测试 API”检查。思考开关和强度按模型能力显示；自定义模型使用服务端默认思考设置。兼容服务需填写完整接口地址，通常以 `/chat/completions` 结尾。
 
-## 致谢
+- **审核**：开启后，大模型处理普通标注中本地算法未解决的歧义。
+- **模型重审选区**：主动让模型重新判断选中文字，需要 API，但不必开启“审核”。
 
-- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script)：本插件直接使用并适配了该项目的韩语汉字转换及词典处理代码，感谢作者的开源贡献。
-- [Furiganator（Chrome 商店）](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa)：为日语网页添加假名注音的扩展。本插件的标注显示和文字选择方式参考了它。
-- 感谢 Kiwi、Pyodide 和韩国国立国语院提供的工具与词典资源。
+## 致谢与词典来源
+
+- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script)：直接使用并适配了其韩语汉字转换与词典处理代码。
+- [Furiganator（Chrome 商店）](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa)：为日语网页添加假名注音的扩展，参考了其标注显示与文字选择方式。
+- 感谢 Kiwi、Pyodide 和韩国国立国语院。
+
+预生成 DB 来自国立国语院《韩国语基础词典》2026-09-19 官方快照，为非官方转换版；文字数据按 [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/) 发布。媒体链接的许可另行适用。
