@@ -2,7 +2,9 @@
 
 [简体中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-Read Korean pages with Hanja in the main text and original Hangul above it, or loanword origins above unchanged Korean. Import a dictionary to annotate locally; no server or model API is required.
+Read Korean pages with Hanja in the main text and original Hangul above it, or loanword origins above unchanged Korean.
+
+After importing a dictionary, the extension performs basic annotation locally in your browser. An optional model API uses context to resolve uncertain origins or meanings left by the local algorithm, and lets you explicitly request model review of selected text. Local-only annotation needs no API, and no server needs to be started.
 
 ## Install and update
 
