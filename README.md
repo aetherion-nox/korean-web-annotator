@@ -1,4 +1,4 @@
-# 韩语网页标注器 1.0
+# 韩语网页标注器 1.0.1
 
 **简体中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
@@ -6,7 +6,7 @@
 
 ## 安装
 
-1. 打开 [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)，在 1.0 正式版的 **Assets** 中下载 `Korean-Web-Annotator-v1.0.zip`。
+1. 打开 [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)，在 1.0.1 正式版的 **Assets** 中下载 `Korean-Web-Annotator-v1.0.1.zip`。
 2. 解压 ZIP。安装包包含完整运行时，无需安装 Python，也无需运行还原脚本。
 3. Chrome 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”，选择 `manifest.json` 所在文件夹。手机 Quetta 使用其扩展加载功能。
 

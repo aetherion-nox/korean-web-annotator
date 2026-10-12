@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Korean Hanja & Loanword Annotator",
-  "version": "1.0",
+  "version": "1.0.1",
   "description": "Dictionary-based Korean Hanja and loanword annotations entirely in your browser, with optional model review.",
   "permissions": [
     "activeTab",

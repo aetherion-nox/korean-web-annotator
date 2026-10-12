@@ -1,4 +1,4 @@
-# 한국어 웹 주석 도구 1.0
+# 한국어 웹 주석 도구 1.0.1
 
 [简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · **한국어**
 
@@ -6,7 +6,7 @@
 
 ## 설치
 
-1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)에서 정식 버전 1.0의 **Assets**에 있는 `Korean-Web-Annotator-v1.0.zip`을 다운로드합니다.
+1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)에서 정식 버전 1.0.1의 **Assets**에 있는 `Korean-Web-Annotator-v1.0.1.zip`을 다운로드합니다.
 2. ZIP의 압축을 풉니다. 전체 런타임이 포함되어 있어 Python 설치나 복원 스크립트 실행이 필요하지 않습니다.
 3. Chrome의 `chrome://extensions`에서 개발자 모드를 켜고, 압축 해제된 확장 프로그램 로드 기능으로 `manifest.json`이 있는 폴더를 선택합니다. 휴대폰에서는 Quetta의 확장 프로그램 로드 기능을 사용합니다.
 
