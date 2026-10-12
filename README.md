@@ -29,8 +29,12 @@ python python/backend/upstream/scripts/import_dictionary.py "你的词典.zip"
 - 打开韩语网页，点击插件里的“标注整页”，或通过工具条、右键菜单开始标注。
 - 选中文字可进行选区标注或重新标注；需要恢复时使用“撤销”或“还原”。
 - 在“选择与复制文字时”选择复制方式：当前正文、正文和标注、原韩语（默认），或上方标注。
-- 如需大模型审核，在“引擎 / API 设置”配置服务商、模型和 API Key，并开启审核。普通本地标注不需要 API Key。
+- **审核**：普通标注时，让大模型处理本地算法未能解决的歧义。需要配置服务商、模型和 API Key，并开启审核。
+- **模型重标（模型重审选区）**：选中文字后，主动交给大模型重新判断。同样需要配置大模型 API，但无需开启“审核”。
+- 只使用本地算法标注时，无需大模型 API。
 
 ## 致谢
 
-感谢 Furiganator 1.2.0 提供的标注与文字选择方式参考，以及 Kiwi、Pyodide 和韩国国立国语院提供的工具与词典资源。
+- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script)：本插件直接使用并适配了该项目的韩语汉字转换及词典处理代码，感谢作者的开源贡献。
+- [Furiganator（Chrome 商店）](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa)：为日语网页添加假名注音的扩展。本插件的标注显示和文字选择方式参考了它。
+- 感谢 Kiwi、Pyodide 和韩国国立国语院提供的工具与词典资源。

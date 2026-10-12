@@ -29,8 +29,12 @@ Transfer the resulting `python/backend/upstream/hanja_dict.db` to your phone and
 - Open a Korean web page and start whole-page annotation from the extension, toolbar, or context menu.
 - Select text to annotate or reannotate a selection. Use undo or restore to remove annotations.
 - Choose a copy mode: displayed body text, body plus annotations, original Korean (default), or annotations only.
-- For optional model review, configure your provider, model, and API key in **Engine / API settings**, then enable review. Local annotation does not require an API key.
+- **Model review**: during normal annotation, the model resolves ambiguities that the local algorithm cannot settle. Configure your provider, model, and API key, then enable review.
+- **Model reannotation (review selection)**: select text and explicitly ask the model to reconsider it. This also requires a configured model API, but the model-review switch can remain off.
+- Local-only annotation does not require a model API.
 
 ## Acknowledgements
 
-Thanks to Furiganator 1.2.0 for inspiration on annotation and text selection, and to Kiwi, Pyodide, and the National Institute of Korean Language for their tools and dictionary resources.
+- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script): this extension directly uses and adapts its Korean Hanja conversion and dictionary-processing code. Thank you for making it open source.
+- [Furiganator (Chrome Web Store)](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa): an extension that adds furigana to Japanese web pages. It inspired this extension's annotation display and text selection.
+- Thanks to Kiwi, Pyodide, and the National Institute of Korean Language for their tools and dictionary resources.

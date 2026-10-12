@@ -29,8 +29,12 @@ python python/backend/upstream/scripts/import_dictionary.py "path/to/dictionary.
 - 한국어 웹 페이지를 열고 확장 프로그램, 도구 모음 또는 오른쪽 클릭 메뉴에서 전체 페이지 주석을 시작합니다.
 - 텍스트를 선택해 선택 영역에 주석을 달거나 다시 처리할 수 있습니다. 실행 취소 또는 복원 기능으로 주석을 제거할 수 있습니다.
 - 복사 방식은 표시된 본문, 본문과 주석, 원래 한국어(기본값), 위쪽 주석만 중에서 선택합니다.
-- 모델 검토를 사용하려면 엔진 / API 설정에서 제공 업체, 모델, API 키를 설정하고 검토를 켭니다. 로컬 주석에는 API 키가 필요하지 않습니다.
+- **모델 검토**: 일반 주석 작업에서 로컬 알고리즘이 해결하지 못한 중의성을 모델이 판단합니다. 제공 업체, 모델, API 키를 설정하고 검토를 켜세요.
+- **모델 재주석(선택 영역 재검토)**: 선택한 텍스트를 모델이 다시 판단하도록 직접 요청합니다. 이 기능도 모델 API 설정이 필요하지만, 검토 스위치를 켤 필요는 없습니다.
+- 로컬 알고리즘만 사용한 주석에는 모델 API가 필요하지 않습니다.
 
 ## 감사의 말
 
-주석과 텍스트 선택 방식에 참고가 된 Furiganator 1.2.0, 그리고 도구와 사전 자료를 제공하는 Kiwi, Pyodide, 국립국어원에 감사드립니다.
+- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script): 이 확장 프로그램은 해당 프로젝트의 한국어 한자 변환 및 사전 처리 코드를 직접 사용하고 수정했습니다. 오픈 소스 기여에 감사드립니다.
+- [Furiganator(Chrome 웹 스토어)](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa): 일본어 웹 페이지에 후리가나를 추가하는 확장 프로그램입니다. 주석 표시와 텍스트 선택 방식에 참고했습니다.
+- 도구와 사전 자료를 제공하는 Kiwi, Pyodide, 국립국어원에 감사드립니다.
