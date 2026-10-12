@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '3.3.5';
+const CONTENT_SCRIPT_VERSION = '1.0';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');

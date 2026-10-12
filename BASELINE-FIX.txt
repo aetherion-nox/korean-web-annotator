@@ -1,7 +1,0 @@
-Historical change notes — superseded by V3.1.12-RENDERING.txt
-
-v3.1.9 正文基线修正
-只复制原韩语模式移除固定 vertical-align 和底部补偿。
-汉字视觉正文改为提供词内最后一条正常排版基线，和相邻未标注正文按 baseline 对齐。
-上方韩文继续是真实可选择文字；保留手机模式同步及词典恢复。
-自动测试通过不等于 Quetta 原生复制已经实机验证。更新后刷新网页、重新标注。

@@ -50,27 +50,5 @@
       "distribution/runtime-parts/runtime/models/multi.dict.part002"
     ],
     "sha256": "e9eff7712d163b214c750333a5d388ab77b50ec386ae55b360babcd24c0c3195"
-  },
-  {
-    "path": "distribution/Korean-Web-Annotator-v3.3.5-Extension.zip",
-    "parts": [
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part000",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part001",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part002",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part003",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part004",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part005",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part006",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part007",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part008",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part009",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part010",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part011",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part012",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part013",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part014",
-      "distribution/install-parts/Korean-Web-Annotator-v3.3.5-Extension.zip.part015"
-    ],
-    "sha256": "4c664ffd95e42a5b8d312101cb4514680d97de04f7a3aad113688850a1d25cde"
   }
 ]

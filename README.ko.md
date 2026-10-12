@@ -1,4 +1,4 @@
-# 한국어 웹 주석 도구 3.3.5
+# 한국어 웹 주석 도구 1.0
 
 [简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · **한국어**
 
@@ -6,11 +6,13 @@
 
 ## 설치
 
-1. 이 페이지에서 **Code → Download ZIP**을 눌러 저장소를 다운로드하고 압축을 풉니다.
-2. Python 3.10 이상을 설치하고 압축을 푼 폴더에서 `python restore_distribution.py`를 실행합니다. 완전한 설치 ZIP이 있다면 압축만 풀면 됩니다.
+1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)에서 정식 버전 1.0의 **Assets**에 있는 `Korean-Web-Annotator-v1.0.zip`을 다운로드합니다.
+2. ZIP의 압축을 풉니다. 전체 런타임이 포함되어 있어 Python 설치나 복원 스크립트 실행이 필요하지 않습니다.
 3. Chrome의 `chrome://extensions`에서 개발자 모드를 켜고, 압축 해제된 확장 프로그램 로드 기능으로 `manifest.json`이 있는 폴더를 선택합니다. 휴대폰에서는 Quetta의 확장 프로그램 로드 기능을 사용합니다.
 
 업데이트 후 확장 프로그램을 다시 로드하고 열려 있는 웹 페이지도 새로 고치세요.
+
+**Code → Download ZIP**으로 소스를 받은 경우에는 Python 3.10 이상을 설치하고, 압축을 푼 폴더에서 `python restore_distribution.py`를 실행한 뒤 확장 프로그램을 로드합니다.
 
 ## 사전 가져오기
 
