@@ -16,7 +16,11 @@
 
 ## 辞書の取り込み
 
-[韓国語基礎辞典の公式サイト](https://krdict.korean.go.kr/download/downloadPopup)から JSON 形式の辞書 ZIP をダウンロードし、「エンジン / API 設定」で取り込みます。ZIP の展開は不要です。辞書は別途ダウンロードしてください。
+作成済み辞書は [1.1.0 Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0) の **Assets** にある [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip) からダウンロードできます。**先に解凍**して `hanja_dict.db` を取り出し、「エンジン / API 設定」で DB ファイルを選んで辞書を取り込んでください。変換は不要です。この ZIP は公式 JSON ZIP ではないため、そのまま取り込まないでください。
+
+韓国国立国語院『韓国語基礎辞典』の 2026-09-19 公式データから変換した非公式配布版です。テキストデータは [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/) で配布します。画像・音声へのリンクは、それらのメディアに同じライセンスを付与するものではありません。
+
+[韓国語基礎辞典の公式サイト](https://krdict.korean.go.kr/download/downloadPopup) から JSON ZIP をダウンロードし、解凍せずに直接取り込む方法も利用できます。
 
 スマートフォンでの取り込みが遅い場合は、パソコンで先に DB に変換できます。
 

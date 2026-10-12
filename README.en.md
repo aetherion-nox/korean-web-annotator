@@ -16,7 +16,11 @@ If you download the source using **Code → Download ZIP**, install Python 3.10 
 
 ## Import a dictionary
 
-Download the JSON dictionary ZIP from the [official Korean Learners' Dictionary website](https://krdict.korean.go.kr/download/downloadPopup). Import it in the extension's **Engine / API settings** without extracting it. Dictionary data must be downloaded separately.
+Download the prepared database from the [1.1.0 Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0): under **Assets**, choose [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip). **Extract it first**, then select `hanja_dict.db` in **Engine / API settings** and click **Import dictionary**. No conversion is required. This is a database archive, not an official JSON ZIP; do not import the archive directly.
+
+Converted from the National Institute of Korean Language's Korean Basic Dictionary snapshot dated 2026-09-19; this is an unofficial distribution. Text data is distributed under [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/). Links to images or audio do not grant the same license to those media.
+
+Alternatively, download the official JSON ZIP from the [Korean Basic Dictionary](https://krdict.korean.go.kr/download/downloadPopup) and import it directly without extracting it.
 
 If importing on your phone is slow, convert the ZIP on your computer first:
 

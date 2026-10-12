@@ -16,7 +16,11 @@
 
 ## 사전 가져오기
 
-[한국어기초사전 공식 사이트](https://krdict.korean.go.kr/download/downloadPopup)에서 JSON 형식의 사전 ZIP을 다운로드해 확장 프로그램의 엔진 / API 설정에서 가져옵니다. ZIP을 미리 풀 필요는 없습니다. 사전은 별도로 다운로드해야 합니다.
+미리 만든 데이터베이스는 [1.1.0 Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0)의 **Assets**에서 [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip)을 내려받으세요. **먼저 압축을 풀어** `hanja_dict.db`를 얻은 다음, 엔진 / API 설정에서 DB 파일을 선택하고 사전 가져오기를 누르세요. 별도 변환은 필요 없습니다. 이 파일은 공식 JSON ZIP이 아니므로 ZIP 자체를 바로 가져오지 마세요.
+
+국립국어원 『한국어기초사전』의 2026-09-19 공식 데이터를 변환한 비공식 배포본입니다. 텍스트 데이터는 [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/)로 배포합니다. 이미지나 음성 링크가 해당 미디어에 같은 이용 허락을 부여하는 것은 아닙니다.
+
+[한국어기초사전 공식 사이트](https://krdict.korean.go.kr/download/downloadPopup)에서 JSON ZIP을 내려받아 압축을 풀지 않고 직접 가져올 수도 있습니다.
 
 휴대폰에서 가져오기가 느리면 컴퓨터에서 먼저 DB로 변환할 수 있습니다.
 

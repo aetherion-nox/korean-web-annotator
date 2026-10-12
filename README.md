@@ -16,7 +16,11 @@
 
 ## 导入词典
 
-从[韩国语基础词典官网](https://krdict.korean.go.kr/download/downloadPopup)下载 JSON 格式的词典 ZIP，在插件的“引擎 / API 设置”中导入，无需先解压。词典需自行下载。
+推荐下载现成数据库：打开 [1.1.0 Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0)，在 **Assets** 中下载 [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip)。**先解压**得到 `hanja_dict.db`，再在“引擎 / API 设置”中选择这个 DB 文件并点击“导入词典”，无需自行转换。此 ZIP 是数据库压缩包，请勿作为官方 JSON ZIP 直接导入。
+
+数据库由韩国国立国语院《韩国语基础词典》2026-09-19 官方快照转换而来，非官方发布；文字数据按 [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/) 发布。图片、音频等链接不代表相应媒体获得同样许可。
+
+也可从[韩国语基础词典官网](https://krdict.korean.go.kr/download/downloadPopup)下载 JSON 格式的词典 ZIP，在同一设置页直接导入，无需先解压。
 
 手机导入较慢时，可先在电脑上转换为 DB：
 
