@@ -1,4 +1,4 @@
-# 韩语网页标注器 1.0.3
+# 韩语网页标注器 1.1.0
 
 **简体中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
@@ -6,7 +6,7 @@
 
 ## 安装
 
-1. 打开 [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)，在 1.0.3 正式版的 **Assets** 中下载 `Korean-Web-Annotator-v1.0.3.zip`。
+1. 打开 [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)，在 1.1.0 正式版的 **Assets** 中下载 `Korean-Web-Annotator-v1.1.0.zip`。
 2. 解压 ZIP。安装包包含完整运行时，无需安装 Python，也无需运行还原脚本。
 3. Chrome 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”，选择 `manifest.json` 所在文件夹。手机 Quetta 使用其扩展加载功能。
 
@@ -31,6 +31,7 @@ python python/backend/upstream/scripts/import_dictionary.py "你的词典.zip"
 - 打开韩语网页，点击插件里的“标注整页”，或通过工具条、右键菜单开始标注。
 - 选中文字可进行选区标注或重新标注；需要恢复时使用“撤销”或“还原”。
 - 在“选择与复制文字时”选择复制方式：当前正文、正文和标注、原韩语（默认），或上方标注。
+- API 服务商支持 OpenAI 和 Claude；模型列表包含截至 2026-10-12 官方文档中的最新系列。思考开关和强度按模型能力显示，不能关闭思考的模型仅显示强度。
 - **审核**：普通标注时，让大模型处理本地算法未能解决的歧义。需要配置服务商、模型和 API Key，并开启审核。
 - **模型重标（模型重审选区）**：选中文字后，主动交给大模型重新判断。同样需要配置大模型 API，但无需开启“审核”。
 - 只使用本地算法标注时，无需大模型 API。

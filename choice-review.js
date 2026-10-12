@@ -16,6 +16,10 @@ export function thinkingSettings(config){
  const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
  if(!capability)return {body:{},label:'模型默认思考设置（未收录能力）'};
  const enabled=capability.thinking==='required'||config.disableThinking===false;
+ const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
+ const effort=capability.efforts.includes(config.reasoningEffort)?config.reasoningEffort:capability.efforts[0];
+ if(provider==='openai')return {body:{reasoning_effort:enabled?effort:'none'},label:enabled?`思考强度：${effort}`:'关闭思考'};
+ if(provider==='anthropic')return {body:{thinking:{type:enabled?'adaptive':capability.offType||'disabled'},output_config:{effort:enabled?effort:'low'}},label:enabled?`自适应思考（${effort}）`:capability.offType==='between_tools'?'关闭前置思考':'关闭思考'};
  const body={thinking:{type:enabled?'enabled':'disabled'}};
  if(enabled&&capability.efforts.length)body.reasoning_effort=capability.efforts.includes(config.reasoningEffort)?config.reasoningEffort:capability.efforts[0];
  return {body,label:enabled?`思考开启${body.reasoning_effort?`（${body.reasoning_effort}）`:''}`:'关闭思考'};
@@ -51,17 +55,27 @@ export async function reviewTargets(config,targets,signal){
  return {accepted,unresolved:pending,errors};
 }
 async function requestChoices(config,targets,signal){
- const timeout=AbortSignal.timeout(config.timeoutMs || 20000);
+ const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
+ const native=provider==='openai'||provider==='anthropic';
+ const timeout=AbortSignal.timeout(config.timeoutMs || (native?120000:20000));
  const requestSignal=signal?AbortSignal.any([signal,timeout]):timeout;
- const body={model:config.model,messages:[
+ let body={model:config.model,messages:[
   {role:'system',content:'Select only supplied dictionary choice IDs using context and definitions. KEEP preserves Korean. Return JSON {"results":[{"target_id":"...","choice_id":"..."}]} for every target. Never generate replacement text.'},
   {role:'user',content:JSON.stringify({context:config.context,targets})}],response_format:{type:'json_object'},...thinkingSettings(config).body};
- const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
- const auth=config.apiKey?(provider==='mimo'?{'api-key':config.apiKey}:{Authorization:`Bearer ${config.apiKey}`}):{};
+ const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
+ if(responses){const {messages,reasoning_effort}=body;body={model:config.model,input:messages,store:false,text:{format:{type:'json_object'}},max_output_tokens:16384,...(reasoning_effort?{reasoning:{effort:reasoning_effort}}:{})};}
+ if(provider==='anthropic'){const {messages,thinking,output_config}=body;body={model:config.model,system:messages[0].content,messages:messages.slice(1),max_tokens:16384,...(thinking?{thinking,output_config}:{})};}
+ const auth=provider==='anthropic'?{'x-api-key':config.apiKey||'','anthropic-version':'2023-06-01'}:config.apiKey?(provider==='mimo'?{'api-key':config.apiKey}:{Authorization:`Bearer ${config.apiKey}`}):{};
  const response=await fetch(config.endpoint,{method:'POST',headers:{'Content-Type':'application/json',...auth},body:JSON.stringify(body),signal:requestSignal});
  const raw=await response.text();
  if(!response.ok){const error=Error(`模型 API HTTP ${response.status}`);error.detail=raw;error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
  let data,content;
- try{data=JSON.parse(raw);content=data?.choices?.[0]?.message?.content;if(typeof content!=='string'||!content.trim())throw Error('empty');return JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}
+ try{
+  data=JSON.parse(raw);
+  if(responses){if(data.status==='incomplete'||data.status==='failed')throw Error('incomplete');content=(data.output||[]).filter(item=>item.type==='message').flatMap(item=>item.content||[]).filter(block=>block.type==='output_text').map(block=>block.text).join('');}
+  else if(provider==='anthropic'){if(data.stop_reason==='max_tokens'||data.stop_reason==='refusal')throw Error('incomplete');content=(data.content||[]).filter(block=>block.type==='text').map(block=>block.text).join('');}
+  else content=data?.choices?.[0]?.message?.content;
+  if(typeof content!=='string'||!content.trim())throw Error('empty');return JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));
+ }
  catch{const error=Error('模型返回为空、非 JSON 或格式不符合候选 ID 协议');error.detail=content||raw;throw error;}
 }

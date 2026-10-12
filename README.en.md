@@ -1,4 +1,4 @@
-# Korean Web Annotator 1.0.3
+# Korean Web Annotator 1.1.0
 
 [简体中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
 
@@ -6,7 +6,7 @@ Read Korean web pages with Hanja and loanword-origin annotations. After importin
 
 ## Install
 
-1. Open [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) and download `Korean-Web-Annotator-v1.0.3.zip` from the 1.0.3 release's **Assets**.
+1. Open [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) and download `Korean-Web-Annotator-v1.1.0.zip` from the 1.1.0 release's **Assets**.
 2. Extract the ZIP. It includes the complete runtime; Python and the restoration script are not needed.
 3. In Chrome, open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`. On mobile, use Quetta's extension loading feature.
 
@@ -31,6 +31,7 @@ Transfer the resulting `python/backend/upstream/hanja_dict.db` to your phone and
 - Open a Korean web page and start whole-page annotation from the extension, toolbar, or context menu.
 - Select text to annotate or reannotate a selection. Use undo or restore to remove annotations.
 - Choose a copy mode: displayed body text, body plus annotations, original Korean (default), or annotations only.
+- API providers include OpenAI and Claude, with the latest model families verified against official documentation on 2026-10-12. Thinking controls follow each model’s capabilities.
 - **Model review**: during normal annotation, the model resolves ambiguities that the local algorithm cannot settle. Configure your provider, model, and API key, then enable review.
 - **Model reannotation (review selection)**: select text and explicitly ask the model to reconsider it. This also requires a configured model API, but the model-review switch can remain off.
 - Local-only annotation does not require a model API.

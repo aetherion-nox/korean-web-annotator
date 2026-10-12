@@ -7,7 +7,7 @@ import {engineConfig,engineStatus} from './local-engine.js';
 import {reviewTargets} from './choice-review.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
-const CONTENT_SCRIPT_VERSION='1.0.3';
+const CONTENT_SCRIPT_VERSION='1.1.0';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();

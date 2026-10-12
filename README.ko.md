@@ -1,4 +1,4 @@
-# 한국어 웹 주석 도구 1.0.3
+# 한국어 웹 주석 도구 1.1.0
 
 [简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · **한국어**
 
@@ -6,7 +6,7 @@
 
 ## 설치
 
-1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)에서 정식 버전 1.0.3의 **Assets**에 있는 `Korean-Web-Annotator-v1.0.3.zip`을 다운로드합니다.
+1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases)에서 정식 버전 1.1.0의 **Assets**에 있는 `Korean-Web-Annotator-v1.1.0.zip`을 다운로드합니다.
 2. ZIP의 압축을 풉니다. 전체 런타임이 포함되어 있어 Python 설치나 복원 스크립트 실행이 필요하지 않습니다.
 3. Chrome의 `chrome://extensions`에서 개발자 모드를 켜고, 압축 해제된 확장 프로그램 로드 기능으로 `manifest.json`이 있는 폴더를 선택합니다. 휴대폰에서는 Quetta의 확장 프로그램 로드 기능을 사용합니다.
 
@@ -31,6 +31,7 @@ python python/backend/upstream/scripts/import_dictionary.py "path/to/dictionary.
 - 한국어 웹 페이지를 열고 확장 프로그램, 도구 모음 또는 오른쪽 클릭 메뉴에서 전체 페이지 주석을 시작합니다.
 - 텍스트를 선택해 선택 영역에 주석을 달거나 다시 처리할 수 있습니다. 실행 취소 또는 복원 기능으로 주석을 제거할 수 있습니다.
 - 복사 방식은 표시된 본문, 본문과 주석, 원래 한국어(기본값), 위쪽 주석만 중에서 선택합니다.
+- OpenAI와 Claude를 지원하며 2026-10-12 공식 문서로 확인한 최신 모델을 포함합니다. 추론 설정은 각 모델의 지원 범위에 맞게 표시됩니다.
 - **모델 검토**: 일반 주석 작업에서 로컬 알고리즘이 해결하지 못한 중의성을 모델이 판단합니다. 제공 업체, 모델, API 키를 설정하고 검토를 켜세요.
 - **모델 재주석(선택 영역 재검토)**: 선택한 텍스트를 모델이 다시 판단하도록 직접 요청합니다. 이 기능도 모델 API 설정이 필요하지만, 검토 스위치를 켤 필요는 없습니다.
 - 로컬 알고리즘만 사용한 주석에는 모델 API가 필요하지 않습니다.

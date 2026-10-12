@@ -1,4 +1,4 @@
-# 韓国語ウェブ注釈ツール 1.0.3
+# 韓国語ウェブ注釈ツール 1.1.0
 
 [简体中文](README.md) · [English](README.en.md) · **日本語** · [한국어](README.ko.md)
 
@@ -6,7 +6,7 @@
 
 ## インストール
 
-1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) を開き、正式版 1.0.3 の **Assets** から `Korean-Web-Annotator-v1.0.3.zip` をダウンロードします。
+1. [Releases](https://github.com/aetherion-nox/korean-web-annotator/releases) を開き、正式版 1.1.0 の **Assets** から `Korean-Web-Annotator-v1.1.0.zip` をダウンロードします。
 2. ZIP を展開します。実行に必要なファイルをすべて含むため、Python のインストールや復元スクリプトの実行は不要です。
 3. Chrome の `chrome://extensions` でデベロッパーモードを有効にし、「パッケージ化されていない拡張機能を読み込む」から `manifest.json` があるフォルダーを選択します。スマートフォンでは Quetta の拡張機能読み込み機能を使用します。
 
@@ -31,6 +31,7 @@ python python/backend/upstream/scripts/import_dictionary.py "path/to/dictionary.
 - 韓国語のページを開き、拡張機能、ツールバー、右クリックメニューからページ全体の注釈を開始します。
 - テキストを選択すると、選択範囲の注釈や再注釈ができます。「取り消し」や「復元」で注釈を削除できます。
 - コピー方法は、表示中の本文、本文と注釈、元の韓国語（既定）、注釈のみから選べます。
+- OpenAI と Claude に対応し、2026-10-12 の公式ドキュメントで確認した最新モデルを収録しています。思考の切り替えと強度はモデルの対応範囲に合わせて表示されます。
 - **モデル審査**：通常の注釈でローカルアルゴリズムが解決できない曖昧さを、モデルで判断します。サービス、モデル、API キーを設定し、審査を有効にしてください。
 - **モデルによる再注釈（選択範囲の再審査）**：選択したテキストをモデルに再判断させます。こちらもモデル API の設定が必要ですが、「審査」を有効にする必要はありません。
 - ローカル処理のみならモデル API は不要です。
