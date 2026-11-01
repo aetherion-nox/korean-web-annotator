@@ -223,7 +223,11 @@ class ConverterService:
                 )
                 selected, status = self.disambiguation.select_best(scored)
 
-                if selected and selected.replacement and selected.is_reliable and status == 'converted':
+                converted=bool(selected and selected.replacement and selected.is_reliable and status == 'converted')
+                keep_competitor=self.disambiguation.has_keep_competitor(scored)
+                if converted or keep_competitor:
+                    selected=selected or scored[0]
+                    whole_status='converted' if converted else 'ambiguous' if any(c.replacement for c in scored) else 'kept'
                     cand_list = [
                         {
                             'entry_id': sc.entry_id,
@@ -251,12 +255,12 @@ class ConverterService:
                         start=span_start,
                         end=span_end,
                         original=span_text,
-                        display_text=selected.replacement,
-                        status='converted',
+                        display_text=selected.replacement if converted else span_text,
+                        status=whole_status,
                         matched_entry_id=selected.entry_id,
                         origin_raw=selected.origin_raw,
                         candidates=cand_list,
-                        selection_reason='whole_word_match',
+                        selection_reason='whole_word_match' if converted else 'whole_word_keep_competition',
                         origin=origin_obj,
                     ))
                     seg_id += 1

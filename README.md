@@ -1,59 +1,68 @@
-# 韩语网页标注器
+# 韩语网页标注器 1.1.13
+
+v1.1.13：加强 KEEP 拒选规则，允许候选缺失时保留原文；Kiwi 识别出的专名候选先审核，普通词仍保留原有本地规则。API 与手动模式共用策略；详见 [更新说明-v1.1.13.md](更新说明-v1.1.13.md)。
+
+v1.1.12：新增默认开启的“动态网页兼容：恢复已有标注”开关。正文重绘后按原文及上下文复用既有结果，恢复本身不重新请求模型；独立于停止自动分析设置，并支持撤销／还原。详见 [更新说明-v1.1.12.md](更新说明-v1.1.12.md)。
+
+v1.1.11：修复手动答案提交无回执或后台断连时按钮持续置灰。当前批次保留页面恢复数据，可在本页继续校验应用；文件读取增加超时解锁。详见 [更新说明-v1.1.11.md](更新说明-v1.1.11.md)。
+
+v1.1.10：手动审核面板支持导入 JSON/TXT 答案文件，读取后自动校验并应用当前批次，仍保留粘贴输入。详见 [更新说明-v1.1.10.md](更新说明-v1.1.10.md)。
+
+v1.1.9：新增“当前／128K／1M”每批上下文容量，API 与手动审核共用。大档位按去重输入、预计答案及余量分批，解除原有固定词数上限。详见 [更新说明-v1.1.9.md](更新说明-v1.1.9.md)。
+
+v1.1.8：新增默认关闭的“手动聊天审核”：复制或下载任务提示词给聊天模型，再把完整 JSON 粘贴回网页输入框应用；无需 API Key。可搭配全部候选审核。详见 [更新说明-v1.1.8.md](更新说明-v1.1.8.md)。
+
+v1.1.7：新增默认关闭的“全部交给大模型审核”开关。开启后，本地已确定的候选也由模型选义，允许 KEEP；请求失败或回答无效时保留韩文。仍需词典与 API 配置，请求量和等待时间可能增加。详见 [更新说明-v1.1.7.md](更新说明-v1.1.7.md)。
+
+v1.1.6：固有词义参与本地消歧，并完整传入 KEEP；已有词典无需重新导入。详见 [更新说明-v1.1.6.md](更新说明-v1.1.6.md)。
+
+v1.1.5：共享句子与候选释义池，减少模型请求中的结构性重复；逐词选义、流式标注及日志功能保留。详见 [更新说明-v1.1.5.md](更新说明-v1.1.5.md)。
+
+v1.1.4 新增“边完成边标注”开关与可下载的大模型请求日志，详见 [更新说明-v1.1.4.md](更新说明-v1.1.4.md)。
+
+v1.1.3 补充外来语＋汉字混种词片段处理，如 게임기。详见 [混种词修复-v1.1.3.md](混种词修复-v1.1.3.md)。
+
+本版新增 Qwen（阿里云百炼）适配，支持模型选择、思考开关、Qwen 3.8 强度档位和流式审核。配置方法见 [Qwen使用说明.md](Qwen使用说明.md)，官方依据与验证范围见 [docs/qwen-api.md](docs/qwen-api.md)。
 
 **简体中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-为韩语网页显示汉字词和外来语原词：汉字词正文显示汉字、上方保留谚文；外来语正文保留韩文、上方显示原词。
+为韩语网页标注汉字词和外来语原词，帮助阅读韩语。导入词典后即可在浏览器内使用，无需启动本地服务器；也可自行配置 API，启用大模型审核。
 
-导入词典后，插件在浏览器内完成基础标注。也可连接云端或兼容的本地大模型 API，根据上下文判断本地算法未能确定的词源或词义，或主动重审选中文字。大模型功能可选，基础标注无需 API。
+## 安装
 
-## 安装与更新
+1. 解压本次提供的完整安装包 `Korean-Web-Annotator-v1.1.11.zip`。
+2. 解压 ZIP。安装包包含完整运行时，无需安装 Python，也无需运行还原脚本。
+3. Chrome 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”，选择 `manifest.json` 所在文件夹。手机 Quetta 使用其扩展加载功能。
 
-1. 在 [Release](https://github.com/aetherion-nox/korean-web-annotator/releases/tag/v1.1.0) 的 **Assets** 下载 `Korean-Web-Annotator-v1.1.0.zip`，解压。
-2. Chrome 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”，选择 `manifest.json` 所在文件夹。手机 Quetta 使用其扩展加载功能。
-3. 更新时替换原插件文件，重新加载插件，并刷新网页。
+更新后重新加载插件，并刷新已打开的网页。
 
-请下载 Release 中的完整安装包，无需 Python。
+若下载的是 **Code → Download ZIP** 源码包，则需 Python 3.10 或以上，在解压后的文件夹中先运行 `python restore_distribution.py`，再加载插件。
 
 ## 导入词典
 
-1. 从同一 Release 的 **Assets** 下载 [hanja_dict.zip](https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.0/hanja_dict.zip)。
-2. **先解压**得到 `hanja_dict.db`。
-3. 打开“引擎 / API 设置”，选择 DB 文件，点击“导入词典”。
+从[韩国语基础词典官网](https://krdict.korean.go.kr/download/downloadPopup)下载 JSON 格式的词典 ZIP，在插件的“引擎 / API 设置”中导入，无需先解压。词典需自行下载。
 
-也可从[韩国语基础词典官网](https://krdict.korean.go.kr/download/downloadPopup)下载官方 JSON ZIP，直接导入，无需解压。两种方式任选一种。
+手机导入较慢时，可先在电脑上转换为 DB：
 
-## 日常使用
+```sh
+python python/backend/upstream/scripts/import_dictionary.py "你的词典.zip"
+```
 
-- 点击插件、网页工具条或右键菜单中的“标注整页”；也可选中文字后标注选区。
-- “撤销”取消上次标注，“还原”恢复原文。
-- “选择与复制文字时”可选择：当前正文、正文和标注、原韩语（默认）、只复制上方标注。
-- 勾选“本次忽略缓存，重新分析文本”，下次处理时不复用已有标注缓存。
-- 工具条可设为“选中文字时显示”或“始终显示”。同时开启“仅检测到谚文时显示工具条”时，选区模式仅在选中文字包含谚文或已标注的韩语词时显示。
+将生成的 `python/backend/upstream/hanja_dict.db` 传到手机，再在同一设置页导入。
 
-## 大模型 API（可选）
+## 使用
 
-内置以下服务商和模型，可在设置页直接选择：
+- 打开韩语网页，点击插件里的“标注整页”，或通过工具条、右键菜单开始标注。
+- 选中文字可进行选区标注或重新标注；需要恢复时使用“撤销”或“还原”。
+- 在“选择与复制文字时”选择复制方式：当前正文、正文和标注、原韩语（默认），或上方标注。
+- API 服务商支持 OpenAI 和 Claude；模型列表包含截至 2026-10-12 官方文档中的最新系列。思考开关和强度按模型能力显示，不能关闭思考的模型仅显示强度。
+- **手动聊天审核**：在设置页开启后，网页面板会显示完整任务提示词，可复制或下载 TXT，发给你选择的聊天模型，再把其完整 JSON 答案粘贴回面板。无需 API Key；仍需词典。较大任务按批处理；开启“边完成边标注”即可逐批显示。刷新或离开网页会取消尚未完成的任务。
+- **审核**：普通标注时，让大模型处理本地算法未能解决的歧义。需要配置服务商、模型和 API Key，并开启审核。
+- **模型重标（模型重审选区）**：选中文字后，主动交给大模型重新判断。同样需要配置大模型 API，但无需开启“审核”。
+- 只使用本地算法标注时，无需大模型 API。
 
-| 服务商 | 模型 |
-| --- | --- |
-| OpenAI | GPT-6.1 Sol / GPT-6 Astra / GPT-6 Luna |
-| Claude (Anthropic) | Sonnet 5.5 / Opus 5.5 / Haiku 5.5 / Fable 5.1 |
-| GLM (Z.AI) | GLM-5.3 / GLM-5.3-Flash / GLM-5.3-FlashX |
-| Xiaomi MiMo | MiMo-V2.6-Flash / V2.6-Pro / V2.6-Pro-Ultraspeed / V2.5 / V2.5-Pro |
-| DeepSeek | deepseek-flash / deepseek-v4-pro |
-| 自定义 | 手动填写支持 OpenAI Chat Completions 格式的接口地址、模型名和 API Key |
+## 致谢
 
-选择服务商和模型、填写 API Key，点击“保存设置”，再用“测试 API”检查。思考开关和强度按模型能力显示；自定义模型使用服务端默认思考设置。兼容服务需填写完整接口地址，通常以 `/chat/completions` 结尾。
-
-- **审核**：在“引擎 / API 设置”中开启后，大模型处理普通标注中本地算法未解决的歧义；开关切换后自动保存。
-- **模型重审选区**：主动让模型重新判断选中文字，需要 API，但不必开启“审核”。
-
-使用大模型功能时，相关文本和词典候选会发送到所配置的 API；云端调用费用由对应服务商收取。
-
-## 致谢与词典来源
-
-- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script)：直接使用并适配了其韩语汉字转换与词典处理代码。
-- [Furiganator（Chrome 商店）](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa)：为日语网页添加假名注音的扩展，参考了其标注显示与文字选择方式。
-- 感谢 Kiwi、Pyodide 和韩国国立国语院。
-
-预生成 DB 来自国立国语院《韩国语基础词典》2026-09-19 官方快照，为非官方转换版；文字数据按 [CC BY-SA 2.0 KR](https://creativecommons.org/licenses/by-sa/2.0/kr/) 发布。媒体链接的许可另行适用。
+- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script)：本插件直接使用并适配了该项目的韩语汉字转换及词典处理代码，感谢作者的开源贡献。
+- [Furiganator（Chrome 商店）](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa)：为日语网页添加假名注音的扩展。本插件的标注显示和文字选择方式参考了它。
+- 感谢 Kiwi、Pyodide 和韩国国立国语院提供的工具与词典资源。

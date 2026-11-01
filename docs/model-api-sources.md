@@ -26,3 +26,5 @@ Sources:
 - https://platform.claude.com/docs/en/api/messages/create
 
 Validation uses mocked HTTP responses to verify request schemas, authentication, parsing, and UI capabilities. No paid OpenAI or Claude request was made.
+
+Qwen added in 1.1.2, verified separately on 2026-10-27. See [qwen-api.md](qwen-api.md) for model-specific capabilities, official sources and validation limits.

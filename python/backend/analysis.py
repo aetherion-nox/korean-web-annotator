@@ -1,9 +1,10 @@
-"""Protocol adapter around the unmodified Arrow36 converter decisions."""
+"""Protocol adapter around Arrow36 conversion with native-reading safeguards."""
 import asyncio
 import re
 from pathlib import Path
 from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
+from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
 ensure_environment()
 from app.services.converter import ConverterService
 from app.services.tokenizer import TokenizerService
@@ -11,12 +12,33 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-author-parity-2'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-proper-nouns-6'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
 def safe_replacement(value):
     return isinstance(value,str) and bool(HANJA.search(value)) and not any(c in value for c in '<>\x00\r\n') and not any(ord(c)<32 for c in value)
+
+def restore_mixed_display(surface, replacement, origin):
+    """Recover omitted native anchors only from an explicit full dictionary origin.
+
+    A short Hanja-only origin never proves which source syllables to keep.
+    Do not synthesize missing letters or alter the original converter's ranking.
+    """
+    if not isinstance(origin, str) or len(origin) != len(surface):
+        return replacement
+    if not isinstance(replacement, str) or not HANJA.fullmatch(replacement[:1]) or not all(HANJA.fullmatch(c) for c in replacement):
+        return replacement
+    if not any('가' <= c <= '힣' for c in origin):
+        return replacement
+    if ''.join(c for c in origin if HANJA.fullmatch(c)) != replacement:
+        return replacement
+    for source, target in zip(surface, origin):
+        if not ('가' <= source <= '힣'):
+            return replacement
+        if not HANJA.fullmatch(target) and target != source:
+            return replacement
+    return origin
 
 class Engine:
     """Async shared engine. Inject tokenizer/lookup_fn for dictionary-free tests."""
@@ -65,29 +87,38 @@ class Engine:
         review_all=bool(modes.get('reviewAll',False))
         # The original converter owns tokenization, lookup forms, scoring,
         # whole-word precedence and certainty. Do not rescan skipped compounds
-        # or add lexical lookups: only its actual ambiguous segments need review.
+        # for general conversion. Exact foreign/Hanja mixed entries have a
+        # separate whole-entry segmentation path below, before source projection.
         converter=ConverterService(self.tokenizer,self.disambiguation)
         segments,_=await converter.convert(text,self.lookup_fn)
+        tokens=await self.tokens(text)
+        proper_ranges=proper_noun_ranges(tokens)
         upstream_counts={f'upstream_{status}':sum(s.status==status for s in segments) for status in ('converted','ambiguous','no_match','kept')}
-        annotations=[]; reviews=[]; occupied=[]; rejected=0
+        mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
+        if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):
+            from backend.mixed_origins import collect_mixed
+            mixed=await collect_mixed(self,text,tokens,modes)
+        annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
             if s.status not in ('converted','ambiguous'):continue
+            if any(s.start<b and a<s.end for a,b in mixed['ranges']):continue
             if not valid(s.start,s.end,s.original):rejected+=1;continue
-            if s.status=='converted' and not review_all:
+            if s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
-                if modes.get('hanja',True):annotations.append(dict(start=to_utf16(text,s.start),end=to_utf16(text,s.end),surface=s.original,type='hanja',replacement=s.display_text))
+                if modes.get('hanja',True):annotations.append(dict(start=to_utf16(text,s.start),end=to_utf16(text,s.end),surface=s.original,type='hanja',replacement=restore_mixed_display(s.original,s.display_text,s.origin_raw)))
             else:reviews.append((s.start,s.end,s.original,s.candidates))
         # Only review needs tokens to reproduce the original display builder.
-        review_tokens=await self.tokens(text) if reviews else []
+        review_tokens=tokens if reviews else []
+        definitions_by_entry=await self.dictionary.get_definitions_for_entries([c.get('entry_id') for _,_,_,candidates in reviews for c in candidates]) if self.dictionary is not None else {}
         choices=[]
         for start,end,surface,candidates in reviews:
             if not valid(start,end,surface):rejected+=1;continue
             if any(start<b and a<end for a,b in occupied):continue
             for c in candidates:
                 replacement=c.get('replacement')
-                if (not review_all and not c.get('is_reliable')) or not safe_replacement(replacement):continue
+                if (not review_all and not overlaps_proper_noun(start,end,proper_ranges) and not c.get('is_reliable')) or not safe_replacement(replacement):continue
                 # Preserve inflected Korean suffixes using unchanged upstream display builder.
                 token=next((t for t in review_tokens if t.start==start and t.start+t.length==end),None)
                 if token is not None:
@@ -95,6 +126,7 @@ class Engine:
                     score=CandidateScore(**{k:c.get(k) for k in CandidateScore.__dataclass_fields__ if k in c})
                     replacement=converter._build_display_text(token,score)
                     if token.is_verb_stem and token.form.endswith('하') and len(c['replacement'])<len(surface): replacement=c['replacement']+surface[len(c['replacement']):]
+                replacement=restore_mixed_display(surface,replacement,c.get('origin_raw'))
                 if safe_replacement(replacement):choices.append((start,end,replacement,c.get('entry_id')))
         components=[]
         for choice in sorted(set(choices)):
@@ -105,21 +137,20 @@ class Engine:
             for number,component in enumerate(components):
                 start=min(x[0] for x in component);end=max(x[1] for x in component)
                 options=[dict(choice_id='KEEP',type='keep',replacement=text[start:end],entry_id=None,definitions=[])]
-                if review_all and self.dictionary is not None:
+                if self.dictionary is not None:
                     # Native/non-Hanja dictionary readings explain KEEP without a local recommendation.
                     for a,b,_,candidates in reviews:
                         if a>=end or b<=start:continue
                         for candidate in candidates:
                             if safe_replacement(candidate.get('replacement')):continue
+                            if not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
                             entry=candidate.get('entry_id')
                             if entry is None:continue
-                            detail=await self.dictionary.get_entry_detail(entry)
-                            options[0]['definitions'].extend(s['definition'] for s in (detail or {}).get('senses',[]) if s.get('definition'))
+                            options[0]['definitions'].extend(definitions_by_entry.get(entry,[]))
                 # Each fixed option changes one candidate span and preserves the rest of the connected region.
                 for n,(a,b,replacement,entry) in enumerate(component):
                     if self.dictionary is not None:
-                        detail=await self.dictionary.get_entry_detail(entry)
-                        definitions=[s['definition'] for s in (detail or {}).get('senses',[]) if s.get('definition')]
+                        definitions=definitions_by_entry.get(entry,[])
                     else:
                         definitions=[]
                     options.append(dict(choice_id=f'c{n}',type='hanja',replacement=text[start:a]+replacement+text[b:end],entry_id=entry,definitions=definitions))
@@ -127,7 +158,6 @@ class Engine:
         skipped_mixed=0
         if modes.get('loanword',False):
             from backend.loanwords import collect, merge_targets
-            tokens=await self.tokens(text)
             entries=await self.lookup_entries([t.form for t in tokens])
             # Only enabled Hanja annotations occupy ranges; competing origins still
             # participate through all-entry lookup when Hanja display is disabled.
@@ -146,7 +176,12 @@ class Engine:
                         detail=await self.dictionary.get_entry_detail(option['entry_id'])
                         option['definitions']=[s['definition'] for s in (detail or {}).get('senses',[]) if s.get('definition')]
             targets=merge_targets(text,targets+loan['targets'])
-        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),structural_rejections=rejected,skipped_mixed=skipped_mixed,**upstream_counts))
+        targets=sorted(targets+mixed['targets'],key=lambda t:(t['start'],t['end']))
+        proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
+        for i,target in enumerate(targets):
+            target['target_id']=f't{i}'
+            if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
+        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
 
 _default_engine=None
 async def analyze(text: str,modes: dict) -> dict:

@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.0';
+  const VERSION = '1.1.13';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -19,6 +19,149 @@
   const seenSources = new Set();
   const history = [];
   const diagnostics = [];
+  const recoveryBlocks = new Set();
+  const ownDomChanges = new WeakSet();
+  const BLOCK_TAGS = 'p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption';
+  let recoveryObserver = null;
+  let recoveryTimer = null;
+  let recoveryPage = null;
+
+  // Source coordinates always count the original Hangul, never the displayed
+  // Hanja or rt. Inline elements are retained; native ruby is never rewritten.
+  function sourceOf(element) {
+    let text='';const runs=[];
+    function visit(node) {
+      if(node.nodeType===3){runs.push({node,start:text.length,end:text.length+node.data.length});text+=node.data;return;}
+      if(node.nodeType!==1)return;
+      if(node.matches(OWN_RUBY)){const value=node.dataset.kraOriginal||'';runs.push({node,start:text.length,end:text.length+value.length,owned:true});text+=value;return;}
+      if(node.matches('script,style,noscript,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review'))return;
+      if(node.matches('ruby')){text+=node.textContent;return;}
+      for(const child of node.childNodes)visit(child);
+    }
+    if(element)visit(element);return {text,runs};
+  }
+
+  function pageIdentity() {
+    return JSON.stringify([location.href,document.querySelector('link[rel="canonical"]')?.href||'',sourceOf(document.querySelector('h1')).text]);
+  }
+
+  function resetRecovery() {
+    recoveryBlocks.clear();recoveryPage=null;
+    recoveryObserver?.disconnect();recoveryObserver=null;
+    clearTimeout(recoveryTimer);recoveryTimer=null;
+  }
+
+  function recoveryContext(block) {
+    return JSON.stringify([sourceOf(block.previousElementSibling).text,sourceOf(block.nextElementSibling).text]);
+  }
+
+  function recoveryAnchor(node) {
+    const element=node.parentElement?.closest(BLOCK_TAGS)||node.parentElement;
+    if(!element||element.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review'))return null;
+    const identity=pageIdentity();if(recoveryPage!==null&&identity!==recoveryPage)resetRecovery();recoveryPage=identity;
+    const source=sourceOf(element),run=source.runs.find(r=>r.node===node);if(!run)return null;
+    const scope=element.closest('[itemprop~="articleBody"],article,main')||document.body;
+    const selector=scope.matches('[itemprop~="articleBody"]')?'[itemprop~="articleBody"]':scope.tagName.toLowerCase();
+    const scopeIndex=Array.from(document.querySelectorAll(selector)).indexOf(scope),context=recoveryContext(element);
+    let block=Array.from(recoveryBlocks).find(b=>b.element===element&&b.text===source.text&&b.context===context);
+    if(!block){
+      const previous=Array.from(recoveryBlocks).filter(b=>!b.element.isConnected&&b.text===source.text&&b.context===context&&b.tag===element.tagName.toLowerCase()&&b.selector===selector&&b.scopeIndex===scopeIndex);
+      if(previous.length===1){block=previous[0];block.element=element;block.scope=scope;}
+      else if(previous.length>1)for(const stale of previous)stale.annotations.clear();
+    }
+    if(!block){
+      if(recoveryBlocks.size>=MAX_ENTRIES)return null;
+      block={element,text:source.text,context,tag:element.tagName.toLowerCase(),scope,selector,scopeIndex,annotations:new Map()};recoveryBlocks.add(block);
+    }
+    return {block,start:run.start};
+  }
+
+  function rememberRecovery(entry,operation) {
+    const anchor=entry.recoveryAnchor;
+    if(!anchor||entry.hasPreview||(entry.isRuby&&!entry.modelReviewed&&!entry.localAnnotations?.length))return;
+    const {block,start}=anchor;
+    if(!recoveryBlocks.has(block))return;
+    const overlaps=a=>entry.selected.some(r=>a.start<start+r.end&&a.end>start+r.start);
+    if(!entry.annotations.length&&!Array.from(block.annotations.values()).some(overlaps))return;
+    operation.recoveryBefore||=new Map();
+    if(!operation.recoveryBefore.has(block))operation.recoveryBefore.set(block,new Map(block.annotations));
+    for(const [key,a]of block.annotations)if(overlaps(a))block.annotations.delete(key);
+    for(const a of entry.annotations){const item={...a,start:start+a.start,end:start+a.end,operation};block.annotations.set(`${item.start}:${item.end}`,item);}
+    configureRecovery();
+  }
+
+  function isOwnMutation(record) {
+    if(record.type!=='childList')return false;
+    const nodes=[...record.addedNodes,...record.removedNodes];
+    return nodes.length>0&&nodes.every(node=>ownDomChanges.has(node));
+  }
+
+  function configureRecovery() {
+    if(uiSettings.restoreExistingAnnotations===false||!Array.from(recoveryBlocks).some(b=>b.annotations.size)){
+      recoveryObserver?.disconnect();recoveryObserver=null;clearTimeout(recoveryTimer);recoveryTimer=null;return;
+    }
+    if(!recoveryObserver){
+      recoveryObserver=new MutationObserver(records=>{
+        if(records.some(record=>!isOwnMutation(record)&&!(record.target.nodeType===1?record.target:record.target.parentElement)?.closest('ruby,script,style,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review')))scheduleRecovery();
+      });
+      recoveryObserver.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
+    }
+    scheduleRecovery();
+  }
+
+  function scheduleRecovery() {
+    if(uiSettings.restoreExistingAnnotations===false||!recoveryBlocks.size||recoveryTimer!==null)return;
+    recoveryTimer=setTimeout(()=>{recoveryTimer=null;restoreKnownAnnotations();},150);
+  }
+
+  function restoreKnownAnnotations() {
+    if(uiSettings.restoreExistingAnnotations===false)return;
+    if(recoveryPage!==pageIdentity()){resetRecovery();return;}
+    // Streams retain ownership of their original nodes. Rebind only once the
+    // task has committed its final choices (including KEEP or failed previews).
+    if(currentTask)return;
+    const candidateIndexes=new Map();
+    for(const block of recoveryBlocks){
+      if(!block.annotations.size)continue;
+      let element=block.element;
+      if(element.isConnected&&sourceOf(element).text!==block.text)continue;
+      if(!element.isConnected){
+        const competitors=Array.from(recoveryBlocks).filter(b=>!b.element.isConnected&&b.text===block.text&&b.context===block.context&&b.tag===block.tag&&b.selector===block.selector&&b.scopeIndex===block.scopeIndex);
+        if(competitors.length!==1)continue;
+        const scope=block.scope.isConnected?block.scope:document.querySelectorAll(block.selector)[block.scopeIndex];
+        if(!scope)continue;
+        let byTag=candidateIndexes.get(scope);if(!byTag){byTag=new Map();candidateIndexes.set(scope,byTag);}
+        if(!byTag.has(block.tag)){
+          const index=new Map();for(const candidate of scope.querySelectorAll(block.tag)){const key=sourceOf(candidate).text;const list=index.get(key)||[];list.push(candidate);index.set(key,list);}byTag.set(block.tag,index);
+        }
+        const matches=(byTag.get(block.tag).get(block.text)||[]).filter(e=>recoveryContext(e)===block.context&&!Array.from(recoveryBlocks).some(other=>other!==block&&other.element===e));
+        if(matches.length!==1)continue;
+        element=matches[0];block.element=element;block.scope=scope;
+      }
+      if(recoveryContext(element)!==block.context)continue;
+      const source=sourceOf(element);
+      const pending=[];
+      for(const a of block.annotations.values()){
+        if(!(a.type==='hanja'?(uiSettings.hanjaMode??true):(uiSettings.loanwordMode??true)))continue;
+        const run=source.runs.find(r=>!r.owned&&r.start<=a.start&&r.end>=a.end);
+        if(!run||source.text.slice(a.start,a.end)!==a.surface||run.node.parentElement?.closest('ruby,input,textarea,select,[contenteditable="true"]'))continue;
+        pending.push({...a,node:run.node,offset:a.start-run.start});
+      }
+      // Work backwards so each surviving prefix keeps its source offsets.
+      const prefixes=new Map();
+      for(const a of pending.sort((a,b)=>b.start-a.start)){
+        const node=prefixes.get(a.node)||a.node;if(!node.isConnected||node.data.slice(a.offset,a.offset+a.surface.length)!==a.surface)continue;
+        const prefix=document.createTextNode(node.data.slice(0,a.offset)),suffix=document.createTextNode(node.data.slice(a.offset+a.surface.length));
+        const range=document.createRange();range.selectNode(node);
+        const ruby=range.createContextualFragment(conversionHTML({text:a.surface,annotations:[{...a,start:0,end:a.surface.length}]})).firstChild;
+        const parent=node.parentNode;for(const n of [node,prefix,ruby,suffix])ownDomChanges.add(n);
+        node.before(prefix,ruby,suffix);node.remove();prefixes.set(a.node,prefix);
+        const original=document.createTextNode(a.surface);
+        for(let i=a.operation.length-1;i>=0;i--)if(a.operation[i].inserted.every(n=>!n.isConnected))a.operation.splice(i,1);
+        a.operation.push({parent,original,originalSnapshot:original.cloneNode(true),inserted:[ruby],snapshots:[ruby.cloneNode(true)]});
+      }
+    }
+  }
 
   function captureSelection() {
     const selection = document.getSelection();
@@ -50,6 +193,7 @@
     document.documentElement.setAttribute('data-kra-copy-mode',uiSettings.copyMode);
     refreshToolbar();
     configureAutomaticAnnotation();
+    configureRecovery();
   }
 
   function selectionHasHangul(ranges) {
@@ -101,8 +245,9 @@
     // Optional NEW text only. Previously processed source is never repaint-restored.
     automaticObserver=new MutationObserver(records=>{
       const relevant=records.some(record=>{
+        if(isOwnMutation(record))return false;
         const parent=record.target.nodeType===1?record.target:record.target.parentElement;
-        if(parent?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,script,style'))return false;
+        if(parent?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,script,style'))return false;
         const nodes=record.type==='characterData'?[record.target]:Array.from(record.addedNodes);
         return nodes.some(node=>!node.matches?.(OWN_RUBY)&&!node.querySelector?.(OWN_RUBY)&&/[가-힣]/u.test(node.textContent||''));
       });
@@ -166,31 +311,38 @@
 
   // Furiganator's TreeWalker -> conversion Map -> single fragment insertion pass.
   // Korean rt contains Hangul, so exclude the entire ruby subtree on later runs.
-  function collectTextNodes(ranges=null, includeOwned=false, automatic=false) {
+  function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false) {
     const entries = new Map();
     if (!document.body) return entries;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         if (!/[가-힣]/u.test(node.data) || !/\S/u.test(node.data)) return NodeFilter.FILTER_REJECT;
         if (['TEXTAREA', 'RUBY', 'RT', 'INPUT', 'SCRIPT', 'NOSCRIPT', 'SELECT', 'OPTION', 'STYLE'].includes(node.parentNode?.tagName)) return NodeFilter.FILTER_REJECT;
-        if (node.parentElement?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics')) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review')) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     });
     let node;
     while ((node = walker.nextNode()) && entries.size < MAX_ENTRIES) {
       const selected=selectedIntervals(node,node.data,ranges,false);
-      if(!selected.length||automatic&&seenSources.has(node.data))continue;
-      entries.set(node, { node, text: node.data, annotations: [], selected, id: String(entries.size) });
+      if(!selected.length||automatic&&(seenSources.has(node.data)||isKnownRecoverySource(node)))continue;
+      entries.set(node, { node, text: node.data, annotations: [], selected, recoveryAnchor:trackRecovery?recoveryAnchor(node):null, id: String(entries.size) });
     }
     if(includeOwned)for(const node of document.querySelectorAll(OWN_RUBY)){
       if(entries.size>=MAX_ENTRIES)break;
       const text=node.dataset.kraOriginal||'';
       const selected=selectedIntervals(node,text,ranges,true);
       if(!text||!selected.length)continue;
-      entries.set(node,{node,text,annotations:[],selected,isRuby:true,originalHTML:node.innerHTML,id:String(entries.size)});
+      entries.set(node,{node,text,annotations:[],selected,recoveryAnchor:trackRecovery?recoveryAnchor(node):null,isRuby:true,originalHTML:node.innerHTML,originalOuterHTML:node.outerHTML,id:String(entries.size)});
     }
     return entries;
+  }
+
+  function isKnownRecoverySource(node) {
+    if(uiSettings.restoreExistingAnnotations===false||recoveryPage!==pageIdentity())return false;
+    const element=node.parentElement?.closest(BLOCK_TAGS)||node.parentElement;
+    const block=Array.from(recoveryBlocks).find(b=>b.element===element&&b.annotations.size);
+    return Boolean(block&&sourceOf(element).text===block.text&&recoveryContext(element)===block.context);
   }
 
   function escapeHTML(value) {
@@ -210,22 +362,34 @@
     return value + escapeHTML(entry.text.slice(cursor));
   }
 
-  function insertConversions(entries) {
-    const operation=[];
+  function insertConversions(entries, operation) {
     const range = document.createRange();
-    let count = 0;
     for (const [node, entry] of entries) {
-      if ((!entry.annotations.length&&!entry.isRuby) || !node.isConnected || (entry.isRuby?node.innerHTML!==entry.originalHTML:node.data!==entry.text)) continue;
-      range.selectNode(node.parentNode);
-      const fragment = range.createContextualFragment(conversionHTML(entry));
-      count += fragment.querySelectorAll(OWN_RUBY).length;
-      const parent=node.parentNode, inserted=Array.from(fragment.childNodes);
-      operation.push({parent,original:node,originalSnapshot:node.cloneNode(true),inserted,snapshots:inserted.map(n=>n.cloneNode(true))});
-      node.parentNode.replaceChild(fragment, node);
+      rememberRecovery(entry,operation);
+      if (entry.invalidated || (!entry.annotations.length && !entry.renderRecord && !(entry.isRuby && entry.modelReviewed))) continue;
+      const html=entry.isRuby&&!entry.modelReviewed&&!entry.localAnnotations?.length?entry.originalOuterHTML:conversionHTML(entry);
+      if(entry.renderHTML===html)continue;
+      let record=entry.renderRecord;
+      if(record){
+        // Only replace the exact contiguous fragment this operation inserted.
+        // A site's own updates always win over late model responses.
+        if(!record.inserted.every((n,i)=>n.parentNode===record.parent&&n.isEqualNode(record.snapshots[i])&&(i===0||record.inserted[i-1].nextSibling===n))){entry.invalidated=true;continue;}
+      }else{
+        if(!node.isConnected || (entry.isRuby?node.outerHTML!==entry.originalOuterHTML:node.data!==entry.text)){entry.invalidated=true;continue;}
+        record={parent:node.parentNode,original:node,originalSnapshot:node.cloneNode(true),inserted:[node]};
+      }
+      range.selectNode(record.parent);
+      const fragment=range.createContextualFragment(html),inserted=Array.from(fragment.childNodes);
+      entry.renderCount=fragment.querySelectorAll(OWN_RUBY).length;
+      for(const n of [...inserted,...record.inserted])ownDomChanges.add(n);
+      record.inserted[0].before(fragment);
+      for(const old of record.inserted)old.remove();
+      record.inserted=inserted;record.snapshots=inserted.map(n=>n.cloneNode(true));
+      if(!entry.renderRecord){entry.renderRecord=record;operation.push(record);}
+      entry.renderHTML=html;
       seenSources.add(entry.text);
     }
-    if(operation.length)history.push(operation);
-    return count;
+    return [...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
   }
 
   function contextState() {
@@ -247,17 +411,143 @@
     toolbar.className = 'kra-mobile-selection-bar';
     toolbar.setAttribute('role', 'toolbar');
     toolbar.setAttribute('aria-label', '韩语网页标注');
-    toolbar.innerHTML = '<div class="kra-task-status"><span class="kra-task-label" role="status">准备标注</span><progress class="kra-task-progress" max="100" value="0"></progress></div><div class="kra-mobile-actions"><button class="kra-mobile-page" type="button">标注整页</button><button class="kra-mobile-primary" type="button">重新标注选区</button><button class="kra-mobile-review" type="button">模型重审选区</button><button class="kra-mobile-undo" type="button">撤销</button><button class="kra-diagnostic-button" type="button">诊断</button><button class="kra-mobile-restore" type="button">还原</button><button class="kra-mobile-close" type="button" aria-label="关闭">×</button></div>';
+    toolbar.innerHTML = '<div class="kra-task-status"><span class="kra-task-label" role="status">准备标注</span><progress class="kra-task-progress" max="100" value="0"></progress></div><div class="kra-mobile-actions"><button class="kra-mobile-page" type="button">标注整页</button><button class="kra-mobile-primary" type="button">重新标注选区</button><button class="kra-mobile-review" type="button">模型重审选区</button><button class="kra-manual-open" type="button" hidden>手动审核</button><button class="kra-mobile-undo" type="button">撤销</button><button class="kra-diagnostic-button" type="button">诊断</button><button class="kra-mobile-restore" type="button">还原</button><button class="kra-mobile-close" type="button" aria-label="关闭">×</button></div>';
     toolbar.querySelector('.kra-mobile-page').addEventListener('click', () => startAnnotation({ modes: { hanja: uiSettings.hanjaMode ?? true, loanword: uiSettings.loanwordMode ?? true } }));
     for(const button of toolbar.querySelectorAll('button'))button.addEventListener('pointerdown',event=>event.preventDefault());
     toolbar.querySelector('.kra-mobile-primary').addEventListener('click',()=>startSelection(false));
     toolbar.querySelector('.kra-mobile-review').addEventListener('click',()=>startSelection(true));
     toolbar.querySelector('.kra-mobile-undo').addEventListener('click',undoLast);
     toolbar.querySelector('.kra-diagnostic-button').addEventListener('click',toggleDiagnostics);
+    toolbar.querySelector('.kra-manual-open').addEventListener('click',()=>{const panel=document.querySelector('.kra-manual-review');if(panel){panel.hidden=!panel.hidden;const reopen=document.querySelector('.kra-manual-reopen');if(reopen)reopen.hidden=!panel.hidden;}});
     toolbar.querySelector('.kra-mobile-restore').addEventListener('click', restorePage);
     toolbar.querySelector('.kra-mobile-close').addEventListener('click', () => { toolbarDismissed = true; toolbar.hidden = true; });
     document.body.append(toolbar);
     return toolbar;
+  }
+
+  function manualPanel(){
+    let panel=document.querySelector('.kra-manual-review');if(panel)return panel;
+    panel=document.createElement('section');panel.className='kra-manual-review';panel.setAttribute('aria-label','手动聊天审核');
+    panel.innerHTML='<div class="kra-manual-heading"><strong>手动聊天审核</strong><button type="button" class="kra-manual-hide">收起</button></div><p class="kra-manual-summary"></p><p>① 复制提示词给聊天模型。② 粘贴完整 JSON 或导入 JSON/TXT 答案文件。等待期间请保留本网页。</p><label>发给模型的完整内容<textarea class="kra-manual-prompt" readonly spellcheck="false"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-copy">复制提示词</button><button type="button" class="kra-manual-download">下载提示词 TXT</button></div><label>粘贴模型返回的完整 JSON<textarea class="kra-manual-response" spellcheck="false" placeholder="粘贴 JSON 或完整的 json 代码块"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-import">导入 JSON／TXT 答案</button><input class="kra-manual-file" type="file" accept=".json,.txt,application/json,text/plain" aria-label="导入 JSON 或 TXT 答案文件" hidden><button type="button" class="kra-manual-apply">校验并应用本批结果</button><button type="button" class="kra-manual-cancel">取消本次任务</button></div><p class="kra-manual-status" role="status" aria-live="polite"></p>';
+    const note=message=>{panel.querySelector('.kra-manual-status').textContent=message;};
+    const reopen=document.createElement('button');reopen.type='button';reopen.className='kra-manual-reopen';reopen.textContent='打开手动审核';reopen.hidden=true;
+    reopen.onclick=()=>{panel.hidden=false;reopen.hidden=true;};
+    panel.querySelector('.kra-manual-hide').onclick=()=>{panel.hidden=true;reopen.hidden=false;};
+    panel.querySelector('.kra-manual-copy').onclick=async event=>{
+      if(!event.isTrusted)return;
+      const prompt=panel.querySelector('.kra-manual-prompt');
+      const copied=await send({type:'KRA_COPY_TEXT',text:prompt.value});
+      if(copied?.ok){note('已复制完整提示词。可粘贴到大模型聊天框。');return;}
+      try{await navigator.clipboard.writeText(prompt.value);note('已复制完整提示词。可粘贴到大模型聊天框。');}
+      catch{prompt.focus();prompt.select();let ok=false;try{ok=document.execCommand('copy');}catch{}note(ok?'已复制完整提示词。可粘贴到大模型聊天框。':'复制失败，已选中文本；可用系统复制或下载 TXT。');}
+    };
+    panel.querySelector('.kra-manual-download').onclick=()=>{
+      const text=panel.querySelector('.kra-manual-prompt').value,url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');
+      a.href=url;a.download=`Korean-Web-Annotator-manual-${panel.dataset.requestId||'prompt'}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);note('提示词已导出为 TXT。');
+    };
+    const submitAnswer=()=>{
+      const task=currentTask;if(!task||task.finished||!task.manualRequest||panel.dataset.operationId!==task.operationId)return;
+      if(task.manualLocalOnly){
+        try{applyManualRecovery(task,panel.querySelector('.kra-manual-response').value);}catch(error){note(error.message);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;}return;
+      }
+      panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;note('正在校验本批结果…');
+      watchManualReply(task);
+      try{task.port.postMessage({type:'MANUAL_REVIEW_RESPONSE',operationId:task.operationId,requestId:task.manualRequest,text:panel.querySelector('.kra-manual-response').value});}
+      catch{clearInterval(task.keepalive);if(!recoverManualConnection(task,'提交连接已断开。')){clearTimeout(task.manualTimer);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;note('标注连接已断开；答案已保留，请下载保存。');}}
+    };
+    panel.querySelector('.kra-manual-apply').onclick=submitAnswer;
+    let fileReadSequence=0;
+    const fileInput=panel.querySelector('.kra-manual-file'),importButton=panel.querySelector('.kra-manual-import');
+    importButton.onclick=()=>fileInput.click();
+    fileInput.onchange=async()=>{
+      const file=fileInput.files?.[0];fileInput.value='';
+      const task=currentTask,requestId=task?.manualRequest,sequence=++fileReadSequence;
+      if(!file||!task||task.finished||!requestId||panel.dataset.operationId!==task.operationId)return;
+      const stillCurrent=()=>sequence===fileReadSequence&&currentTask===task&&!task.finished&&task.manualRequest===requestId&&panel.dataset.requestId===requestId;
+      importButton.disabled=true;panel.querySelector('.kra-manual-apply').disabled=true;note(`正在读取 ${file.name}…`);
+      try{
+        if(!/\.(json|txt)$/i.test(file.name))throw Error('请选择 JSON 或 TXT 答案文件。');
+        if(file.size>5*1024*1024)throw Error('答案文件超过 5 MiB，请仅导入当前批次的结果。');
+        let readTimer;let text;
+        try{text=await Promise.race([file.text(),new Promise((_,reject)=>{readTimer=setTimeout(()=>reject(Error('读取文件超时，请重新导入或粘贴答案。')),15000);})]);}finally{clearTimeout(readTimer);}
+        if(!stillCurrent())return;
+        panel.querySelector('.kra-manual-response').value=text;submitAnswer();
+      }catch(error){if(stillCurrent()){importButton.disabled=false;panel.querySelector('.kra-manual-apply').disabled=false;note(`导入失败：${error.message||error}`);}}
+    };
+    panel.querySelector('.kra-manual-cancel').onclick=()=>{cancelTask();status('已取消手动审核',0);};
+    document.body.append(panel,reopen);return panel;
+  }
+
+  function recoverManualConnection(task,reason){
+    const backup=task.manualBackup;
+    if(task.finished||currentTask!==task||!backup?.bindings?.length)return false;
+    clearTimeout(task.manualTimer);
+    task.manualLocalOnly=true;task.manualRequest=backup.requestId;
+    const panel=document.querySelector('.kra-manual-review');
+    panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+    panel.querySelector('.kra-manual-status').textContent=reason+' 当前批次数据与答案仍保留在本页，可继续粘贴或导入并校验应用；后续批次需重新开始。';
+    status('当前批次可在本页恢复并应用');return true;
+  }
+
+  function watchManualReply(task){
+    clearTimeout(task.manualTimer);const requestId=task.manualBackup?.requestId;
+    task.manualTimer=setTimeout(()=>{if(!task.finished&&currentTask===task&&task.manualBackup?.requestId===requestId)recoverManualConnection(task,'后台超过 10 秒未完成确认。');},10000);
+  }
+
+  function applyManualRecovery(task,text){
+    const backup=task.manualBackup;
+    if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
+    if(typeof text!=='string'||text.length>5*1024*1024)throw Error('请提供不超过 5 MiB 的完整 JSON 结果。');
+    let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
+    let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
+    const rows=response?.results,bindings=new Map(backup.bindings.map(b=>[b.target_id,b])),seen=new Set(),accepted=[];
+    if(!Array.isArray(rows)||rows.length!==bindings.size)throw Error('本批结果不完整，请使用当前批次的全部 target_id。');
+    for(const row of rows){
+      const binding=bindings.get(row?.target_id),choice=binding?.choices.find(o=>o.choice_id===row?.choice_id);
+      if(!binding||seen.has(row.target_id)||!choice)throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
+      seen.add(row.target_id);accepted.push({binding,choice});
+    }
+    const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry])),groups=new Map();
+    for(const {binding:b,choice} of accepted){
+      const entry=entries.get(b.sentenceId);
+      if(!entry||!Number.isInteger(b.start)||!Number.isInteger(b.end)||b.start<0||b.end<=b.start||entry.text.slice(b.start,b.end)!==b.surface)throw Error('当前批次的原文位置已失效，未应用任何答案。');
+      if(!groups.has(entry))groups.set(entry,{annotations:[],reviewed:[]});const group=groups.get(entry);
+      if(entry.selected.some(r=>b.start>=r.start&&b.end<=r.end))group.reviewed.push({start:b.start,end:b.end});
+      for(const a of choice.annotations){
+        if(!Number.isInteger(a.start)||!Number.isInteger(a.end)||a.start<0||a.end<=a.start||entry.text.slice(a.start,a.end)!==a.surface||typeof a.replacement!=='string'||!['hanja','loanword'].includes(a.type))throw Error('恢复数据的标注位置无效，未应用任何答案。');
+        if(task.modes[a.type==='hanja'?'hanja':'loanword']&&entry.selected.some(r=>a.start>=r.start&&a.end<=r.end)){group.annotations.push(a);group.reviewed.push({start:a.start,end:a.end});}
+      }
+    }
+    // All IDs, choices and source spans are verified before changing any entry.
+    for(const [entry,group] of groups){
+      const model=[...(entry.committedModelAnnotations||entry.modelAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...group.annotations];
+      entry.modelAnnotations=model;entry.committedModelAnnotations=model;entry.modelReviewed=true;entry.committedModelReviewed=true;entry.hasPreview=false;
+      entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...model];
+    }
+    const count=task.paint();const more=backup.batchTotal&&backup.batchNumber<backup.batchTotal;
+    const message=`本批答案已在页面校验并应用，当前显示 ${count} 个标注。${more?'后续批次请重新开始标注。':'本次恢复已完成。'}`;
+    finishTask(task,message);status(message);publishState();
+  }
+
+  function handleManualEvent(task,event){
+    const panel=manualPanel();
+    if(event.type==='MANUAL_REVIEW_REQUEST'){
+      clearTimeout(task.manualTimer);task.manualLocalOnly=false;task.manualBackup={requestId:event.requestId,bindings:event.bindings,batchNumber:event.batchNumber,batchTotal:event.batchTotal};
+      task.manualRequest=event.requestId;panel.dataset.operationId=task.operationId;panel.dataset.requestId=event.requestId;
+      panel.querySelector('.kra-manual-summary').textContent=`第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次 · ${event.targetCount} 个词 · ${event.text.length.toLocaleString()} 字符（仅任务内容，无 API Key）`;
+      if(event.budget){const b=event.budget;panel.querySelector('.kra-manual-summary').textContent+=`\n${b.label}档 · 预估输入 ${b.inputTokens.toLocaleString()} / 答案 ${b.outputTokens.toLocaleString()} tokens${b.contextTokens?` / 余量 ${b.safetyTokens.toLocaleString()}（窗口 ${b.contextTokens.toLocaleString()}）`:''}${b.limitReason==='output'?' · 受答案长度预算限制':''}。估算与实际分词可能不同。`;}
+      panel.querySelector('.kra-manual-prompt').value=event.text;panel.querySelector('.kra-manual-response').value='';
+      panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;panel.querySelector('.kra-manual-file').value='';panel.querySelector('.kra-manual-cancel').disabled=false;
+      panel.querySelector('.kra-manual-status').textContent='等待粘贴或导入本批结果；未调用 API。';panel.hidden=false;document.querySelector('.kra-manual-reopen').hidden=true;
+      getToolbar().querySelector('.kra-manual-open').hidden=false;status(`等待手动回填：第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次（${event.targetCount} 个词）`);return;
+    }
+    if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
+    if(event.type==='MANUAL_REVIEW_ERROR'){
+      clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
+      panel.querySelector('.kra-manual-status').textContent=event.error;panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+    }else{
+      task.manualRequest=null;watchManualReply(task);panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
+    }
   }
 
   function status(message, percent) {
@@ -270,11 +560,17 @@
     refreshToolbar();
   }
 
-  function finishTask(task) {
+  function finishTask(task,reason='本次任务已结束。答案仍保留可复制；重新标注会生成新批次。') {
     if (task.finished) return;
+    task.reconcile?.();
     task.finished = true;
+    clearTimeout(task.manualTimer);task.manualBackup=null;
+    task.manualRequest=null;
+    const manual=document.querySelector('.kra-manual-review');
+    if(manual?.dataset.operationId===task.operationId){manual.querySelector('.kra-manual-apply').disabled=true;manual.querySelector('.kra-manual-import').disabled=true;manual.querySelector('.kra-manual-cancel').disabled=true;manual.querySelector('.kra-manual-status').textContent=reason;}
     clearInterval(task.keepalive);
     if (currentTask === task) currentTask = null;
+    configureRecovery();
     try { task.port.disconnect(); } catch {}
   }
 
@@ -282,10 +578,11 @@
     const task = currentTask;
     if (!task) return;
     try { task.port.postMessage({ type: 'CANCEL', operationId: task.operationId }); } catch {}
-    finishTask(task);
+    finishTask(task,'任务已取消；答案仍保留可复制，已取消的任务不能继续应用。');
   }
 
   function restorePage() {
+    resetRecovery();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();history.length=0;seenSources.clear();
     // Like de-furiganation, unwrap only owned rubies, preserving surrounding DOM.
     for (const ruby of document.querySelectorAll(OWN_RUBY)) {
@@ -299,11 +596,12 @@
   function undoLast() {
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
     const operation=history.pop();if(!operation){status('没有可撤销的标注',0);return {ok:false,error:'没有可撤销的标注'};}
+    for(const [block,before]of operation.recoveryBefore||[])if(recoveryBlocks.has(block))block.annotations=new Map(before);
     for(const record of [...operation].reverse()){
       if(!record.inserted.every((node,i)=>node.parentNode===record.parent&&node.isEqualNode(record.snapshots[i])&&(i===0||record.inserted[i-1].nextSibling===node)))continue;
       record.inserted[0].before(record.original.isEqualNode(record.originalSnapshot)?record.original:record.originalSnapshot.cloneNode(true));for(const node of record.inserted)node.remove();
     }
-    status('已撤销上次标注',0);publishState();return {ok:true};
+    configureRecovery();status('已撤销上次标注',0);publishState();return {ok:true};
   }
 
   function startSelection(reviewAll) {
@@ -316,9 +614,11 @@
     const modes = { hanja: message.modes?.hanja ?? true, loanword: message.modes?.loanword ?? true };
     if (!modes.hanja && !modes.loanword) return { ok: false, error: '请至少启用一种标注模式。' };
     cancelTask();
+    const oldManual=document.querySelector('.kra-manual-review');if(oldManual)oldManual.hidden=true;
+    const oldReopen=document.querySelector('.kra-manual-reopen');if(oldReopen)oldReopen.hidden=true;
     if(!message.automatic){toolbarDismissed=false;diagnostics.length=0;}
     const ranges=message.ranges||null;
-    const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic));
+    const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
     if(entries.size)pageHasHangul=true;
     if (!entries.size) { status('没有未标注的韩语文字', 100); return { ok: true, started: false }; }
     if ([...entries.values()].some(entry => entry.text.length > 20000)) return { ok: false, error: '单个文本节点过长，超过本地引擎限制。' };
@@ -326,18 +626,24 @@
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
-    const task = { operationId, port, entries, finished: false };
+    const task = { operationId, port, entries, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, operation:[], historyRecorded:false };
+    const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
+    task.paint=paint;
+    task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
     const byId = new Map([...entries.values()].map(entry => [entry.id, entry]));
     currentTask = task;
-    status('分析中，完成后一次性写入标注…');
+    status(task.progressive?'分析中，完成的标注将陆续显示…':'分析中，完成后一次性写入标注…');
     port.onDisconnect.addListener(() => {
       if (task.finished) return;
+      clearInterval(task.keepalive);
+      if(recoverManualConnection(task,'标注后台连接已中断。'))return;
       status('分析连接中断，请重试', 0);
       finishTask(task);
     });
     port.onMessage.addListener(result => {
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
-      if (result.type === 'ERROR') { addDiagnostic({level:'error',message:result.error});status(result.error || '分析失败', 0); finishTask(task); return; }
+      if(['MANUAL_REVIEW_REQUEST','MANUAL_REVIEW_ERROR','MANUAL_REVIEW_ACCEPTED'].includes(result.type)){handleManualEvent(task,result);return;}
+      if (result.type === 'ERROR') { addDiagnostic({level:'error',message:result.error});if(recoverManualConnection(task,result.error||'标注后台异常。'))return;status(result.error || '分析失败', 0); finishTask(task,result.error||'分析失败'); return; }
       if (result.type === 'DIAGNOSTIC') {
         addDiagnostic(result.diagnostic||{});
         if (result.diagnostic?.level === 'error') status(result.diagnostic.message || '分析错误', 0);
@@ -349,28 +655,42 @@
       }
       if (result.type !== 'RESULTS' && result.type !== 'DONE') return;
       globalThis.__KRA_PIPELINE_STATUS__ = { stats: result.stats, engine_version: result.engine_version, dictionary_metadata: result.dictionary_metadata };
+      const changedEntries=new Map();
       for (const item of result.results || []) {
         const entry = byId.get(item.id);
         if (!entry) continue;
+        changedEntries.set(entry.node,entry);
+        const incoming=[];
         for (const annotation of item.annotations || []) {
           if (!Number.isInteger(annotation.start) || !Number.isInteger(annotation.end) || annotation.start < 0 || annotation.end <= annotation.start || annotation.end > entry.text.length || entry.text.slice(annotation.start, annotation.end) !== annotation.surface || typeof annotation.replacement !== 'string' || !annotation.replacement || !['hanja', 'loanword'].includes(annotation.type) || !modes[annotation.type === 'hanja' ? 'hanja' : 'loanword'] || !entry.selected.some(r=>annotation.start>=r.start&&annotation.end<=r.end)) continue;
-          entry.annotations = entry.annotations.filter(old => old.end <= annotation.start || old.start >= annotation.end);
-          entry.annotations.push(annotation);
+          incoming.push(annotation);
         }
+        if(result.source==='model'){
+          entry.modelAnnotations=incoming;
+          entry.modelReviewed=Boolean(item.reviewed?.length||incoming.length);
+          entry.hasPreview=result.provisional===true;
+          if(!entry.hasPreview){entry.committedModelAnnotations=incoming;entry.committedModelReviewed=entry.modelReviewed;}
+        }else entry.localAnnotations=incoming;
+        const model=entry.modelAnnotations||[];
+        entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];
       }
-      if (result.type === 'RESULTS') { status(`分析 ${Math.round(result.percent || 0)}%，尚未写入网页`, result.percent || 0); return; }
-      // No scheduled layout pass, copy handler, or repaint recovery.
-      const count = insertConversions(entries);
+      if (result.type === 'RESULTS') {
+        if(task.progressive){const count=paint(changedEntries);status(`已显示 ${count} 个标注；分析 ${Math.round(result.percent || 0)}%`, result.percent || 0);}
+        else status(`分析 ${Math.round(result.percent || 0)}%，尚未写入网页`, result.percent || 0);
+        return;
+      }
+      const count = paint();
       for(const entry of entries.values())seenSources.add(entry.text);
       status(`完成：${count} 个标注`, 100);
-      finishTask(task);
+      finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`);
+      configureRecovery();
       if(!ranges)pageCompleted=true;configureAutomaticAnnotation();
       addDiagnostic({message:`完成：${count} 个标注`,detail:JSON.stringify(result.stats||{})});
       publishState();
     });
-    task.keepalive = setInterval(() => { try { port.postMessage({ type: 'KEEPALIVE' }); } catch { finishTask(task); } }, 20000);
+    task.keepalive = setInterval(() => { try { port.postMessage({ type: 'KEEPALIVE' }); } catch { clearInterval(task.keepalive);if(!recoverManualConnection(task,'后台保活连接已断开。'))finishTask(task); } }, 20000);
     try {
-      port.postMessage({ type: 'START', operationId, sentences: [...entries.values()].map(({id,text,selected})=>({id,text,selected})), context: [...entries.values()].map(entry => entry.text).join('\n'), modes, forceRegenerate: Boolean(message.forceRegenerate), reviewAll: message.reviewAll===true });
+      port.postMessage({ type: 'START', operationId, sentences: [...entries.values()].map(({id,text,selected})=>({id,text,selected})), context: [...entries.values()].map(entry => entry.text).join('\n'), progressiveAnnotation:task.progressive, modes, forceRegenerate: Boolean(message.forceRegenerate), reviewAll: message.reviewAll===true });
     } catch (error) { finishTask(task); status(error.message || '无法启动分析', 0); return { ok: false, error: error.message }; }
     return { ok: true, started: true };
   }

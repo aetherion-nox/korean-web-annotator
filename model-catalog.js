@@ -2,6 +2,7 @@
  const dsDocs='https://api-docs.deepseek.com/guides/thinking_mode/';
  const glmDocs='https://docs.z.ai/guides/llm/glm-5.3';
  const mimoDocs='https://mimo.mi.com/docs/en-US/quick-start/usage-guide/other/deep-thinking';
+ const qwenDocs='https://help.aliyun.com/zh/model-studio/deep-thinking';
  const model=(id,thinking,efforts,docs)=>({id,label:id,thinking,efforts,docs});
  const providers=[
   {id:'openai',label:'OpenAI',endpoint:'https://api.openai.com/v1/responses',models:[
@@ -18,9 +19,18 @@
   {id:'deepseek',label:'DeepSeek',endpoint:'https://api.deepseek.com/chat/completions',models:['deepseek-flash','deepseek-v4-pro'].map(id=>model(id,'toggle',['low','high','max'],dsDocs))},
   {id:'zai',label:'GLM (Z.AI)',endpoint:'https://api.z.ai/api/paas/v4/chat/completions',models:['glm-5.3-flash','glm-5.3-flashx','glm-5.3'].map(id=>model(id,'required',['low','high','max'],id==='glm-5.3'?glmDocs:'https://docs.z.ai/guides/vlm/glm-5.3-flash'))},
   {id:'mimo',label:'Xiaomi MiMo',endpoint:'https://api.xiaomimimo.com/v1/chat/completions',models:['mimo-v2.6-flash','mimo-v2.6-pro','mimo-v2.6-pro-ultraspeed','mimo-v2.5','mimo-v2.5-pro'].map(id=>model(id,'toggle',[],mimoDocs))},
+  {id:'qwen',label:'Qwen 千问（阿里云百炼）',endpoint:'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',models:[
+   ...['qwen3.8-max','qwen3.8-max-0902','qwen3.8-flash','qwen3.8-27b'].map(id=>({...model(id,'toggle',['low','medium','xhigh'],qwenDocs),thinkingJson:true})),
+   ...['qwen3.7-max','qwen3.7-plus','qwen3.7-flash'].map(id=>({...model(id,'toggle',[],qwenDocs),thinkingJson:true})),
+   ...['qwen3.6-plus','qwen3.6-flash','qwen3.5-plus','qwen3.5-flash','qwen-plus','qwen-plus-latest','qwen-flash','qwen-turbo'].map(id=>model(id,'toggle',[],qwenDocs)),
+   {...model('qwen3.8-2.4t-a95b','required',['low','medium','xhigh'],qwenDocs),thinkingJson:true},
+   ...['qwen3.5-397b-a17b','qwen3.5-122b-a10b','qwen3.5-27b','qwen3.5-35b-a3b','qwen3.6-35b-a3b'].map(id=>({...model(id,'toggle',[],qwenDocs),streamOnly:true})),
+   model('qwen3.7-max-preview','required',[],qwenDocs),
+   model('qwen-max','none',[],'https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions')
+  ]},
   {id:'custom',label:'自定义 / Custom',endpoint:'',models:[]}
  ];
- function inferProvider(endpoint){try{const host=new URL(endpoint).hostname;return providers.find(p=>p.endpoint&&new URL(p.endpoint).hostname===host)?.id||'custom';}catch{return 'custom';}}
+ function inferProvider(endpoint){try{const host=new URL(endpoint).hostname;if(['dashscope.aliyuncs.com','dashscope-intl.aliyuncs.com','dashscope-us.aliyuncs.com'].includes(host)||/^[a-z0-9-]+\.[a-z0-9-]+\.maas\.aliyuncs\.com$/.test(host))return 'qwen';return providers.find(p=>p.endpoint&&new URL(p.endpoint).hostname===host)?.id||'custom';}catch{return 'custom';}}
  function resolve(config){const id=config.provider||inferProvider(config.endpoint);return providers.find(p=>p.id===id)?.models.find(m=>m.id===config.model)||null;}
- globalThis.KRA_MODEL_CATALOG={providers,inferProvider,resolve,verifiedAt:'2026-10-12'};
+ globalThis.KRA_MODEL_CATALOG={providers,inferProvider,resolve,verifiedAt:'2026-10-12',qwenVerifiedAt:'2026-10-27'};
 })();

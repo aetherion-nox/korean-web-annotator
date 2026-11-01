@@ -16,3 +16,5 @@ button.primary { background:#1a73e8; color:#fff; border-color:#1a73e8; }
 button.danger-subtle { color:#a50e0e; }
 .link-button { width:100%; margin-top:12px; background:transparent; }
 #status { min-height:20px; margin:10px 0 0; color:#4a4d52; white-space:pre-wrap; }
+
+.setting-hint { margin:-4px 0 12px 24px; color:#5f6368; font-size:12px; line-height:1.5; }

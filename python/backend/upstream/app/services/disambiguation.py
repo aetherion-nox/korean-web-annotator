@@ -84,10 +84,11 @@ class DisambiguationService:
 
             # 2. POS match
             if token_tag and cs.part_of_speech:
-                if self._pos_matches(token_tag, cs.part_of_speech):
+                pos_match=self._pos_matches(token_tag, cs.part_of_speech)
+                if pos_match is True:
                     cs.score += 0.2
                     cs.reasons.append('pos_match')
-                else:
+                elif pos_match is False:
                     cs.score -= 0.1
                     cs.reasons.append('pos_mismatch')
 
@@ -128,9 +129,9 @@ class DisambiguationService:
 
     def merge_identical_candidates(self, candidates: List[CandidateScore]) -> List[CandidateScore]:
         """Merge candidates that have identical replacement and origin_raw to avoid redundant glyph choices."""
-        merged: Dict[Tuple[Optional[str], Optional[str]], CandidateScore] = {}
+        merged = {}
         for c in candidates:
-            key = (c.replacement, c.origin_raw)
+            key = (c.replacement, c.origin_raw, c.entry_id if not c.replacement else None)
             if key not in merged:
                 merged[key] = c
             else:
@@ -142,6 +143,12 @@ class DisambiguationService:
                     existing.entry_id = c.entry_id
                     existing.reasons = list(dict.fromkeys(existing.reasons + c.reasons))
         return sorted(merged.values(), key=lambda x: x.score, reverse=True)
+
+    @staticmethod
+    def has_keep_competitor(candidates):
+        # A matching/unknown-POS native or other non-conversion reading is
+        # semantic competition, not a low-scoring failed Hanja candidate.
+        return any(not c.replacement and 'pos_mismatch' not in c.reasons for c in candidates)
 
     def select_best(
         self,
@@ -157,6 +164,11 @@ class DisambiguationService:
             return None, 'no_match'
 
         top = scored_candidates[0]
+
+        # Generic reliability and POS points only establish a usable spelling.
+        # They cannot establish that its meaning wins over a native homograph.
+        if self.has_keep_competitor(scored_candidates) and not any(r.startswith('collocation_match(') for r in top.reasons):
+            return top, 'ambiguous'
 
         # Single reliable candidate
         if len(scored_candidates) == 1:
@@ -180,7 +192,7 @@ class DisambiguationService:
         else:
             return None, 'ambiguous'
 
-    def _pos_matches(self, kiwi_tag: str, dict_pos: str) -> bool:
+    def _pos_matches(self, kiwi_tag: str, dict_pos: str) -> Optional[bool]:
         pos_map = {
             '명사': ['NNG', 'NNP', 'NNB', 'NR', 'NP'],
             '동사': ['VV', 'VX', 'XSV'],
@@ -196,5 +208,6 @@ class DisambiguationService:
             '보조 형용사': ['VX'],
             '고유 명사': ['NNP'],
         }
-        expected_tags = pos_map.get(dict_pos, [])
+        if dict_pos not in pos_map:return None
+        expected_tags = pos_map[dict_pos]
         return kiwi_tag in expected_tags or any(kiwi_tag.startswith(t) for t in expected_tags)

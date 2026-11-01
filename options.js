@@ -189,6 +189,21 @@ const thinkingOffNotes={
  en:'Disables up-front thinking only; answers directly when no tools are used.'
 };
 
+const qwenNotes={
+ 'zh-CN':'百炼接口和 API Key 须属于同一地域；可填写控制台提供的业务空间专属完整地址。',
+ 'zh-TW':'百煉介面和 API Key 須屬於同一地域；可填寫控制台提供的業務空間專屬完整網址。',
+ en:'Use an endpoint and API Key from the same region. Workspace-specific full endpoints from the console are supported.',
+ ja:'API キーとエンドポイントのリージョンを一致させてください。コンソールのワークスペース専用 URL にも対応します。',
+ ko:'API Key와 엔드포인트의 리전을 일치시키세요. 콘솔의 워크스페이스 전용 전체 URL도 지원합니다.'
+};
+const fixedThinkingNotes={
+ 'zh-CN':['此模型不使用思考模式。','此模型始终开启思考。'],
+ 'zh-TW':['此模型不使用思考模式。','此模型始終開啟思考。'],
+ en:['This model does not use thinking mode.','Thinking is always enabled for this model.'],
+ ja:['このモデルは思考モードを使用しません。','このモデルは常に思考モードを使用します。'],
+ ko:['이 모델은 추론 모드를 사용하지 않습니다.','이 모델은 추론 모드가 항상 켜져 있습니다.']
+};
+
 function refreshThinkingControls(effort=effortInput.value) {
   const capability=catalog?.resolve({provider:providerInput.value,endpoint:endpointInput.value,model:modelInput.value});
   document.querySelector('#disableThinkingRow').hidden=capability?.thinking!=='toggle';
@@ -198,6 +213,9 @@ function refreshThinkingControls(effort=effortInput.value) {
   effortInput.value=efforts.includes(effort)?effort:(efforts[0]||'');
   const note=document.querySelector('#modelCapabilityNote'),docs=document.querySelector('#modelDocs');
   note.textContent=capability?.offType==='between_tools'?(thinkingOffNotes[uiLocale.value]||thinkingOffNotes.en):capability?.thinking==='required'?t('requiredThinking')+efforts.join(' / '):capability?.thinking==='toggle'?t('toggleThinking'):t('unknownThinking');
+  if(capability?.thinking==='none')note.textContent=(fixedThinkingNotes[uiLocale.value]||fixedThinkingNotes.en)[0];
+  if(capability?.thinking==='required'&&!efforts.length)note.textContent=(fixedThinkingNotes[uiLocale.value]||fixedThinkingNotes.en)[1];
+  if(providerInput.value==='qwen')note.textContent+=' '+(qwenNotes[uiLocale.value]||qwenNotes.en);
   docs.hidden=!capability?.docs;docs.textContent=t('modelDocs');if(capability?.docs)docs.href=capability.docs;else docs.removeAttribute('href');
   document.querySelector('#reasoningEffortRow').hidden=!capability||!efforts.length||(capability.thinking==='toggle'&&disableThinkingInput.checked);
 }

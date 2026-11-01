@@ -1,13 +1,15 @@
 import {menuAction} from './context-menu-state.js';
-import {callBrowserEngine} from './browser-engine-host.js';
+import {callBrowserEngine,copyTextToClipboard} from './browser-engine-host.js';
 import {configureBrowserEngineHost} from './browser-engine.js';
 configureBrowserEngineHost(callBrowserEngine);
 import './api-profiles.js';
 import {engineConfig,engineStatus} from './local-engine.js';
 import {reviewTargets} from './choice-review.js';
+import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
-const CONTENT_SCRIPT_VERSION='1.1.0';
+import {createManualReviewSession} from './manual-review.js';
+const CONTENT_SCRIPT_VERSION='1.1.13';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -38,7 +40,19 @@ chrome.tabs.onUpdated?.addListener((tabId,change,tab)=>{
  if(tab.active && change.status)refreshPageMenu(tabId).catch(()=>{});
 });
 
+// Local storage is restricted to trusted contexts. Forward the display switch
+// from the background so already-open pages receive it without reading logs/keys.
+chrome.storage.onChanged.addListener((changes,area)=>{
+ if(area!=='local'||(!changes.progressiveAnnotation&&!changes.uiSettings))return;
+ const uiSettings={...(changes.uiSettings?sanitizeUiSettings(changes.uiSettings.newValue):{}),...(changes.progressiveAnnotation?{progressiveAnnotation:changes.progressiveAnnotation.newValue===true}:{})};
+ chrome.tabs.query({}).then(tabs=>Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.tabs.sendMessage(tab.id,{type:'APPLY_UI_SETTINGS',uiSettings})))).catch(()=>{});
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(message?.type==='KRA_COPY_TEXT'){
+    if(sender.id!==chrome.runtime.id){sendResponse({ok:false,error:'Invalid extension sender'});return;}
+    copyTextToClipboard(message.text).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
+  }
   if(message?.type==='KRA_START_PAGE_FROM_POPUP'){
     startPageFromPopup(message).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
   }
@@ -53,8 +67,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === 'GET_UI_SETTINGS') {
-    chrome.storage.local.get('uiSettings')
-      .then(({ uiSettings = {} }) => sendResponse({ ok: true, uiSettings: sanitizeUiSettings(uiSettings) }))
+    chrome.storage.local.get(['uiSettings','progressiveAnnotation'])
+      .then(({ uiSettings = {}, progressiveAnnotation = false }) => sendResponse({ ok: true, uiSettings: {...sanitizeUiSettings(uiSettings),progressiveAnnotation:progressiveAnnotation===true} }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
@@ -82,6 +96,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     testApi()
       .then(text => sendResponse({ ok: true, message: text }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === 'CLEAR_MODEL_REQUEST_LOGS') {
+    requestLogger.clear().then(()=>sendResponse({ok:true})).catch(error=>sendResponse({ok:false,error:error.message}));
     return true;
   }
 
@@ -139,6 +158,7 @@ function sanitizeUiSettings(value) {
     selectAnnotations:source.selectAnnotations ?? false,
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
+    restoreExistingAnnotations:source.restoreExistingAnnotations ?? true,
     toolbarHangulOnly:source.toolbarHangulOnly ?? true,
     toolbarDisplay:source.toolbarDisplay==='always'?'always':'selection',
     uiLocale: normalizeUiLocale(source.uiLocale)
@@ -387,7 +407,7 @@ async function getApiConfig() {
 
 
 
-async function checkReady(){const config=await engineConfig();const status=await engineStatus();if(config.enableModelReview)await getApiConfig();return {mode:'local',enableModelReview:config.enableModelReview,...status};}
+async function checkReady(){const config=await engineConfig();const status=await engineStatus();if(config.enableModelReview&&!config.manualModelReview)await getApiConfig();return {mode:'local',enableModelReview:config.enableModelReview,manualModelReview:config.manualModelReview,...status};}
 async function clearAnnotationCache(){await loadCache();cache.clear();cacheLoaded=true;await chrome.storage.local.remove(CACHE_KEY);}
 async function markCurrentProviderStreamUnstable(){return;}
 async function testApi(){
@@ -402,9 +422,11 @@ async function loadCache(){
  if(!cacheLoadPromise)cacheLoadPromise=(async()=>{await prepareCacheSession(chrome.storage,CACHE_KEY);const saved=(await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];if(Array.isArray(saved))for(const [key,value] of saved)cache.set(key,value);cacheLoaded=true;})().finally(()=>{cacheLoadPromise=null;});
  await cacheLoadPromise;
 }
-async function runModern(message,post,signal){
+async function runModern(message,post,signal,manualSession){
  await loadCache();const config=await engineConfig();
- return runSentencePipeline(message,post,{signal,enabled:config.enableModelReview,modelConfig:getApiConfig,cache,persist:async map=>chrome.storage.local.set({[CACHE_KEY]:Array.from(map)})});
+ if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
+ const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier});
+ return runSentencePipeline({...message,reviewAllCandidates:config.reviewAllCandidates},post,{signal,enabled:config.enableModelReview,modelConfig,cache,persist:async map=>chrome.storage.local.set({[CACHE_KEY]:Array.from(map)})});
 }
 function legacyPlan(message){
  const candidates=Array.isArray(message.candidates)?message.candidates:(message.batches||[]).flat();
@@ -419,15 +441,15 @@ function legacyPlan(message){
  }
  return {sentences,mapping};
 }
-async function runStreamingAnnotation(message,post,signal){
- if(Array.isArray(message.sentences))return runModern(message,post,signal);
+async function runStreamingAnnotation(message,post,signal,manualSession){
+ if(Array.isArray(message.sentences))return runModern(message,post,signal,manualSession);
  const {sentences,mapping}=legacyPlan(message);
  return runModern({...message,operationId:message.operationId||crypto.randomUUID(),sentences},event=>{
   if(event.type==='RESULTS'){
    const results=event.results.flatMap(r=>mapping.filter(m=>m.sentenceId===r.id).map(m=>({id:m.id,annotations:r.annotations.filter(a=>a.start>=m.start&&a.end<=m.end).map(a=>({...a,start:a.start-m.start,end:a.end-m.start}))})));
    post({...event,results,completedCandidates:event.completedSentences===event.totalSentences?mapping.length:0,totalCandidates:mapping.length});
   }else post({...event,completedCandidates:event.completedSentences===event.totalSentences?mapping.length:0,totalCandidates:mapping.length});
- },signal);
+ },signal,manualSession);
 }
 async function handleAnnotateBatch(message){
  const final=new Map();let stats;
@@ -435,14 +457,16 @@ async function handleAnnotateBatch(message){
  return {results:Array.from(final,([id,annotations])=>({id,annotations})),stats};
 }
 function handleStreamingPort(port){
- let started=false,operationId;const controller=new AbortController();
+ let started=false,operationId,manualSession;const controller=new AbortController();
  const post=event=>{if(!controller.signal.aborted)port.postMessage(event);};
  port.onDisconnect.addListener(()=>controller.abort());
  port.onMessage.addListener(message=>{
   if(message?.type==='KEEPALIVE'){post({type:'PONG',operationId,at:Date.now()});return;}
   if(message?.type==='CANCEL'&&message.operationId===operationId){controller.abort();return;}
+  if(message?.type==='MANUAL_REVIEW_RESPONSE'){manualSession?.submit(message);return;}
   if(started||message?.type!=='START')return;started=true;operationId=message.operationId||crypto.randomUUID();
-  runStreamingAnnotation({...message,operationId},post,controller.signal).catch(error=>{if(!controller.signal.aborted)post({type:'ERROR',operationId,error:error.message});});
+  manualSession=createManualReviewSession({operationId,post,signal:controller.signal});
+  runStreamingAnnotation({...message,operationId},post,controller.signal,manualSession).catch(error=>{if(!controller.signal.aborted)post({type:'ERROR',operationId,error:error.message});});
  });
 }
 

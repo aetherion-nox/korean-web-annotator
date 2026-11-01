@@ -1,1 +1,6 @@
-{"type":"module"}
+{
+  "type": "module",
+  "scripts": {
+    "test": "python3 tests/test_alignment.py && python3 tests/test_mixed.py && python3 tests/test_native_readings.py && python3 tests/test_proper_nouns.py && node --test tests/*.test.js && node tests/wasm-smoke.mjs"
+  }
+}

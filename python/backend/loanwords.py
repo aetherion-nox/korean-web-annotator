@@ -1,6 +1,7 @@
 """Dictionary-origin extension. Never infer origins from translated equivalents."""
 import re
 from backend.offsets import to_utf16
+from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
 
 CJK = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U000323af]')
 HANGUL = re.compile(r'[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]')
@@ -20,7 +21,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
     Hanja homonyms) participates in certainty; KEEP represents other readings.
     """
     annotations=[];targets=[];skipped_mixed=0
-    occupied=list(occupied_ranges); seen=set()
+    occupied=list(occupied_ranges); seen=set();proper_ranges=proper_noun_ranges(tokens)
     for token in tokens:
         start=token.start;end=start+token.length;form=token.form
         if (start,end) in seen:continue
@@ -29,12 +30,14 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if not 0<=start<end<=len(text) or text[start:end]!=form:continue
         if any(start<b and a<end for a,b in occupied):continue
         records=entries.get(form,[])
-        loans=[r for r in records if classify_origin(r.get('origin_raw')) in ('loanword','mixed')]
+        # Foreign/Hanja entries are owned by the segmented whole-entry path.
+        # Never expose unresolved CJK as an undifferentiated loanword.
+        loans=[r for r in records if classify_origin(r.get('origin_raw')) in ('loanword','mixed') and not CJK.search(r.get('origin_raw') or '')]
         has_mixed=any(classify_origin(r.get('origin_raw'))=='mixed' for r in loans)
         if not loans:continue
         origins={r['origin_raw'] for r in loans}
         span=dict(start=to_utf16(text,start),end=to_utf16(text,end),surface=form)
-        if not force_review and not has_mixed and len(origins)==1 and len(loans)==len(records):
+        if not force_review and not overlaps_proper_noun(start,end,proper_ranges) and not has_mixed and len(origins)==1 and len(loans)==len(records):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
             options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[r['definition_preview'] for r in records if r.get('definition_preview')])]

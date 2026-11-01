@@ -39,3 +39,23 @@ html[data-kra-select-hangul] ruby.kra-ruby[data-kra-type="loanword"] > rt { user
 
 html[data-kra-copy-mode="annotation"] .kra-ruby { user-select:none; }
 html[data-kra-copy-mode="annotation"] .kra-ruby > rt { user-select:text; }
+
+.kra-mobile-selection-bar .kra-manual-open[hidden] { display:none !important; }
+.kra-manual-review {
+ position:fixed !important;top:12px !important;right:12px !important;z-index:2147483647 !important;
+ width:min(640px,calc(100vw - 24px)) !important;max-height:calc(100vh - 190px) !important;max-height:calc(100dvh - 190px) !important;
+ overflow:auto !important;box-sizing:border-box !important;padding:16px !important;border:1px solid #52617b !important;border-radius:12px !important;
+ background:#172033 !important;color:#f7f9ff !important;font:14px/1.5 system-ui,sans-serif !important;text-align:left !important;box-shadow:0 8px 36px #0006 !important;
+}
+.kra-manual-review[hidden] { display:none !important; }
+.kra-manual-review p { margin:8px 0 !important;color:inherit !important;font:inherit !important;overflow-wrap:anywhere !important; }
+.kra-manual-review label { display:block !important;margin-top:12px !important;color:inherit !important;font:inherit !important; }
+.kra-manual-review textarea { display:block !important;width:100% !important;height:115px !important;box-sizing:border-box !important;margin:5px 0 !important;padding:9px !important;border:1px solid #72809a !important;border-radius:6px !important;background:#fff !important;color:#172033 !important;font:13px/1.5 ui-monospace,monospace !important;resize:vertical !important;white-space:pre-wrap !important;user-select:text !important; }
+.kra-manual-heading,.kra-manual-actions { display:flex !important;gap:8px !important;flex-wrap:wrap !important;align-items:center !important; }
+.kra-manual-heading { justify-content:space-between !important; }
+.kra-manual-review button { min-height:38px !important;padding:7px 12px !important;border:0 !important;border-radius:6px !important;background:#3a4a63 !important;color:#fff !important;font:inherit !important;cursor:pointer !important; }
+.kra-manual-review .kra-manual-apply { background:#276ed0 !important; }
+.kra-manual-review button:disabled { opacity:.5 !important;cursor:default !important; }
+.kra-manual-reopen { display:block !important;position:fixed !important;top:12px !important;right:12px !important;z-index:2147483647 !important;min-height:40px !important;padding:8px 14px !important;border:1px solid #72809a !important;border-radius:8px !important;background:#172033 !important;color:#fff !important;font:14px/1.5 system-ui,sans-serif !important;cursor:pointer !important; }
+.kra-manual-reopen[hidden] { display:none !important; }
+.kra-manual-review .kra-manual-file[hidden] { display:none !important; }

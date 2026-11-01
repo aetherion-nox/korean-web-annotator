@@ -1,4 +1,5 @@
 import {storage} from './browser-storage.js';
+import {copyPlainText} from './clipboard.js';
 let worker,hydrated=false,dictionaryAvailable=false,number=0;const pending=new Map();let queue=Promise.resolve();
 function resetWorker(){worker?.terminate();worker=null;hydrated=false;dictionaryAvailable=false;for(const pair of pending.values())pair.reject(Error('Browser worker reset'));pending.clear();}
 function getWorker(){
@@ -27,6 +28,10 @@ async function dispatch(request){
 
 }
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
+ if(message.type==='KRA_OFFSCREEN_COPY_TEXT'){
+  if(sender.id!==chrome.runtime.id)return;
+  try{copyPlainText(message.text);reply({ok:true});}catch(error){reply({ok:false,error:String(error.message||error)});}return;
+ }
  if(message.type!=='BROWSER_ENGINE_WORK')return;if(sender.id!==chrome.runtime.id)return;
  const next=queue.then(()=>dispatch(message.request));queue=next.catch(()=>{});next.then(result=>reply({ok:true,result}),error=>reply({ok:false,error:String(error.message||error)}));return true;
 });

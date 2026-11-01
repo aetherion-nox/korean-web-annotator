@@ -97,33 +97,8 @@ class DictionaryService:
     async def lookup_candidates(
         self, written_form: str, db: Optional[aiosqlite.Connection] = None
     ) -> List[dict]:
-        """Look up conversion candidates by written_form."""
-        if written_form in self._candidate_cache:
-            self._candidate_cache.move_to_end(written_form)
-            return self._candidate_cache[written_form]
-
-        close_db = db is None
-        if close_db:
-            db = await self.get_connection()
-        try:
-            query = '''
-                SELECT cc.id as candidate_id, cc.entry_id, cc.written_form,
-                       cc.origin_raw, cc.replacement, cc.replacement_type,
-                       cc.is_reliable,
-                       e.part_of_speech, e.vocabulary_level, e.homonym_number
-                FROM conversion_candidates cc
-                JOIN entries e ON cc.entry_id = e.id
-                WHERE cc.written_form = ?
-                ORDER BY cc.is_reliable DESC, e.homonym_number ASC
-            '''
-            async with db.execute(query, (written_form,)) as cursor:
-                rows = await cursor.fetchall()
-                result = [dict(row) for row in rows]
-                self._cache_candidates(written_form, result)
-                return result
-        finally:
-            if close_db:
-                await db.close()
+        """Include non-conversion readings from existing full dictionary entries."""
+        return (await self.batch_lookup_candidates([written_form], db)).get(written_form, [])
 
     async def batch_lookup_candidates(
         self, written_forms: List[str], db: Optional[aiosqlite.Connection] = None
@@ -147,7 +122,7 @@ class DictionaryService:
         if close_db:
             db = await self.get_connection()
         try:
-            batch_size = 500
+            batch_size = 400
             for i in range(0, len(missing), batch_size):
                 batch = missing[i:i + batch_size]
                 placeholders = ','.join(['?'] * len(batch))
@@ -159,9 +134,17 @@ class DictionaryService:
                     FROM conversion_candidates cc
                     JOIN entries e ON cc.entry_id = e.id
                     WHERE cc.written_form IN ({placeholders})
-                    ORDER BY cc.written_form, cc.is_reliable DESC, e.homonym_number ASC
+                    UNION ALL
+                    SELECT NULL as candidate_id, e.id as entry_id, e.written_form,
+                           e.origin_raw, NULL as replacement, NULL as replacement_type,
+                           0 as is_reliable,
+                           e.part_of_speech, e.vocabulary_level, e.homonym_number
+                    FROM entries e
+                    WHERE e.written_form IN ({placeholders})
+                      AND NOT EXISTS (SELECT 1 FROM conversion_candidates cc WHERE cc.entry_id = e.id)
+                    ORDER BY written_form, is_reliable DESC, homonym_number ASC
                 '''
-                async with db.execute(query, batch) as cursor:
+                async with db.execute(query, batch + batch) as cursor:
                     rows = await cursor.fetchall()
                     for row in rows:
                         d = dict(row)
@@ -175,6 +158,23 @@ class DictionaryService:
         finally:
             if close_db:
                 await db.close()
+
+    async def get_definitions_for_entries(self, entry_ids) -> Dict[int, List[str]]:
+        """Fetch complete senses in batches without loading examples/metadata."""
+        ids=list(dict.fromkeys(i for i in entry_ids if i is not None))
+        result={i:[] for i in ids}
+        if not ids:return result
+        db=await self.get_connection()
+        try:
+            for start in range(0,len(ids),500):
+                batch=ids[start:start+500]
+                placeholders=','.join('?' for _ in batch)
+                async with db.execute(f'SELECT entry_id,definition FROM senses WHERE entry_id IN ({placeholders}) ORDER BY entry_id,sense_number,id',batch) as cursor:
+                    for row in await cursor.fetchall():
+                        if row['definition']:result[row['entry_id']].append(row['definition'])
+            return result
+        finally:
+            await db.close()
 
     async def get_entry_detail(
         self, entry_id: int, db: Optional[aiosqlite.Connection] = None, *, include_raw: bool = False

@@ -27,6 +27,12 @@
     <section id="enginePanel">
       <h2 data-engine-i18n="title"></h2>
       <label class="inline"><input id="enableModelReview" type="checkbox"><span data-engine-i18n="model"></span></label>
+      <label class="inline"><input id="reviewAllCandidates" type="checkbox" aria-describedby="reviewAllHint"><span data-engine-i18n="reviewAll">全部交给大模型审核（默认关闭）</span></label>
+      <p id="reviewAllHint" class="profile-note" data-engine-i18n="reviewAllHint"></p>
+      <label class="inline"><input id="manualModelReview" type="checkbox" aria-describedby="manualReviewHint"><span data-engine-i18n="manual">手动聊天审核（复制提示词／粘贴结果）</span></label>
+      <p id="manualReviewHint" class="profile-note" data-engine-i18n="manualHint"></p>
+      <label><span data-engine-i18n="batchLabel">每批上下文容量（API／手动）</span><select id="batchContextTier" aria-describedby="batchContextHint"><option value="current" data-engine-i18n="batchCurrent">当前（保留现有分批）</option><option value="128k" data-engine-i18n="batch128k">128K</option><option value="1m" data-engine-i18n="batch1m">1M</option></select></label>
+      <p id="batchContextHint" class="profile-note" data-engine-i18n="batchHint"></p>
       <p data-engine-i18n="instructions"></p>
       <p><a href="https://krdict.korean.go.kr/download/downloadPopup" target="_blank" rel="noopener" data-engine-i18n="download"></a></p>
       <p data-engine-i18n="import"></p>
@@ -34,6 +40,16 @@
       <progress id="dictionaryProgress" hidden aria-label="Dictionary import progress"></progress>
       <div class="buttons"><button id="importDictionary" type="button" data-engine-i18n="importButton"></button><button id="clearDictionary" type="button" data-engine-i18n="clear"></button></div>
       <pre id="engineStatus" role="status"></pre>
+    </section>
+    <section class="profile-panel" aria-labelledby="featureHeading">
+      <h2 id="featureHeading" data-feature-i18n="title">显示与请求日志</h2>
+      <label class="inline"><input id="progressiveAnnotation" type="checkbox"><span data-feature-i18n="progressive">边完成边标注（本地及大模型）</span></label>
+      <p class="profile-note" data-feature-i18n="displayHint"></p>
+      <label class="inline"><input id="requestLoggingEnabled" type="checkbox"><span data-feature-i18n="logging">启用大模型请求日志</span></label>
+      <p class="profile-note" data-feature-i18n="logHint"></p>
+      <div class="buttons"><button id="downloadRequestLogs" type="button" data-feature-i18n="download">下载请求日志（JSON）</button><button id="clearRequestLogs" type="button" data-feature-i18n="clear">清空请求日志</button></div>
+      <p id="requestLogCount" class="profile-note"></p>
+      <p id="featureStatus" role="status" aria-live="polite"></p>
     </section>
     <section class="profile-panel" aria-labelledby="profileHeading">
       <h2 id="profileHeading" data-i18n="profiles">API / 模型配置档案</h2>
@@ -80,5 +96,6 @@
   <script src="model-catalog.js"></script>
   <script src="options.js"></script>
   <script type="module" src="engine-settings.js"></script>
+  <script type="module" src="feature-settings.js"></script>
 </body>
 </html>
