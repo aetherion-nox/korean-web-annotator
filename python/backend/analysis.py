@@ -12,22 +12,41 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-proper-nouns-6'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-mixed-verb-stems-7'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
 def safe_replacement(value):
     return isinstance(value,str) and bool(HANJA.search(value)) and not any(c in value for c in '<>\x00\r\n') and not any(ord(c)<32 for c in value)
 
-def restore_mixed_display(surface, replacement, origin):
+def restore_mixed_display(surface, replacement, origin, *, token=None, written_form=None):
     """Recover omitted native anchors only from an explicit full dictionary origin.
 
     A short Hanja-only origin never proves which source syllables to keep.
     Do not synthesize missing letters or alter the original converter's ranking.
     """
-    if not isinstance(origin, str) or len(origin) != len(surface):
+    if not isinstance(origin, str) or not isinstance(replacement, str):
         return replacement
-    if not isinstance(replacement, str) or not HANJA.fullmatch(replacement[:1]) or not all(HANJA.fullmatch(c) for c in replacement):
+    # Strip a dictionary ending only with the tokenizer's verb lemma AND the
+    # selected entry's exact headword as evidence. Never infer a native suffix
+    # from the length difference of a Hanja-only origin.
+    if (token is not None and token.is_verb_stem
+            and written_form == token.form + '다'
+            and len(origin) == len(written_form) and origin.endswith('다')):
+        stem_origin = origin[:-1]
+        if (len(surface) == len(token.form) == len(stem_origin)
+                and any('가' <= c <= '힣' for c in stem_origin)
+                and ''.join(c for c in stem_origin if HANJA.fullmatch(c)) == replacement
+                and all(('가' <= source <= '힣') and
+                        (HANJA.fullmatch(target) or target == source)
+                        for source, target in zip(token.form, stem_origin))
+                and all(not HANJA.fullmatch(target) or source == lemma
+                        for source, lemma, target in zip(surface, token.form, stem_origin))):
+            return ''.join(target if HANJA.fullmatch(target) else source
+                           for source, target in zip(surface, stem_origin))
+    if len(origin) != len(surface):
+        return replacement
+    if not replacement or not all(HANJA.fullmatch(c) for c in replacement):
         return replacement
     if not any('가' <= c <= '힣' for c in origin):
         return replacement
@@ -107,7 +126,9 @@ class Engine:
             if s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
-                if modes.get('hanja',True):annotations.append(dict(start=to_utf16(text,s.start),end=to_utf16(text,s.end),surface=s.original,type='hanja',replacement=restore_mixed_display(s.original,s.display_text,s.origin_raw)))
+                token=next((t for t in tokens if t.start==s.start and t.start+t.length==s.end),None)
+                selected=next((c for c in s.candidates if c.get('entry_id')==s.matched_entry_id),{})
+                if modes.get('hanja',True):annotations.append(dict(start=to_utf16(text,s.start),end=to_utf16(text,s.end),surface=s.original,type='hanja',replacement=restore_mixed_display(s.original,s.display_text,s.origin_raw,token=token,written_form=selected.get('written_form'))))
             else:reviews.append((s.start,s.end,s.original,s.candidates))
         # Only review needs tokens to reproduce the original display builder.
         review_tokens=tokens if reviews else []
@@ -126,7 +147,7 @@ class Engine:
                     score=CandidateScore(**{k:c.get(k) for k in CandidateScore.__dataclass_fields__ if k in c})
                     replacement=converter._build_display_text(token,score)
                     if token.is_verb_stem and token.form.endswith('하') and len(c['replacement'])<len(surface): replacement=c['replacement']+surface[len(c['replacement']):]
-                replacement=restore_mixed_display(surface,replacement,c.get('origin_raw'))
+                replacement=restore_mixed_display(surface,replacement,c.get('origin_raw'),token=token,written_form=c.get('written_form'))
                 if safe_replacement(replacement):choices.append((start,end,replacement,c.get('entry_id')))
         components=[]
         for choice in sorted(set(choices)):
