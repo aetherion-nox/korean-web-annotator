@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.14';
+  const VERSION = '1.1.15';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -345,6 +345,19 @@
     return Boolean(block&&sourceOf(element).text===block.text&&recoveryContext(element)===block.context);
   }
 
+  function loanwordDisplay(value) {
+    // Display-only whitelist. Preserve spelling and combining accents as stored.
+    let output = '', latin = false;
+    for (const char of value) {
+      if (/\p{Letter}/u.test(char) && /\p{Script=Latin}/u.test(char)) {
+        output += char; latin = true;
+      } else if (latin && /\p{Mark}/u.test(char)) {
+        output += char;
+      } else latin = false;
+    }
+    return output;
+  }
+
   function escapeHTML(value) {
     return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   }
@@ -354,7 +367,8 @@
     for (const annotation of entry.annotations.sort((a, b) => a.start - b.start)) {
       if (annotation.start < cursor) continue;
       const base = annotation.type === 'hanja' ? annotation.replacement : annotation.surface;
-      const reading = annotation.type === 'hanja' ? annotation.surface : annotation.replacement;
+      const reading = annotation.type === 'hanja' ? annotation.surface : loanwordDisplay(annotation.replacement);
+      if (annotation.type === 'loanword' && !reading) continue;
       value += escapeHTML(entry.text.slice(cursor, annotation.start));
       value += `<ruby class="kra-ruby" kra-annotated="true" data-kra-type="${annotation.type}" data-kra-original="${escapeHTML(annotation.surface)}">${escapeHTML(base)}<rt class="kra-annotation kra-unselectable">${escapeHTML(reading)}</rt></ruby>`;
       cursor = annotation.end;
