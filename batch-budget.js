@@ -4,11 +4,11 @@ export const normalizeBatchContextTier=value=>['128k','1m'].includes(value)?valu
 // This is a multilingual byte heuristic, not any provider's exact tokenizer.
 export const estimateTokenCount=text=>Math.ceil(new TextEncoder().encode(text||'').length/3);
 const limits={current:null,'128k':128000,'1m':1000000};
-export function describeBatchBudget(context,targets,{tier='current',manual=false,wireIds=false}={}){
+export function describeBatchBudget(context,targets,{tier='current',manual=false,wireIds=false,batchId='00000000-0000-0000-0000-000000000000'}={}){
  tier=normalizeBatchContextTier(tier);
- const wire=wireIds?targets:targets.map((t,i)=>({...t,target_id:manual?'00000000-0000-0000-0000-000000000000t'+i:'b0t'+i}));
- const input=manual?buildManualPrompt(context,wire):REVIEW_INSTRUCTIONS+'\n'+JSON.stringify(buildReviewPayload(context||'',wire).payload);
- const reply=JSON.stringify({results:wire.map(t=>({target_id:t.target_id,choice_id:t.options.reduce((longest,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(longest).length?o.choice_id:longest,'')}))});
+ const wire=wireIds?targets:targets.map((t,i)=>({...t,target_id:manual?'t'+i:'b0t'+i}));
+ const input=manual?buildManualPrompt(context,wire,batchId):REVIEW_INSTRUCTIONS+'\n'+JSON.stringify(buildReviewPayload(context||'',wire).payload);
+ const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),results:wire.map(t=>({target_id:t.target_id,choice_id:t.options.reduce((longest,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(longest).length?o.choice_id:longest,'')}))});
  const contextTokens=limits[tier],inputTokens=estimateTokenCount(input)+(manual?0:64),outputTokens=Math.ceil(estimateTokenCount(reply)*1.1)+32;
  const safetyTokens=contextTokens?Math.ceil(contextTokens*.08)+1024:0,outputLimit=manual?65536:16384;
  const reservedOutputTokens=manual?outputTokens:Math.max(outputTokens,outputLimit),totalTokens=inputTokens+reservedOutputTokens+safetyTokens;

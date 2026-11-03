@@ -8,14 +8,15 @@ import {describeBatchBudget} from './batch-budget.js';
 export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000}={}){
  const groups=[];let rows=[];
  const ownContext=group=>[...new Set(group.map(r=>r.target.context))].join('\n');
- const size=group=>buildManualPrompt(ownContext(group),group.map(r=>r.target)).length+group.length*50;
+ const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000-0000-0000-0000-000000000000');
+ const size=group=>prompt(ownContext(group),group).length;
  for(const item of items)for(const target of item.result.unresolved){
   const row={item,target};
   if(rows.length&&(rows.length>=maxTargets||size([...rows,row])>maxChars)){groups.push(rows);rows=[];}
   rows.push(row);
  }
  if(rows.length)groups.push(rows);
- return groups.map(group=>({rows:group,items:[...new Set(group.map(r=>r.item))],context:context&&context.length<=maxChars&&buildManualPrompt(context,group.map(r=>r.target)).length+group.length*50<=maxChars?context:ownContext(group)}));
+ return groups.map(group=>({rows:group,items:[...new Set(group.map(r=>r.item))],context:context&&context.length<=maxChars&&prompt(context,group).length<=maxChars?context:ownContext(group)}));
 }
 
 function parseAnswer(text){
@@ -35,14 +36,14 @@ export function createManualReviewSession({operationId,post,signal}={}){
   request(config,targets,requestSignal=signal){
    const activeSignal=requestSignal||signal;activeSignal?.throwIfAborted();
    if(pending)throw Error('已有一批手动审核正在等待结果。');
-   const requestId=crypto.randomUUID(),wireTargets=targets.map((target,i)=>({...target,target_id:requestId+'t'+i}));
+   const requestId=crypto.randomUUID(),wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
    const bindings=Array.isArray(config.manualBindings)?config.manualBindings.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};}):undefined;
    return new Promise((resolve,reject)=>{
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
     pending={requestId,targets,wireTargets,resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
-    try{notify('MANUAL_REVIEW_REQUEST',{requestId,bindings,batchNumber:config.batchNumber||++batchNumber,batchTotal:config.batchTotal||null,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true}),limitReason:config.batchBudget?.limitReason}});}catch(error){clear();reject(error);}
+    try{notify('MANUAL_REVIEW_REQUEST',{requestId,bindings,batchNumber:config.batchNumber||++batchNumber,batchTotal:config.batchTotal||null,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId}),limitReason:config.batchBudget?.limitReason}});}catch(error){clear();reject(error);}
    });
   },
   submit(message){
@@ -53,6 +54,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
    const current=pending;
    try{
     const response=parseAnswer(message.text);
+    if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
     const result=validateChoices(current.wireTargets,response);
     if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果不完整，或包含重复/其他批次的 target_id、无效 choice_id。请完整复制本批结果，保留 ID 原样。');
     const mapped={results:result.accepted.map(({target,option})=>({target_id:current.targets[current.wireTargets.indexOf(target)].target_id,choice_id:option.choice_id}))};

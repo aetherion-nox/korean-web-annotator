@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.16';
+  const VERSION = '1.1.17';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -505,6 +505,7 @@
     if(typeof text!=='string'||text.length>5*1024*1024)throw Error('请提供不超过 5 MiB 的完整 JSON 结果。');
     let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
     let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
+    if(response?.batch_id!==backup.requestId)throw Error('batch_id 缺失或不属于当前批次，未应用任何答案。');
     const rows=response?.results,bindings=new Map(backup.bindings.map(b=>[b.target_id,b])),seen=new Set(),accepted=[];
     if(!Array.isArray(rows)||rows.length!==bindings.size)throw Error('本批结果不完整，请使用当前批次的全部 target_id。');
     for(const row of rows){
