@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.15';
+  const VERSION = '1.1.16';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -346,16 +346,7 @@
   }
 
   function loanwordDisplay(value) {
-    // Display-only whitelist. Preserve spelling and combining accents as stored.
-    let output = '', latin = false;
-    for (const char of value) {
-      if (/\p{Letter}/u.test(char) && /\p{Script=Latin}/u.test(char)) {
-        output += char; latin = true;
-      } else if (latin && /\p{Mark}/u.test(char)) {
-        output += char;
-      } else latin = false;
-    }
-    return output;
+    return value.replace(/[←→]/g, '');
   }
 
   function escapeHTML(value) {
