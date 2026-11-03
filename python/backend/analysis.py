@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
+from backend.loanwords import is_nonconversion_origin
 ensure_environment()
 from app.services.converter import ConverterService
 from app.services.tokenizer import TokenizerService
@@ -12,7 +13,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-mixed-verb-stems-7'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-origin-review-8'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -163,7 +164,7 @@ class Engine:
                     for a,b,_,candidates in reviews:
                         if a>=end or b<=start:continue
                         for candidate in candidates:
-                            if safe_replacement(candidate.get('replacement')):continue
+                            if safe_replacement(candidate.get('replacement')) or not is_nonconversion_origin(candidate.get('origin_raw'),loanword=modes.get('loanword',False)):continue
                             if not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
                             entry=candidate.get('entry_id')
                             if entry is None:continue
@@ -182,7 +183,7 @@ class Engine:
             entries=await self.lookup_entries([t.form for t in tokens])
             # Only enabled Hanja annotations occupy ranges; competing origins still
             # participate through all-entry lookup when Hanja display is disabled.
-            loan=collect(text,tokens,entries,occupied if modes.get('hanja',True) else [],force_review=review_all)
+            loan=collect(text,tokens,entries,occupied if modes.get('hanja',True) else [],force_review=review_all,hanja_enabled=modes.get('hanja',True))
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.

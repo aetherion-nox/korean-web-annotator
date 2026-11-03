@@ -13,7 +13,22 @@ def classify_origin(origin):
         return 'mixed' if any(c.isalpha() and not CJK.match(c) and not HANGUL.match(c) for c in origin) else 'unsupported'
     return 'loanword' if any(c.isalpha() for c in origin) else 'unsupported'
 
-def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False) -> dict:
+def is_nonconversion_origin(origin, *, hanja=True, loanword=True):
+    """Missing/native-only origins explain KEEP; foreign/CJK origins cannot.
+
+    Missing origin metadata is not positive proof of native etymology.
+    """
+    if origin is None:return True
+    if not isinstance(origin,str):return False
+    has_hanja=bool(CJK.search(origin))
+    has_foreign=any(c.isalpha() and not HANGUL.fullmatch(c) and not CJK.fullmatch(c) for c in origin)
+    return not ((hanja and has_hanja) or (loanword and has_foreign))
+
+def keep_definitions(records, **modes):
+    return list(dict.fromkeys(r['definition_preview'] for r in records
+        if is_nonconversion_origin(r.get('origin_raw'), **modes) and r.get('definition_preview')))
+
+def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True) -> dict:
     """Return UTF-16 annotations/targets; input token and occupied offsets are Python indices.
 
     Mixed origins always require fixed-choice review, displayed above intact Hangul.
@@ -40,7 +55,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if not force_review and not overlaps_proper_noun(start,end,proper_ranges) and not has_mixed and len(origins)==1 and len(loans)==len(records):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
-            options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[r['definition_preview'] for r in records if r.get('definition_preview')])]
+            options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=keep_definitions(records,hanja=hanja_enabled,loanword=True))]
             for i,record in enumerate(loans):
                 options.append(dict(choice_id=f'c{i}',type='loanword',replacement=record['origin_raw'],entry_id=record.get('id'),definitions=[record['definition_preview']] if record.get('definition_preview') else []))
             targets.append(dict(span,target_id=f'loan{len(targets)}',context=text,options=options))
