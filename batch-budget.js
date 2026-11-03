@@ -4,7 +4,7 @@ export const normalizeBatchContextTier=value=>['128k','1m'].includes(value)?valu
 // This is a multilingual byte heuristic, not any provider's exact tokenizer.
 export const estimateTokenCount=text=>Math.ceil(new TextEncoder().encode(text||'').length/3);
 const limits={current:null,'128k':128000,'1m':1000000};
-export function describeBatchBudget(context,targets,{tier='current',manual=false,wireIds=false,batchId='00000000-0000-0000-0000-000000000000'}={}){
+export function describeBatchBudget(context,targets,{tier='current',manual=false,wireIds=false,batchId='00000000'}={}){
  tier=normalizeBatchContextTier(tier);
  const wire=wireIds?targets:targets.map((t,i)=>({...t,target_id:manual?'t'+i:'b0t'+i}));
  const input=manual?buildManualPrompt(context,wire,batchId):REVIEW_INSTRUCTIONS+'\n'+JSON.stringify(buildReviewPayload(context||'',wire).payload);

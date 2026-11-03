@@ -8,7 +8,7 @@ import {describeBatchBudget} from './batch-budget.js';
 export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000}={}){
  const groups=[];let rows=[];
  const ownContext=group=>[...new Set(group.map(r=>r.target.context))].join('\n');
- const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000-0000-0000-0000-000000000000');
+ const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000');
  const size=group=>prompt(ownContext(group),group).length;
  for(const item of items)for(const target of item.result.unresolved){
   const row={item,target};
@@ -36,7 +36,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
   request(config,targets,requestSignal=signal){
    const activeSignal=requestSignal||signal;activeSignal?.throwIfAborted();
    if(pending)throw Error('已有一批手动审核正在等待结果。');
-   const requestId=crypto.randomUUID(),wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
+   const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join(''),wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
    const bindings=Array.isArray(config.manualBindings)?config.manualBindings.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};}):undefined;
    return new Promise((resolve,reject)=>{
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
