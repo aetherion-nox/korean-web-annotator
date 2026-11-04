@@ -11,7 +11,8 @@ from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
 
 HANGUL=re.compile(r'^[가-힣]+$')
 LATIN=re.compile(r'[A-Za-zÀ-ÖØ-öø-ÿ]')
-LEXICAL={'NNG','NNP','NNB','NR','XR','XPN','XSN'}
+NATIVE_SYLLABLE=re.compile(r'[가-힣]')
+LEXICAL={'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'}
 
 def _align_origin(surface, origin):
     if not HANGUL.fullmatch(surface) or len(surface)>80 or not isinstance(origin,str):return None
@@ -56,8 +57,11 @@ def _align_origin(surface, origin):
     visit(0,0,[])
     return solutions[0] if len(solutions)==1 else None
 
+def is_mixed_origin(origin):
+    return isinstance(origin,str) and bool(CJK.search(origin)) and bool(LATIN.search(origin) or NATIVE_SYLLABLE.search(origin))
+
 def align_mixed(surface, origin):
-    if not isinstance(origin,str) or not CJK.search(origin) or not LATIN.search(origin):return None
+    if not is_mixed_origin(origin):return None
     return _align_origin(surface,origin)
 
 def candidate_spans(text,tokens):
@@ -85,11 +89,10 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=()):
         for record in records:
             raw=record.get('origin_raw')
             if not isinstance(raw,str):continue
-            if CJK.search(raw) and LATIN.search(raw):
-                kind='mixed'
+            if is_mixed_origin(raw):
+                kind='mixed';has_mixed=True
                 parts=align_mixed(word,raw)
                 if parts is None:unaligned=True
-                else:has_mixed=True
             elif not CJK.search(raw) and classify_origin(raw) in ('loanword','mixed'):
                 kind='loanword'
                 # Preserve the normal loanword path's whole-entry spelling.
