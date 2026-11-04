@@ -42,7 +42,7 @@ def nonconversion_options(surface, records, *, definitions_by_entry=None, **mode
 def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True) -> dict:
     """Return UTF-16 annotations/targets; input token and occupied offsets are Python indices.
 
-    Mixed origins always require fixed-choice review, displayed above intact Hangul.
+    Mixed origins belong to the validated whole-entry segmentation path.
     Only exact tokenizer-form slices qualify. Every entry (including native and
     Hanja homonyms) participates in certainty; non-conversion senses are explicit.
     """
@@ -56,14 +56,13 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if not 0<=start<end<=len(text) or text[start:end]!=form:continue
         if any(start<b and a<end for a,b in occupied):continue
         records=entries.get(form,[])
-        # Foreign/Hanja entries are owned by the segmented whole-entry path.
-        # Never expose unresolved CJK as an undifferentiated loanword.
-        loans=[r for r in records if classify_origin(r.get('origin_raw')) in ('loanword','mixed') and not CJK.search(r.get('origin_raw') or '')]
-        has_mixed=any(classify_origin(r.get('origin_raw'))=='mixed' for r in loans)
+        # Every mixed origin requires validated segmentation; never revive a
+        # failed mixed spelling as one undifferentiated foreign replacement.
+        loans=[r for r in records if classify_origin(r.get('origin_raw'))=='loanword' and not CJK.search(r.get('origin_raw') or '')]
         if not loans:continue
         origins={r['origin_raw'] for r in loans}
         span=dict(start=to_utf16(text,start),end=to_utf16(text,end),surface=form)
-        if not force_review and not overlaps_proper_noun(start,end,proper_ranges) and not has_mixed and len(origins)==1 and len(loans)==len(records):
+        if not force_review and not overlaps_proper_noun(start,end,proper_ranges) and len(origins)==1 and len(loans)==len(records):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
             options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)

@@ -5,8 +5,9 @@ consumes one source syllable; native anchors must match verbatim; Latin runs
 consume an unknown positive number of syllables. Accept only a unique full map.
 """
 import re
+from functools import lru_cache
 from backend.offsets import to_utf16
-from backend.loanwords import CJK, classify_origin, nonconversion_options
+from backend.loanwords import CJK, HANGUL as HANGUL_CHAR, classify_origin, nonconversion_options
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
 
 HANGUL=re.compile(r'^[가-힣]+$')
@@ -39,30 +40,53 @@ def _align_origin(surface, origin):
             elif kind=='loanword' and (LATIN.fullmatch(nxt) or nxt in " -'’." or nxt.isdigit()):j+=1
             else:break
         units.append((kind,origin[i:j].strip()));i=j
-    if len(units)>16:return None
-    solutions=[]
-    def visit(index,pos,parts):
-        if len(solutions)>1:return
-        if index==len(units):
-            if pos==len(surface):solutions.append(parts)
-            return
+    return _align_units(surface,units)
+
+def _align_units(surface,units):
+    if not HANGUL.fullmatch(surface) or len(surface)>80 or len(units)>16:return None
+    @lru_cache(None)
+    def solve(index,pos):
+        if index==len(units):return ((),) if pos==len(surface) else ()
         kind,value=units[index]
         minimum=sum(1 if k=='loanword' else len(v) for k,v in units[index+1:])
         lengths=range(1,len(surface)-pos-minimum+1) if kind=='loanword' else [len(value)]
+        paths=[]
         for size in lengths:
             end=pos+size
             if end>len(surface):continue
             if kind=='native' and surface[pos:end]!=value:continue
-            visit(index+1,end,parts+[dict(start=pos,end=end,surface=surface[pos:end],type=kind,replacement=value)])
-    visit(0,0,[])
-    return solutions[0] if len(solutions)==1 else None
+            for tail in solve(index+1,end):
+                paths.append(((kind,value,pos,end),)+tail)
+                if len(paths)>1:return tuple(paths)
+        return tuple(paths)
+    paths=solve(0,0)
+    if len(paths)!=1:return None
+    return [dict(start=a,end=b,surface=surface[a:b],type=kind,replacement=value) for kind,value,a,b in paths[0]]
+
+def _align_native_loanword(surface,origin):
+    # Preserve foreign spelling and punctuation exactly; only Hangul runs are
+    # literal anchors. Every foreign run must contain a non-Hangul letter.
+    if classify_origin(origin)!='mixed':return None
+    if any(HANGUL_CHAR.fullmatch(c) and not NATIVE_SYLLABLE.fullmatch(c) for c in origin):return None
+    units=[];i=0
+    while i<len(origin):
+        native=bool(NATIVE_SYLLABLE.fullmatch(origin[i]));j=i+1
+        while j<len(origin) and bool(NATIVE_SYLLABLE.fullmatch(origin[j]))==native:j+=1
+        value=origin[i:j]
+        if not native and not any(c.isalpha() and not HANGUL_CHAR.fullmatch(c) for c in value):return None
+        units.append(('native' if native else 'loanword',value));i=j
+    return _align_units(surface,units)
 
 def is_mixed_origin(origin):
-    return isinstance(origin,str) and bool(CJK.search(origin)) and bool(LATIN.search(origin) or NATIVE_SYLLABLE.search(origin))
+    if not isinstance(origin,str):return False
+    if CJK.search(origin):return bool(LATIN.search(origin) or HANGUL_CHAR.search(origin))
+    # Recognize script mixing independently of safety validation, so malformed
+    # siblings still own the range and cannot escape through another path.
+    return bool(HANGUL_CHAR.search(origin)) and any(c.isalpha() and not HANGUL_CHAR.fullmatch(c) for c in origin)
 
 def align_mixed(surface, origin):
     if not is_mixed_origin(origin):return None
-    return _align_origin(surface,origin)
+    return _align_origin(surface,origin) if CJK.search(origin) else _align_native_loanword(surface,origin)
 
 def candidate_spans(text,tokens):
     spans=set()
@@ -93,7 +117,7 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=()):
                 kind='mixed';has_mixed=True
                 parts=align_mixed(word,raw)
                 if parts is None:unaligned=True
-            elif not CJK.search(raw) and classify_origin(raw) in ('loanword','mixed'):
+            elif not CJK.search(raw) and classify_origin(raw)=='loanword':
                 kind='loanword'
                 # Preserve the normal loanword path's whole-entry spelling.
                 parts=[dict(start=0,end=len(word),surface=word,type='loanword',replacement=raw)]
