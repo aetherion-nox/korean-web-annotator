@@ -63,7 +63,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify(['id-review-v8-general-prompt',config.endpoint,config.model,config.provider,!!config.disableThinking,config.reasoningEffort]);
+   const fingerprint=JSON.stringify(['id-review-v9-native-choices',config.endpoint,config.model,config.provider,!!config.disableThinking,config.reasoningEffort]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
    const cached=!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);

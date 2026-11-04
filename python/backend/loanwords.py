@@ -24,16 +24,27 @@ def is_nonconversion_origin(origin, *, hanja=True, loanword=True):
     has_foreign=any(c.isalpha() and not HANGUL.fullmatch(c) and not CJK.fullmatch(c) for c in origin)
     return not ((hanja and has_hanja) or (loanword and has_foreign))
 
-def keep_definitions(records, **modes):
-    return list(dict.fromkeys(r['definition_preview'] for r in records
-        if is_nonconversion_origin(r.get('origin_raw'), **modes) and r.get('definition_preview')))
+def nonconversion_options(surface, records, *, definitions_by_entry=None, **modes):
+    """Independent dictionary senses that preserve Korean in the active modes."""
+    options=[]
+    for record in records:
+        if not is_nonconversion_origin(record.get('origin_raw'), **modes):continue
+        entry=record.get('entry_id',record.get('id'))
+        if entry is None:continue
+        definitions=(definitions_by_entry or {}).get(entry)
+        if definitions is None:definitions=[record.get('definition_preview')]
+        senses=list(dict.fromkeys(d for d in definitions if d))
+        # Preserve the entry for the engine's batched complete-sense lookup.
+        for definition in senses or [None]:
+            options.append(dict(choice_id=f'n{len(options)}',type='nonconversion',replacement=surface,entry_id=entry,definitions=[definition] if definition else []))
+    return options
 
 def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True) -> dict:
     """Return UTF-16 annotations/targets; input token and occupied offsets are Python indices.
 
     Mixed origins always require fixed-choice review, displayed above intact Hangul.
     Only exact tokenizer-form slices qualify. Every entry (including native and
-    Hanja homonyms) participates in certainty; KEEP represents other readings.
+    Hanja homonyms) participates in certainty; non-conversion senses are explicit.
     """
     annotations=[];targets=[];skipped_mixed=0
     occupied=list(occupied_ranges); seen=set();proper_ranges=proper_noun_ranges(tokens)
@@ -55,7 +66,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if not force_review and not overlaps_proper_noun(start,end,proper_ranges) and not has_mixed and len(origins)==1 and len(loans)==len(records):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
-            options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=keep_definitions(records,hanja=hanja_enabled,loanword=True))]
+            options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)
             for i,record in enumerate(loans):
                 options.append(dict(choice_id=f'c{i}',type='loanword',replacement=record['origin_raw'],entry_id=record.get('id'),definitions=[record['definition_preview']] if record.get('definition_preview') else []))
             targets.append(dict(span,target_id=f'loan{len(targets)}',context=text,options=options))
@@ -76,7 +87,6 @@ def merge_targets(text,targets):
         surface=slice16(start,end)
         options=[dict(choice_id='KEEP',type='keep',replacement=surface,entry_id=None,definitions=[])]
         for target in group:
-            options[0]['definitions'].extend(target['options'][0].get('definitions',[]))
             for option in target['options'][1:]:
                 choice=dict(option)
                 choice['choice_id']=f'c{len(options)-1}'

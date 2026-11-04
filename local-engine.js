@@ -3,6 +3,10 @@ import {normalizeBatchContextTier} from './batch-budget.js';
 const CJK=/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]/u;
 export function projectAnnotation(text,annotation){
  const {start,end,surface,replacement,type}=annotation;
+ if(type==='nonconversion'){
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||text.slice(start,end)!==surface||replacement!==surface||annotation.segments)throw Error('Invalid non-conversion sense');
+  return [];
+ }
  if(Array.isArray(annotation.segments)){
   if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||text.slice(start,end)!==surface||!['hanja','loanword','mixed'].includes(type)||!annotation.segments.length)throw Error('Invalid segmented annotation');
   let previous=0,display=surface;const output=[];
@@ -64,6 +68,9 @@ export function validateAnalysis(text,data){
    choices.add(o.choice_id);
    if(o.choice_id==='KEEP'&&o.type!=='keep')throw Error('Invalid KEEP');
    if(o.type==='keep'){if(o.choice_id!=='KEEP'||o.replacement!==t.surface)throw Error('Invalid KEEP');}
+   else if(o.type==='nonconversion'){
+    if(o.replacement!==t.surface||o.entry_id===undefined||o.entry_id===null||o.segments||!o.definitions.length||o.definitions.some(d=>typeof d!=='string'||!d))throw Error('Invalid non-conversion sense');
+   }
    else{
     if(o.entry_id===undefined||o.entry_id===null)throw Error('Missing dictionary entry');
     const a={...o,start:t.start,end:t.end,surface:t.surface,context:t.context};
@@ -72,7 +79,7 @@ export function validateAnalysis(text,data){
    validOptions.push(o);
   }
   if(!choices.has('KEEP'))throw Error('Missing KEEP');
-  if(!validOptions.some(o=>o.type!=='keep')){rejectedTargets++;continue;}
+  if(!validOptions.some(o=>['hanja','loanword','mixed'].includes(o.type))){rejectedTargets++;continue;}
   targets.push({...t,options:validOptions});ranges.push([t.start,t.end]);
  }
  ranges.sort((a,b)=>a[0]-b[0]);if(ranges.some((r,i)=>i&&r[0]<ranges[i-1][1]))throw Error('Overlapping engine spans');

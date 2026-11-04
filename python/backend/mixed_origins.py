@@ -6,7 +6,7 @@ consume an unknown positive number of syllables. Accept only a unique full map.
 """
 import re
 from backend.offsets import to_utf16
-from backend.loanwords import CJK, keep_definitions
+from backend.loanwords import CJK, nonconversion_options
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
 
 HANGUL=re.compile(r'^[가-힣]+$')
@@ -101,6 +101,7 @@ async def collect_mixed(engine,text,tokens,modes):
             for p in options[0]['segments']:
                 annotations.append({**p,'start':to_utf16(text,start)+p['start'],'end':to_utf16(text,start)+p['end']})
         else:
-            keep=dict(choice_id='KEEP',type='keep',replacement=word,entry_id=None,definitions=keep_definitions(records,hanja=modes.get('hanja',True),loanword=modes.get('loanword',False)))
-            targets.append(dict(target_id=f'mixed{len(targets)}',start=to_utf16(text,start),end=to_utf16(text,end),surface=word,context=text,options=[keep]+options))
+            keep=dict(choice_id='KEEP',type='keep',replacement=word,entry_id=None,definitions=[])
+            native=nonconversion_options(word,records,hanja=modes.get('hanja',True),loanword=modes.get('loanword',False))
+            targets.append(dict(target_id=f'mixed{len(targets)}',start=to_utf16(text,start),end=to_utf16(text,end),surface=word,context=text,options=[keep]+native+options))
     return dict(annotations=annotations,targets=targets,ranges=ranges,skipped_mixed=skipped)

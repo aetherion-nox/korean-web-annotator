@@ -5,7 +5,7 @@ from pathlib import Path
 from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
-from backend.loanwords import is_nonconversion_origin
+from backend.loanwords import is_nonconversion_origin, nonconversion_options
 ensure_environment()
 from app.services.converter import ConverterService
 from app.services.tokenizer import TokenizerService
@@ -13,7 +13,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-origin-review-8'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-native-choices-9'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -160,7 +160,7 @@ class Engine:
                 start=min(x[0] for x in component);end=max(x[1] for x in component)
                 options=[dict(choice_id='KEEP',type='keep',replacement=text[start:end],entry_id=None,definitions=[])]
                 if self.dictionary is not None:
-                    # Native/non-Hanja dictionary readings explain KEEP without a local recommendation.
+                    # Dictionary readings that preserve Korean are explicit sense options.
                     for a,b,_,candidates in reviews:
                         if a>=end or b<=start:continue
                         for candidate in candidates:
@@ -168,7 +168,7 @@ class Engine:
                             if not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
                             entry=candidate.get('entry_id')
                             if entry is None:continue
-                            options[0]['definitions'].extend(definitions_by_entry.get(entry,[]))
+                            options.extend(nonconversion_options(text[start:end],[candidate],definitions_by_entry=definitions_by_entry,loanword=modes.get('loanword',False)))
                 # Each fixed option changes one candidate span and preserves the rest of the connected region.
                 for n,(a,b,replacement,entry) in enumerate(component):
                     if self.dictionary is not None:
@@ -199,6 +199,20 @@ class Engine:
                         option['definitions']=[s['definition'] for s in (detail or {}).get('senses',[]) if s.get('definition')]
             targets=merge_targets(text,targets+loan['targets'])
         targets=sorted(targets+mixed['targets'],key=lambda t:(t['start'],t['end']))
+        # Complete every non-conversion entry before exposing independent senses.
+        native_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']=='nonconversion']) if self.dictionary is not None else {}
+        for target in targets:
+            native=[];conversions=[];seen=set()
+            for option in target['options']:
+                if option['type']=='keep':continue
+                if option['type']=='nonconversion':
+                    for definition in native_definitions.get(option['entry_id'],option['definitions']):
+                        key=(option['entry_id'],definition)
+                        if not definition or key in seen:continue
+                        seen.add(key)
+                        native.append({**option,'choice_id':f'n{len(native)}','definitions':[definition]})
+                else:conversions.append({**option,'choice_id':f'c{len(conversions)}'})
+            target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
         proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
         for i,target in enumerate(targets):
             target['target_id']=f't{i}'
