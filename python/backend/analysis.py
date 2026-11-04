@@ -13,7 +13,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-native-choices-9'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-cross-origin-10'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -107,8 +107,8 @@ class Engine:
         review_all=bool(modes.get('reviewAll',False))
         # The original converter owns tokenization, lookup forms, scoring,
         # whole-word precedence and certainty. Do not rescan skipped compounds
-        # for general conversion. Exact foreign/Hanja mixed entries have a
-        # separate whole-entry segmentation path below, before source projection.
+        # for general conversion. Exact mixed/cross-origin words have a
+        # complete whole-entry choice path below, before source projection.
         converter=ConverterService(self.tokenizer,self.disambiguation)
         segments,_=await converter.convert(text,self.lookup_fn)
         tokens=await self.tokens(text)
@@ -117,7 +117,8 @@ class Engine:
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
         if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):
             from backend.mixed_origins import collect_mixed
-            mixed=await collect_mixed(self,text,tokens,modes)
+            whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')]
+            mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges)
         annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
@@ -181,9 +182,9 @@ class Engine:
         if modes.get('loanword',False):
             from backend.loanwords import collect, merge_targets
             entries=await self.lookup_entries([t.form for t in tokens])
-            # Only enabled Hanja annotations occupy ranges; competing origins still
-            # participate through all-entry lookup when Hanja display is disabled.
-            loan=collect(text,tokens,entries,occupied if modes.get('hanja',True) else [],force_review=review_all,hanja_enabled=modes.get('hanja',True))
+            # Whole-entry owned words already contain all sibling origins in every mode.
+            # Disabled Hanja annotations must not block ordinary loanword lookup.
+            loan=collect(text,tokens,entries,occupied if modes.get('hanja',True) else mixed['ranges'],force_review=review_all,hanja_enabled=modes.get('hanja',True))
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.
@@ -192,26 +193,22 @@ class Engine:
                 if overlapping:
                     loan['targets'].append(dict(start=annotation['start'],end=annotation['end'],surface=annotation['surface'],context=text,options=[dict(choice_id='KEEP',type='keep',replacement=annotation['surface'],entry_id=None,definitions=[]),dict(choice_id='c0',type='loanword',replacement=annotation['replacement'],entry_id=annotation['entry_id'],definitions=annotation['definitions'])]))
                 else:annotations.append({k:v for k,v in annotation.items() if k not in ('entry_id','definitions')})
-            for target in loan['targets']:
-                if self.dictionary is not None:
-                    for option in target['options'][1:]:
-                        detail=await self.dictionary.get_entry_detail(option['entry_id'])
-                        option['definitions']=[s['definition'] for s in (detail or {}).get('senses',[]) if s.get('definition')]
             targets=merge_targets(text,targets+loan['targets'])
         targets=sorted(targets+mixed['targets'],key=lambda t:(t['start'],t['end']))
-        # Complete every non-conversion entry before exposing independent senses.
-        native_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']=='nonconversion']) if self.dictionary is not None else {}
+        # Complete every candidate, including sibling origins owned by mixed words.
+        option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
         for target in targets:
             native=[];conversions=[];seen=set()
             for option in target['options']:
                 if option['type']=='keep':continue
+                definitions=option_definitions.get(option['entry_id'],option['definitions'])
                 if option['type']=='nonconversion':
-                    for definition in native_definitions.get(option['entry_id'],option['definitions']):
+                    for definition in definitions:
                         key=(option['entry_id'],definition)
                         if not definition or key in seen:continue
                         seen.add(key)
                         native.append({**option,'choice_id':f'n{len(native)}','definitions':[definition]})
-                else:conversions.append({**option,'choice_id':f'c{len(conversions)}'})
+                else:conversions.append({**option,'choice_id':f'c{len(conversions)}','definitions':definitions})
             target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
         proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
         for i,target in enumerate(targets):
