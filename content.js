@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.28';
+  const VERSION = '1.1.29';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -21,6 +21,8 @@
   let selectionTimer = null;
   let pageCompleted = false;
   let pageHasHangul = false;
+  let hangulVisibilityObserver = null;
+  let hangulVisibilityTimer = null;
   let automaticObserver = null;
   let automaticTimer = null;
   const seenSources = new Set();
@@ -202,6 +204,7 @@
     document.documentElement.toggleAttribute('data-kra-select-annotations',['annotated','annotation'].includes(uiSettings.copyMode)||uiSettings.selectAnnotations===true);
     document.documentElement.toggleAttribute('data-kra-select-hangul',uiSettings.copyMode==='hangul');
     document.documentElement.setAttribute('data-kra-copy-mode',uiSettings.copyMode);
+    configureHangulVisibility();
     refreshToolbar();
     configureAutomaticAnnotation();
     configureRecovery();
@@ -218,6 +221,30 @@
       const parent = container.nodeType === 1 ? container : container.parentElement;
       return hangul.test(parent?.closest(OWN_RUBY)?.getAttribute('data-kra-original') || '');
     }));
+  }
+
+  function configureHangulVisibility() {
+    clearTimeout(hangulVisibilityTimer);hangulVisibilityTimer=null;
+    if(uiSettings.toolbarHangulOnly===false||uiSettings.mobileSelectionToolbar===false){hangulVisibilityObserver?.disconnect();hangulVisibilityObserver=null;return;}
+    const own='.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball,.kra-manual-reopen';
+    const isOwn=node=>(node.nodeType===1?node:node.parentElement)?.closest(own);
+    const detect=()=>{
+      if(!document?.body)return false;
+      const hangul=/[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]/u;
+      const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+      let node;
+      while((node=walker.nextNode()))if(hangul.test(node.data)&&!isOwn(node)&&!node.parentElement?.closest('script,style,noscript,input,textarea,select'))return true;
+      return Array.from(document.querySelectorAll(OWN_RUBY)).some(r=>!isOwn(r)&&hangul.test(r.getAttribute('data-kra-original')||''));
+    };
+    pageHasHangul=detect();
+    if(hangulVisibilityObserver)return;
+    hangulVisibilityObserver=new MutationObserver(records=>{
+      if(!records.some(record=>!isOwn(record.target)&&(record.type==='characterData'||[...record.addedNodes,...record.removedNodes].some(node=>!isOwn(node)))))return;
+      // Coalesce scans without waiting for a permanently busy page to go idle.
+      if(hangulVisibilityTimer!==null)return;
+      hangulVisibilityTimer=setTimeout(()=>{hangulVisibilityTimer=null;if(!document?.body)return;pageHasHangul=detect();refreshToolbar();},160);
+    });
+    hangulVisibilityObserver.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
   }
 
   function floatingBounds() {
@@ -237,7 +264,8 @@
 
   function refreshFloatingBall() {
     if(!document?.body)return;
-    const show=window.top===window&&uiSettings.mobileSelectionToolbar!==false&&uiSettings.floatingBallEnabled!==false;
+    const show=window.top===window&&uiSettings.mobileSelectionToolbar!==false&&uiSettings.floatingBallEnabled!==false&&
+      (uiSettings.toolbarHangulOnly===false||pageHasHangul);
     if(!show){if(floatingBall)floatingBall.hidden=true;return;}
     if(!floatingBall){
       floatingBall=document.createElement('button');floatingBall.type='button';floatingBall.className='kra-floating-ball';floatingBall.textContent='한';
@@ -298,7 +326,7 @@
     const always = uiSettings.toolbarDisplay === 'always';
     const eligible = uiSettings.toolbarHangulOnly === false ||
       (always ? pageHasHangul : selectionHasHangul(selected));
-    const show=!toolbarDismissed&&uiSettings.mobileSelectionToolbar!==false&&
+    const show=!toolbarDismissed&&uiSettings.mobileSelectionToolbar!==false&&(uiSettings.toolbarHangulOnly===false||pageHasHangul)&&
       (toolbarForcedOpen||currentTask||(eligible&&(always||Boolean(selected))));
     if(!toolbar&&!show)return;
     const bar=getToolbar();bar.hidden=!show;
