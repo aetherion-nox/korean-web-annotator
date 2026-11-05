@@ -66,6 +66,10 @@ class DisambiguationService:
 
         scored = []
         for c in candidates:
+            # POS incompatibility is a structural rejection, including reviewAll.
+            # A lower score must not turn a noun into a predicate candidate.
+            if token_tag and self._pos_matches(token_tag, c.get('part_of_speech')) is False:
+                continue
             cs = CandidateScore(
                 entry_id=c.get('entry_id', 0),
                 written_form=c.get('written_form', ''),
@@ -131,7 +135,9 @@ class DisambiguationService:
         """Merge candidates that have identical replacement and origin_raw to avoid redundant glyph choices."""
         merged = {}
         for c in candidates:
-            key = (c.replacement, c.origin_raw, c.entry_id if not c.replacement else None)
+            # Preserve dictionary identities and their complete senses. Glyph
+            # equivalence belongs to local ranking, never to sense deletion.
+            key = (c.replacement, c.origin_raw, c.entry_id)
             if key not in merged:
                 merged[key] = c
             else:
@@ -162,6 +168,15 @@ class DisambiguationService:
         """
         if not scored_candidates:
             return None, 'no_match'
+
+        # Identical written outputs do not compete for the score gap, while all
+        # entries remain attached to the segment for later sense selection.
+        ranked = {}
+        for candidate in scored_candidates:
+            key = (candidate.replacement, candidate.origin_raw,
+                   candidate.entry_id if not candidate.replacement else None)
+            ranked.setdefault(key, candidate)
+        scored_candidates = list(ranked.values())
 
         top = scored_candidates[0]
 
@@ -207,6 +222,9 @@ class DisambiguationService:
             '보조 동사': ['VX'],
             '보조 형용사': ['VX'],
             '고유 명사': ['NNP'],
+            '조사': ['J'],
+            '어미': ['E'],
+            '어근': ['XR', 'NNG'],
         }
         if dict_pos not in pos_map:return None
         expected_tags = pos_map[dict_pos]

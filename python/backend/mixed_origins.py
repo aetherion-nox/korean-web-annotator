@@ -9,6 +9,7 @@ from functools import lru_cache
 from backend.offsets import to_utf16
 from backend.loanwords import CJK, HANGUL as HANGUL_CHAR, classify_origin, nonconversion_options
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
+from app.services.disambiguation import DisambiguationService
 
 HANGUL=re.compile(r'^[가-힣]+$')
 LATIN=re.compile(r'[A-Za-zÀ-ÖØ-öø-ÿ]')
@@ -109,7 +110,11 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=()):
         # native whole words. Equal spans are still unified here.
         if any(a<=start and end<=b and (a<start or end<b) for a,b in whole_word_ranges):continue
         if any(start<b and a<end for a,b in ranges):continue
-        records=entries.get(word,[]);options=[];mapped=0;signatures=set();unaligned=False;has_mixed=False;origin_kinds=set()
+        all_records=entries.get(word,[])
+        span_tokens=[t for t in tokens if start<=t.start and t.start+t.length<=end and t.length>0]
+        tag=span_tokens[0].tag if len(span_tokens)==1 else None
+        records=[r for r in all_records if DisambiguationService()._pos_matches(tag,r.get('part_of_speech')) is not False] if tag else all_records
+        options=[];mapped=0;signatures=set();unaligned=False;has_mixed=False;origin_kinds=set()
         for record in records:
             raw=record.get('origin_raw')
             if not isinstance(raw,str):continue
@@ -141,7 +146,10 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=()):
         # Mixed and cross-origin whole words share one complete choice set,
         # even when the tokenizer split their exact dictionary headword.
         # Single-origin ordinary words keep the original scoring path.
-        if not (has_mixed or len(origin_kinds)>1):continue
+        # Recover an exact dictionary foreign headword split by Kiwi before
+        # any component loanword is considered (컴+플레인 is not computer).
+        whole_foreign=len(span_tokens)>1 and 'loanword' in origin_kinds
+        if not (has_mixed or len(origin_kinds)>1 or whole_foreign):continue
         ranges.append((start,end))
         # No enabled safe conversion remains: keep Korean without sending a
         # native-only task, and prevent the generic fallback from reviving it.

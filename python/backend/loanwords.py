@@ -2,6 +2,7 @@
 import re
 from backend.offsets import to_utf16
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
+from app.services.disambiguation import DisambiguationService
 
 CJK = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U000323af]')
 HANGUL = re.compile(r'[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]')
@@ -53,16 +54,18 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if (start,end) in seen:continue
         seen.add((start,end))
         if getattr(token,'is_particle',False) or getattr(token,'is_punct',False):continue
+        if getattr(token,'is_verb_stem',False):continue
         if not 0<=start<end<=len(text) or text[start:end]!=form:continue
         if any(start<b and a<end for a,b in occupied):continue
-        records=entries.get(form,[])
+        records=[r for r in entries.get(form,[]) if DisambiguationService()._pos_matches(token.tag,r.get('part_of_speech')) is not False]
         # Every mixed origin requires validated segmentation; never revive a
         # failed mixed spelling as one undifferentiated foreign replacement.
         loans=[r for r in records if classify_origin(r.get('origin_raw'))=='loanword' and not CJK.search(r.get('origin_raw') or '')]
         if not loans:continue
         origins={r['origin_raw'] for r in loans}
         span=dict(start=to_utf16(text,start),end=to_utf16(text,end),surface=form)
-        if not force_review and not overlaps_proper_noun(start,end,proper_ranges) and len(origins)==1 and len(loans)==len(records):
+        partial=any(t is not token and t.length>0 and (t.start+t.length==start or t.start==end) and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'} for t in tokens)
+        if not force_review and not partial and not overlaps_proper_noun(start,end,proper_ranges) and len(origins)==1 and len(loans)==len(records):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
             options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)
@@ -87,6 +90,7 @@ def merge_targets(text,targets):
         options=[dict(choice_id='KEEP',type='keep',replacement=surface,entry_id=None,definitions=[])]
         for target in group:
             for option in target['options'][1:]:
+                if option['type']=='nonconversion' and (target['start']!=start or target['end']!=end):continue
                 choice=dict(option)
                 choice['choice_id']=f'c{len(options)-1}'
                 choice['replacement']=slice16(start,target['start'])+option['replacement']+slice16(target['end'],end)

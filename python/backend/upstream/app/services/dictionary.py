@@ -159,6 +159,20 @@ class DictionaryService:
             if close_db:
                 await db.close()
 
+    async def get_metadata_for_entries(self, entry_ids):
+        ids=list(dict.fromkeys(i for i in entry_ids if i is not None))
+        result={}
+        if not ids:return result
+        db=await self.get_connection()
+        try:
+            for start in range(0,len(ids),500):
+                batch=ids[start:start+500];placeholders=','.join('?' for _ in batch)
+                async with db.execute(f'SELECT id,written_form,part_of_speech FROM entries WHERE id IN ({placeholders})',batch) as cursor:
+                    for row in await cursor.fetchall():result[row['id']]=dict(written_form=row['written_form'],part_of_speech=row['part_of_speech'])
+            return result
+        finally:
+            await db.close()
+
     async def get_definitions_for_entries(self, entry_ids) -> Dict[int, List[str]]:
         """Fetch complete senses in batches without loading examples/metadata."""
         ids=list(dict.fromkeys(i for i in entry_ids if i is not None))

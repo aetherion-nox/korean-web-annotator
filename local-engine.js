@@ -63,7 +63,8 @@ export function validateAnalysis(text,data){
   if(typeof t.target_id!=='string'||ids.has(t.target_id)||!Number.isInteger(t.start)||!Number.isInteger(t.end)||t.start<0||t.end<=t.start||text.slice(t.start,t.end)!==t.surface||t.context!==text||!Array.isArray(t.options))throw Error('Invalid engine target');
   ids.add(t.target_id);const choices=new Set(),validOptions=[];
   for(const o of t.options){
-   if(Object.keys(o).some(k=>!['choice_id','type','replacement','entry_id','definitions','segments'].includes(k)))throw Error('Invalid engine option fields');
+   if(Object.keys(o).some(k=>!['choice_id','type','replacement','entry_id','definitions','segments','written_form','part_of_speech'].includes(k)))throw Error('Invalid engine option fields');
+   if(o.written_form!==undefined&&typeof o.written_form!=='string'||o.part_of_speech!==undefined&&o.part_of_speech!==null&&typeof o.part_of_speech!=='string')throw Error('Invalid dictionary metadata');
    if(typeof o.choice_id!=='string'||choices.has(o.choice_id)||!Array.isArray(o.definitions))throw Error('Invalid engine option');
    choices.add(o.choice_id);
    if(o.choice_id==='KEEP'&&o.type!=='keep')throw Error('Invalid KEEP');

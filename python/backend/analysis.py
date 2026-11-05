@@ -13,7 +13,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-origin-segments-12'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-morph-boundaries-13'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -163,7 +163,9 @@ class Engine:
                 if self.dictionary is not None:
                     # Dictionary readings that preserve Korean are explicit sense options.
                     for a,b,_,candidates in reviews:
-                        if a>=end or b<=start:continue
+                        # A sense of a subspan cannot explain the whole merged
+                        # occurrence. In particular 이 is not a sense of 중이.
+                        if a!=start or b!=end:continue
                         for candidate in candidates:
                             if safe_replacement(candidate.get('replacement')) or not is_nonconversion_origin(candidate.get('origin_raw'),loanword=modes.get('loanword',False)):continue
                             if not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
@@ -197,10 +199,12 @@ class Engine:
         targets=sorted(targets+mixed['targets'],key=lambda t:(t['start'],t['end']))
         # Complete every candidate, including sibling origins owned by mixed words.
         option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
+        option_metadata=await self.dictionary.get_metadata_for_entries(option_definitions) if self.dictionary is not None else {}
         for target in targets:
             native=[];conversions=[];seen=set()
             for option in target['options']:
                 if option['type']=='keep':continue
+                option={**option,**option_metadata.get(option['entry_id'],{})}
                 definitions=option_definitions.get(option['entry_id'],option['definitions'])
                 if option['type']=='nonconversion':
                     for definition in definitions:
@@ -213,6 +217,9 @@ class Engine:
         proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
         for i,target in enumerate(targets):
             target['target_id']=f't{i}'
+            a=target['start'];b=target['end']
+            target['morphology']=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens if to_utf16(text,t.start)<b and a<to_utf16(text,t.start+t.length)]
+            target['partial_word']=any(t.length>0 and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'} and (to_utf16(text,t.start+t.length)==a or to_utf16(text,t.start)==b) for t in tokens)
             if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
         return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
 

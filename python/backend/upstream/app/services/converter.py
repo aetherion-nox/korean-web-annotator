@@ -107,6 +107,7 @@ class ConverterService:
                 if token.is_noun and token.is_hangul:
                     forms_to_lookup.add(token.form + '하다')
                     forms_to_lookup.add(token.form + '되다')
+                    forms_to_lookup.add(token.form + '시키다')
 
             # Intra-word compound candidate forms (e.g. 문화적, 국제화)
             if len(group.tokens) > 1:
@@ -206,6 +207,12 @@ class ConverterService:
                 # Boundary check: do not cross into particles (J*)
                 if any(t.is_particle or t.is_punct for t in sub_tokens):
                     continue
+                # A nominal compound cannot swallow a predicate/copula or an
+                # overlapping inflection (e.g. 중/NNB + 이/VCP, 계시+었).
+                if any(t.tag.split('-')[0] not in {'NNG','NNP','NNB','NR','NP','XR','XPN','XSN','MM'} for t in sub_tokens):
+                    continue
+                if any(a.start+a.length!=b.start for a,b in zip(sub_tokens,sub_tokens[1:])):
+                    continue
 
                 span_start = sub_tokens[0].start
                 span_end = sub_tokens[-1].start + sub_tokens[-1].length
@@ -218,9 +225,13 @@ class ConverterService:
 
                 scored = self.disambiguation.score_candidates(
                     cands,
-                    token_tag=sub_tokens[0].tag,
+                    # The lexical head, not a preceding prefix/determiner,
+                    # supplies POS for an exact whole nominal dictionary word.
+                    token_tag=next((t.tag for t in reversed(sub_tokens) if t.is_noun),sub_tokens[-1].tag),
                     context_forms=[f for f in sentence_context if f not in (span_text, span_form)],
                 )
+                if not scored:
+                    continue
                 selected, status = self.disambiguation.select_best(scored)
 
                 converted=bool(selected and selected.replacement and selected.is_reliable and status == 'converted')
@@ -287,25 +298,27 @@ class ConverterService:
                     is_verbal_context = True
 
             candidates = []
+            candidate_tag = token.tag
             if token.is_hangul and (token.is_noun or token.is_verb_stem):
-                candidates = candidates_map.get(token.form, [])
+                # Dictionary predicates are indexed by their lemma ending 다.
+                # Homographic bare stems are often unrelated nouns; their
+                # existence must never suppress the real lemma lookup.
+                candidates = candidates_map.get(token.form + '다' if token.is_verb_stem else token.form, [])
 
                 # Verb stem with -다 lookup (e.g. 위하 -> 위하다)
-                if token.is_verb_stem and not candidates:
-                    hada_candidates = candidates_map.get(token.form + '다', [])
-                    if hada_candidates:
-                        candidates = hada_candidates
-
                 # If followed by verbalizer suffix (e.g. 발전 + 하 -> 발전하다)
                 if is_verbal_context:
-                    hada_cands = candidates_map.get(token.form + '하다', [])
+                    # The next token proves the derivation; do not pretend a
+                    # noun POS belongs to the predicate dictionary entry.
+                    hada_cands = candidates_map.get(token.form + next_t.form + '다', [])
                     if hada_cands and not candidates:
                         candidates = hada_cands
+                        candidate_tag = next_t.tag
 
                 if candidates:
                     scored = self.disambiguation.score_candidates(
                         candidates,
-                        token_tag=token.tag,
+                        token_tag=candidate_tag,
                         context_forms=context_forms,
                         is_verbal_context=is_verbal_context,
                     )

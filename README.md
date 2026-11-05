@@ -78,3 +78,10 @@ python python/backend/upstream/scripts/import_dictionary.py "你的词典.zip"
 - [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script)：本插件直接使用并适配了该项目的韩语汉字转换及词典处理代码，感谢作者的开源贡献。
 - [Furiganator（Chrome 商店）](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa)：为日语网页添加假名注音的扩展。本插件的标注显示和文字选择方式参考了它。
 - 感谢 Kiwi、Pyodide 和韩国国立国语院提供的工具与词典资源。
+
+
+## v1.1.26 更新
+
+同步 SRT 1.0.15 的词典形/POS、整词边界、完整 entry 释义、外来语整词优先与 nonconversion 范围修复。修复基于通用语法和词典证据，不按出错拼写建立例外表；合法单音节与混种词继续标注。审核信息补充原形/POS与子词风险。详见 CHANGELOG-1.1.26.md。
+
+重新加载插件并刷新网页即可，无需重新导入词典；引擎与审核缓存会使用新版本。
