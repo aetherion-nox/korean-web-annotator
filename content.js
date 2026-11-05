@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.25';
+  const VERSION = '1.1.27';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -258,7 +258,17 @@
   }
 
   document.addEventListener('selectionchange',()=>{
-    if(!currentTask&&captureSelection())toolbarDismissed=false;
+    // Dismissal hides controls, not the running task. A new selection in the
+    // page must reopen them during manual review and API requests alike.
+    // Editing/copying in extension panels is not a page selection gesture.
+    const ui='.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-manual-reopen';
+    const ranges=captureSelection();
+    const editor=document.activeElement;
+    const editingPanel=editor?.matches('input,textarea,[contenteditable="true"]')&&editor.closest(ui);
+    if(!editingPanel&&ranges?.some(range=>{
+      const node=range.commonAncestorContainer;
+      return !(node.nodeType===1?node:node.parentElement)?.closest(ui);
+    }))toolbarDismissed=false;
     clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>{refreshToolbar();publishState()},120);
   });
   document.addEventListener('contextmenu',publishState,{capture:true});
