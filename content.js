@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.27';
+  const VERSION = '1.1.28';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -10,6 +10,13 @@
   let uiSettings = { mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
   let toolbar = null;
   let toolbarDismissed = false;
+  let toolbarForcedOpen = false;
+  let floatingBall = null;
+  let floatingBallPosition = {x:1,y:0.55};
+  let floatingDrag = null;
+  let suppressBallClick = false;
+  let floatingObserver = null;
+  let floatingObservedBody = null;
   let selectionSnapshot = null;
   let selectionTimer = null;
   let pageCompleted = false;
@@ -34,7 +41,7 @@
       if(node.nodeType===3){runs.push({node,start:text.length,end:text.length+node.data.length});text+=node.data;return;}
       if(node.nodeType!==1)return;
       if(node.matches(OWN_RUBY)){const value=node.dataset.kraOriginal||'';runs.push({node,start:text.length,end:text.length+value.length,owned:true});text+=value;return;}
-      if(node.matches('script,style,noscript,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review'))return;
+      if(node.matches('script,style,noscript,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball'))return;
       if(node.matches('ruby')){text+=node.textContent;return;}
       for(const child of node.childNodes)visit(child);
     }
@@ -57,7 +64,7 @@
 
   function recoveryAnchor(node) {
     const element=node.parentElement?.closest(BLOCK_TAGS)||node.parentElement;
-    if(!element||element.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review'))return null;
+    if(!element||element.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball'))return null;
     const identity=pageIdentity();if(recoveryPage!==null&&identity!==recoveryPage)resetRecovery();recoveryPage=identity;
     const source=sourceOf(element),run=source.runs.find(r=>r.node===node);if(!run)return null;
     const scope=element.closest('[itemprop~="articleBody"],article,main')||document.body;
@@ -102,7 +109,7 @@
     }
     if(!recoveryObserver){
       recoveryObserver=new MutationObserver(records=>{
-        if(records.some(record=>!isOwnMutation(record)&&!(record.target.nodeType===1?record.target:record.target.parentElement)?.closest('ruby,script,style,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review')))scheduleRecovery();
+        if(records.some(record=>!isOwnMutation(record)&&!(record.target.nodeType===1?record.target:record.target.parentElement)?.closest('ruby,script,style,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball')))scheduleRecovery();
       });
       recoveryObserver.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
     }
@@ -185,6 +192,10 @@
 
   function applySettings(settings) {
     uiSettings={...uiSettings,...settings};
+    if(Object.hasOwn(settings,'floatingBallPosition')&&!floatingDrag){
+      const p=settings.floatingBallPosition;
+      if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y))floatingBallPosition={x:Math.max(0,Math.min(1,p.x)),y:Math.max(0,Math.min(1,p.y))};
+    }
     if(Object.hasOwn(settings,'copyMode'))uiSettings.selectAnnotations=false;
     if(!Object.hasOwn(settings,'copyMode')&&Object.hasOwn(settings,'copyOriginalHangul'))uiSettings.copyMode=settings.copyOriginalHangul?'hangul':'base';
     if(!['base','annotated','hangul','annotation'].includes(uiSettings.copyMode))uiSettings.copyMode='hangul';
@@ -209,17 +220,89 @@
     }));
   }
 
+  function floatingBounds() {
+    const visual=window.visualViewport;
+    const width=Math.max(44,Math.min(window.innerWidth||44,visual?.width||Infinity));
+    const height=Math.max(44,Math.min(window.innerHeight||44,visual?.height||Infinity));
+    const mx=Math.min(8,(width-44)/2),my=Math.min(8,(height-44)/2);
+    return {left:(visual?.offsetLeft||0)+mx,top:(visual?.offsetTop||0)+my,width:width-44-2*mx,height:height-44-2*my};
+  }
+
+  function placeFloatingBall() {
+    if(!floatingBall)return;
+    const b=floatingBounds();
+    floatingBall.style.setProperty('left',`${b.left+floatingBallPosition.x*b.width}px`,'important');
+    floatingBall.style.setProperty('top',`${b.top+floatingBallPosition.y*b.height}px`,'important');
+  }
+
+  function refreshFloatingBall() {
+    if(!document?.body)return;
+    const show=window.top===window&&uiSettings.mobileSelectionToolbar!==false&&uiSettings.floatingBallEnabled!==false;
+    if(!show){if(floatingBall)floatingBall.hidden=true;return;}
+    if(!floatingBall){
+      floatingBall=document.createElement('button');floatingBall.type='button';floatingBall.className='kra-floating-ball';floatingBall.textContent='한';
+      floatingBall.setAttribute('aria-expanded','false');
+      floatingBall.setAttribute('aria-label','打开韩语标注工具条');floatingBall.title='打开韩语标注工具条 · 拖动可移动位置';
+      floatingBall.addEventListener('pointerdown',event=>{
+        if(event.button!==0||event.isPrimary===false||floatingDrag)return;
+        event.preventDefault();event.stopPropagation();suppressBallClick=false;
+        floatingDrag={id:event.pointerId,x:event.clientX,y:event.clientY,left:parseFloat(floatingBall.style.left),top:parseFloat(floatingBall.style.top),before:{...floatingBallPosition},moved:false};
+        try{floatingBall.setPointerCapture(event.pointerId);}catch{}
+      });
+      floatingBall.addEventListener('pointermove',event=>{
+        const drag=floatingDrag;if(!drag||event.pointerId!==drag.id)return;
+        event.preventDefault();event.stopPropagation();
+        const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+        if(!drag.moved&&Math.hypot(dx,dy)<6)return;
+        drag.moved=true;floatingBall.classList.add('kra-floating-dragging');
+        const b=floatingBounds();floatingBallPosition={x:b.width?Math.max(0,Math.min(1,(drag.left+dx-b.left)/b.width)):0,y:b.height?Math.max(0,Math.min(1,(drag.top+dy-b.top)/b.height)):0};
+        placeFloatingBall();
+      });
+      const endDrag=(event,cancelled=false)=>{
+        const drag=floatingDrag;if(!drag||event.pointerId!==drag.id)return;
+        floatingDrag=null;suppressBallClick=drag.moved||cancelled;floatingBall.classList.remove('kra-floating-dragging');
+        if(cancelled){floatingBallPosition=drag.before;placeFloatingBall();}
+        else if(drag.moved)send({type:'SET_FLOATING_BALL_POSITION',position:floatingBallPosition});
+        try{floatingBall.releasePointerCapture(event.pointerId);}catch{}
+      };
+      floatingBall.addEventListener('pointerup',event=>endDrag(event));
+      floatingBall.addEventListener('pointercancel',event=>endDrag(event,true));
+      floatingBall.addEventListener('lostpointercapture',event=>endDrag(event,true));
+      floatingBall.addEventListener('click',event=>{
+        event.preventDefault();event.stopPropagation();
+        if(suppressBallClick&&event.detail!==0){suppressBallClick=false;return;}
+        suppressBallClick=false;toolbarDismissed=false;toolbarForcedOpen=true;refreshToolbar();
+      });
+    }
+    if(!floatingBall.isConnected){
+      if(floatingDrag){floatingBallPosition=floatingDrag.before;floatingDrag=null;suppressBallClick=true;floatingBall.classList.remove('kra-floating-dragging');}
+      document.body.append(floatingBall);
+    }
+    if(floatingObservedBody!==document.body){
+      floatingObserver?.disconnect();floatingObservedBody=document.body;
+      floatingObserver=new MutationObserver(()=>{if(document?.body&&(!floatingBall?.isConnected||floatingObservedBody!==document.body))refreshFloatingBall();});
+      floatingObserver.observe(document.documentElement,{childList:true});floatingObserver.observe(document.body,{childList:true});
+    }
+    floatingBall.hidden=!show;placeFloatingBall();
+  }
+
+  window.addEventListener('resize',placeFloatingBall);
+  window.visualViewport?.addEventListener('resize',placeFloatingBall);
+  window.visualViewport?.addEventListener('scroll',placeFloatingBall);
+
   function refreshToolbar() {
     if(!document.body)return;
+    refreshFloatingBall();
     const selected=captureSelection();
     if(selected)selectionSnapshot=selected;
     const always = uiSettings.toolbarDisplay === 'always';
     const eligible = uiSettings.toolbarHangulOnly === false ||
       (always ? pageHasHangul : selectionHasHangul(selected));
     const show=!toolbarDismissed&&uiSettings.mobileSelectionToolbar!==false&&
-      (currentTask||(eligible&&(always||Boolean(selected))));
+      (toolbarForcedOpen||currentTask||(eligible&&(always||Boolean(selected))));
     if(!toolbar&&!show)return;
     const bar=getToolbar();bar.hidden=!show;
+    floatingBall?.setAttribute('aria-expanded',String(Boolean(show)));
     for(const button of bar.querySelectorAll('.kra-mobile-primary,.kra-mobile-review'))button.disabled=!selected&&!selectionSnapshot;
   }
 
@@ -247,7 +330,7 @@
       const relevant=records.some(record=>{
         if(isOwnMutation(record))return false;
         const parent=record.target.nodeType===1?record.target:record.target.parentElement;
-        if(parent?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,script,style'))return false;
+        if(parent?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball,script,style'))return false;
         const nodes=record.type==='characterData'?[record.target]:Array.from(record.addedNodes);
         return nodes.some(node=>!node.matches?.(OWN_RUBY)&&!node.querySelector?.(OWN_RUBY)&&/[가-힣]/u.test(node.textContent||''));
       });
@@ -261,7 +344,7 @@
     // Dismissal hides controls, not the running task. A new selection in the
     // page must reopen them during manual review and API requests alike.
     // Editing/copying in extension panels is not a page selection gesture.
-    const ui='.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-manual-reopen';
+    const ui='.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball,.kra-manual-reopen';
     const ranges=captureSelection();
     const editor=document.activeElement;
     const editingPanel=editor?.matches('input,textarea,[contenteditable="true"]')&&editor.closest(ui);
@@ -328,7 +411,7 @@
       acceptNode(node) {
         if (!/[가-힣]/u.test(node.data) || !/\S/u.test(node.data)) return NodeFilter.FILTER_REJECT;
         if (['TEXTAREA', 'RUBY', 'RT', 'INPUT', 'SCRIPT', 'NOSCRIPT', 'SELECT', 'OPTION', 'STYLE'].includes(node.parentNode?.tagName)) return NodeFilter.FILTER_REJECT;
-        if (node.parentElement?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review')) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball')) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     });
@@ -435,7 +518,7 @@
     toolbar.querySelector('.kra-diagnostic-button').addEventListener('click',toggleDiagnostics);
     toolbar.querySelector('.kra-manual-open').addEventListener('click',()=>{const panel=document.querySelector('.kra-manual-review');if(panel){panel.hidden=!panel.hidden;const reopen=document.querySelector('.kra-manual-reopen');if(reopen)reopen.hidden=!panel.hidden;}});
     toolbar.querySelector('.kra-mobile-restore').addEventListener('click', restorePage);
-    toolbar.querySelector('.kra-mobile-close').addEventListener('click', () => { toolbarDismissed = true; toolbar.hidden = true; });
+    toolbar.querySelector('.kra-mobile-close').addEventListener('click', () => { toolbarForcedOpen=false;toolbarDismissed=true;toolbar.hidden=true;floatingBall?.setAttribute('aria-expanded','false'); });
     document.body.append(toolbar);
     return toolbar;
   }
@@ -719,6 +802,7 @@
       case 'RESTORE_ANNOTATION': restorePage();respond({ok:true});break;
       case 'UNDO_LAST_ANNOTATION':respond(undoLast());break;
       case 'APPLY_UI_SETTINGS':applySettings(message.uiSettings||{});respond({ok:true});break;
+      case 'APPLY_FLOATING_BALL_POSITION':applySettings({floatingBallPosition:message.position});respond({ok:true});break;
       case 'START_SELECTION_ANNOTATION':{const ranges=captureSelection();respond(ranges?startAnnotation({...message,ranges}):{ok:false,error:'请先选中需要标注的文字。'});break;}
     }
   });

@@ -9,7 +9,7 @@ import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.27';
+const CONTENT_SCRIPT_VERSION='1.1.28';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -43,12 +43,21 @@ chrome.tabs.onUpdated?.addListener((tabId,change,tab)=>{
 // Local storage is restricted to trusted contexts. Forward the display switch
 // from the background so already-open pages receive it without reading logs/keys.
 chrome.storage.onChanged.addListener((changes,area)=>{
+ if(area==='local'&&changes.floatingBallPosition){
+  const position=sanitizeFloatingBallPosition(changes.floatingBallPosition.newValue);
+  if(position)chrome.tabs.query({}).then(tabs=>Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.tabs.sendMessage(tab.id,{type:'APPLY_FLOATING_BALL_POSITION',position})))).catch(()=>{});
+ }
  if(area!=='local'||(!changes.progressiveAnnotation&&!changes.uiSettings))return;
  const uiSettings={...(changes.uiSettings?sanitizeUiSettings(changes.uiSettings.newValue):{}),...(changes.progressiveAnnotation?{progressiveAnnotation:changes.progressiveAnnotation.newValue===true}:{})};
  chrome.tabs.query({}).then(tabs=>Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.tabs.sendMessage(tab.id,{type:'APPLY_UI_SETTINGS',uiSettings})))).catch(()=>{});
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(message?.type==='SET_FLOATING_BALL_POSITION'){
+    const position=sanitizeFloatingBallPosition(message.position);
+    if(sender.id!==chrome.runtime.id||!position){sendResponse({ok:false,error:'Invalid floating ball position'});return;}
+    chrome.storage.local.set({floatingBallPosition:position}).then(()=>sendResponse({ok:true})).catch(error=>sendResponse({ok:false,error:error.message}));return true;
+  }
   if(message?.type==='KRA_COPY_TEXT'){
     if(sender.id!==chrome.runtime.id){sendResponse({ok:false,error:'Invalid extension sender'});return;}
     copyTextToClipboard(message.text).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
@@ -67,8 +76,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === 'GET_UI_SETTINGS') {
-    chrome.storage.local.get(['uiSettings','progressiveAnnotation'])
-      .then(({ uiSettings = {}, progressiveAnnotation = false }) => sendResponse({ ok: true, uiSettings: {...sanitizeUiSettings(uiSettings),progressiveAnnotation:progressiveAnnotation===true} }))
+    chrome.storage.local.get(['uiSettings','progressiveAnnotation','floatingBallPosition'])
+      .then(({ uiSettings = {}, progressiveAnnotation = false, floatingBallPosition }) => sendResponse({ ok: true, uiSettings: {...sanitizeUiSettings(uiSettings),progressiveAnnotation:progressiveAnnotation===true,floatingBallPosition:sanitizeFloatingBallPosition(floatingBallPosition)} }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
@@ -149,12 +158,17 @@ async function setActionBadge(tabId, text, kind = 'normal', title = 'Korean Ruby
   ]);
 }
 
+function sanitizeFloatingBallPosition(position){
+  return position&&Number.isFinite(position.x)&&Number.isFinite(position.y)&&position.x>=0&&position.x<=1&&position.y>=0&&position.y<=1?{x:position.x,y:position.y}:undefined;
+}
+
 function sanitizeUiSettings(value) {
   const source = value && typeof value === 'object' ? value : {};
   return {
     hanjaMode: source.hanjaMode ?? true,
     loanwordMode: source.loanwordMode ?? true,
     mobileSelectionToolbar: source.mobileSelectionToolbar ?? true,
+    floatingBallEnabled: source.floatingBallEnabled !== false,
     selectAnnotations:source.selectAnnotations ?? false,
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
