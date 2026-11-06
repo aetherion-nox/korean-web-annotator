@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.29';
+  const VERSION = '1.1.30';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -299,7 +299,9 @@
       floatingBall.addEventListener('click',event=>{
         event.preventDefault();event.stopPropagation();
         if(suppressBallClick&&event.detail!==0){suppressBallClick=false;return;}
-        suppressBallClick=false;toolbarDismissed=false;toolbarForcedOpen=true;refreshToolbar();
+        suppressBallClick=false;
+        if(toolbar?.isConnected&&!toolbar.hidden){dismissToolbar();return;}
+        toolbarDismissed=false;toolbarForcedOpen=true;refreshToolbar();
       });
     }
     if(!floatingBall.isConnected){
@@ -331,7 +333,20 @@
     if(!toolbar&&!show)return;
     const bar=getToolbar();bar.hidden=!show;
     floatingBall?.setAttribute('aria-expanded',String(Boolean(show)));
+    refreshManualReopen();
     for(const button of bar.querySelectorAll('.kra-mobile-primary,.kra-mobile-review'))button.disabled=!selected&&!selectionSnapshot;
+  }
+
+  function dismissToolbar() {
+    toolbarForcedOpen=false;toolbarDismissed=true;
+    if(toolbar)toolbar.hidden=true;
+    floatingBall?.setAttribute('aria-expanded','false');
+    refreshManualReopen();
+  }
+
+  function refreshManualReopen() {
+    const reopen=document.querySelector('.kra-manual-reopen'),panel=document.querySelector('.kra-manual-review');
+    if(reopen)reopen.hidden=!toolbar?.isConnected||toolbar.hidden||!panel?.dataset.operationId||!panel.hidden;
   }
 
   function addDiagnostic(item) {
@@ -544,9 +559,9 @@
     toolbar.querySelector('.kra-mobile-review').addEventListener('click',()=>startSelection(true));
     toolbar.querySelector('.kra-mobile-undo').addEventListener('click',undoLast);
     toolbar.querySelector('.kra-diagnostic-button').addEventListener('click',toggleDiagnostics);
-    toolbar.querySelector('.kra-manual-open').addEventListener('click',()=>{const panel=document.querySelector('.kra-manual-review');if(panel){panel.hidden=!panel.hidden;const reopen=document.querySelector('.kra-manual-reopen');if(reopen)reopen.hidden=!panel.hidden;}});
+    toolbar.querySelector('.kra-manual-open').addEventListener('click',()=>{const panel=document.querySelector('.kra-manual-review');if(panel){panel.hidden=!panel.hidden;refreshManualReopen();}});
     toolbar.querySelector('.kra-mobile-restore').addEventListener('click', restorePage);
-    toolbar.querySelector('.kra-mobile-close').addEventListener('click', () => { toolbarForcedOpen=false;toolbarDismissed=true;toolbar.hidden=true;floatingBall?.setAttribute('aria-expanded','false'); });
+    toolbar.querySelector('.kra-mobile-close').addEventListener('click',dismissToolbar);
     document.body.append(toolbar);
     return toolbar;
   }
@@ -557,8 +572,8 @@
     panel.innerHTML='<div class="kra-manual-heading"><strong>手动聊天审核</strong><button type="button" class="kra-manual-hide">收起</button></div><p class="kra-manual-summary"></p><p>① 复制提示词给聊天模型。② 粘贴完整 JSON 或导入 JSON/TXT 答案文件。等待期间请保留本网页。</p><label>发给模型的完整内容<textarea class="kra-manual-prompt" readonly spellcheck="false"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-copy">复制提示词</button><button type="button" class="kra-manual-download">下载提示词 TXT</button></div><label>粘贴模型返回的完整 JSON<textarea class="kra-manual-response" spellcheck="false" placeholder="粘贴 JSON 或完整的 json 代码块"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-import">导入 JSON／TXT 答案</button><input class="kra-manual-file" type="file" accept=".json,.txt,application/json,text/plain" aria-label="导入 JSON 或 TXT 答案文件" hidden><button type="button" class="kra-manual-apply">校验并应用本批结果</button><button type="button" class="kra-manual-cancel">取消本次任务</button></div><p class="kra-manual-status" role="status" aria-live="polite"></p>';
     const note=message=>{panel.querySelector('.kra-manual-status').textContent=message;};
     const reopen=document.createElement('button');reopen.type='button';reopen.className='kra-manual-reopen';reopen.textContent='打开手动审核';reopen.hidden=true;
-    reopen.onclick=()=>{panel.hidden=false;reopen.hidden=true;};
-    panel.querySelector('.kra-manual-hide').onclick=()=>{panel.hidden=true;reopen.hidden=false;};
+    reopen.onclick=()=>{panel.hidden=false;refreshManualReopen();};
+    panel.querySelector('.kra-manual-hide').onclick=()=>{panel.hidden=true;refreshManualReopen();};
     panel.querySelector('.kra-manual-copy').onclick=async event=>{
       if(!event.isTrusted)return;
       const prompt=panel.querySelector('.kra-manual-prompt');
@@ -652,8 +667,10 @@
       entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...model];
     }
     const count=task.paint();const more=backup.batchTotal&&backup.batchNumber<backup.batchTotal;
-    const message=`本批答案已在页面校验并应用，当前显示 ${count} 个标注。${more?'后续批次请重新开始标注。':'本次恢复已完成。'}`;
-    finishTask(task,message);status(message);publishState();
+    // A recovered final batch does not prove earlier model results reached this page.
+    const complete=backup.batchNumber===1&&backup.batchTotal===1;
+    const message=`本批答案已在页面校验并应用，当前显示 ${count} 个标注。${complete?'本次恢复已完成。':more?'后续批次请重新开始标注。':'其他批次是否应用无法确认，请检查页面并重新开始未完成的标注。'}`;
+    finishTask(task,message,complete);status(message);publishState();
   }
 
   function handleManualEvent(task,event){
@@ -665,7 +682,7 @@
       if(event.budget){const b=event.budget;panel.querySelector('.kra-manual-summary').textContent+=`\n${b.label}档 · 预估输入 ${b.inputTokens.toLocaleString()} / 答案 ${b.outputTokens.toLocaleString()} tokens${b.contextTokens?` / 余量 ${b.safetyTokens.toLocaleString()}（窗口 ${b.contextTokens.toLocaleString()}）`:''}${b.limitReason==='output'?' · 受答案长度预算限制':''}。估算与实际分词可能不同。`;}
       panel.querySelector('.kra-manual-prompt').value=event.text;panel.querySelector('.kra-manual-response').value='';
       panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;panel.querySelector('.kra-manual-file').value='';panel.querySelector('.kra-manual-cancel').disabled=false;
-      panel.querySelector('.kra-manual-status').textContent='等待粘贴或导入本批结果；未调用 API。';panel.hidden=false;document.querySelector('.kra-manual-reopen').hidden=true;
+      panel.querySelector('.kra-manual-status').textContent='等待粘贴或导入本批结果；未调用 API。';panel.hidden=false;refreshManualReopen();
       getToolbar().querySelector('.kra-manual-open').hidden=false;status(`等待手动回填：第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次（${event.targetCount} 个词）`);return;
     }
     if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
@@ -687,14 +704,17 @@
     refreshToolbar();
   }
 
-  function finishTask(task,reason='本次任务已结束。答案仍保留可复制；重新标注会生成新批次。') {
+  function finishTask(task,reason='本次任务已结束。答案仍保留可复制；重新标注会生成新批次。',completed=false) {
     if (task.finished) return;
     task.reconcile?.();
     task.finished = true;
     clearTimeout(task.manualTimer);task.manualBackup=null;
     task.manualRequest=null;
     const manual=document.querySelector('.kra-manual-review');
-    if(manual?.dataset.operationId===task.operationId){manual.querySelector('.kra-manual-apply').disabled=true;manual.querySelector('.kra-manual-import').disabled=true;manual.querySelector('.kra-manual-cancel').disabled=true;manual.querySelector('.kra-manual-status').textContent=reason;}
+    if(manual?.dataset.operationId===task.operationId){
+      manual.querySelector('.kra-manual-apply').disabled=true;manual.querySelector('.kra-manual-import').disabled=true;manual.querySelector('.kra-manual-cancel').disabled=true;manual.querySelector('.kra-manual-status').textContent=reason;
+      if(completed){manual.hidden=true;refreshManualReopen();}
+    }
     clearInterval(task.keepalive);
     if (currentTask === task) currentTask = null;
     configureRecovery();
@@ -741,7 +761,7 @@
     const modes = { hanja: message.modes?.hanja ?? true, loanword: message.modes?.loanword ?? true };
     if (!modes.hanja && !modes.loanword) return { ok: false, error: '请至少启用一种标注模式。' };
     cancelTask();
-    const oldManual=document.querySelector('.kra-manual-review');if(oldManual)oldManual.hidden=true;
+    const oldManual=document.querySelector('.kra-manual-review');if(oldManual){oldManual.hidden=true;delete oldManual.dataset.operationId;}
     const oldReopen=document.querySelector('.kra-manual-reopen');if(oldReopen)oldReopen.hidden=true;
     if(!message.automatic){toolbarDismissed=false;diagnostics.length=0;}
     const ranges=message.ranges||null;
@@ -809,7 +829,7 @@
       const count = paint();
       for(const entry of entries.values())seenSources.add(entry.text);
       status(`完成：${count} 个标注`, 100);
-      finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`);
+      finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`,true);
       configureRecovery();
       if(!ranges)pageCompleted=true;configureAutomaticAnnotation();
       addDiagnostic({message:`完成：${count} 个标注`,detail:JSON.stringify(result.stats||{})});
