@@ -9,7 +9,7 @@ import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.33';
+const CONTENT_SCRIPT_VERSION='1.1.42';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -146,16 +146,6 @@ chrome.runtime.onConnect.addListener(port => {
   handleStreamingPort(port);
 });
 
-// Offscreen documents have chrome.runtime, not chrome.storage.
-chrome.runtime.onMessage.addListener((message,sender,reply)=>{
- if(!['KIWI_UPDATE_PROGRESS','KIWI_UPDATE_TICK'].includes(message?.type))return;
- if(sender.id!==chrome.runtime.id||sender.url!==chrome.runtime.getURL('engine-page.html')){reply({ok:false,error:'Invalid update sender'});return;}
- if(message.type==='KIWI_UPDATE_TICK'){reply({ok:true});return;}
- const p=message.state||{};
- const state={message:String(p.message||'').slice(0,500),loaded:Math.max(0,Number(p.loaded)||0),total:Math.max(0,Number(p.total)||0),at:Date.now()};
- chrome.storage.local.set({kiwiUpdateProgress:state}).then(()=>reply({ok:true}),error=>reply({ok:false,error:error.message}));return true;
-});
-
 
 async function setActionBadge(tabId, text, kind = 'normal', title = 'Korean Ruby Annotator') {
   await Promise.all([
@@ -183,6 +173,7 @@ function sanitizeUiSettings(value) {
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
     restoreExistingAnnotations:source.restoreExistingAnnotations ?? true,
+    hideToolbarOnFirstManual:source.hideToolbarOnFirstManual !== false,
     toolbarHangulOnly:source.toolbarHangulOnly ?? true,
     toolbarDisplay:source.toolbarDisplay==='always'?'always':'selection',
     uiLocale: normalizeUiLocale(source.uiLocale)

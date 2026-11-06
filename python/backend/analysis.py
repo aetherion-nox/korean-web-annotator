@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
-from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, name_ranges
+from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, name_ranges, dictionary_name_ranges
 from backend.loanwords import is_nonconversion_origin, nonconversion_options
 ensure_environment()
 from app.services.converter import ConverterService
@@ -12,9 +12,8 @@ from app.services.tokenizer import TokenizerService
 from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
-from app.services.usage import quantity_context
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-name-quantity-17-pairs'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-pos-coverage-1.1.41'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -113,14 +112,15 @@ class Engine:
         converter=ConverterService(self.tokenizer,self.disambiguation)
         segments,_=await converter.convert(text,self.lookup_fn)
         tokens=await self.tokens(text)
-        proper_ranges=proper_noun_ranges(tokens)
-        protected_names=await name_ranges(text,tokens,self.lookup_fn) if modes.get('nameProtection',True) is not False else []
+        dictionary_names=await dictionary_name_ranges(text,tokens,self.lookup_fn)
+        proper_ranges=proper_noun_ranges(tokens)+dictionary_names
+        protected_names=sorted(set(await name_ranges(text,tokens,self.lookup_fn)+dictionary_names)) if modes.get('nameProtection',True) is not False else []
         upstream_counts={f'upstream_{status}':sum(s.status==status for s in segments) for status in ('converted','ambiguous','no_match','kept')}
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
         if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):
             from backend.mixed_origins import collect_mixed
             whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')]
-            mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges,blocked_ranges=protected_names)
+            mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges,blocked_ranges=protected_names,review_ranges=dictionary_names)
         annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
@@ -189,7 +189,7 @@ class Engine:
             entries=await self.lookup_entries([t.form for t in tokens])
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
-            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+protected_names,force_review=review_all,hanja_enabled=modes.get('hanja',True))
+            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+protected_names,force_review=review_all,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.
@@ -218,19 +218,14 @@ class Engine:
                 else:conversions.append({**option,'choice_id':f'c{len(conversions)}','definitions':definitions})
             target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
         proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
+        dictionary_name_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in dictionary_names]
         for i,target in enumerate(targets):
             target['target_id']=f't{i}'
             a=target['start'];b=target['end']
             target['morphology']=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens if to_utf16(text,t.start)<b and a<to_utf16(text,t.start+t.length)]
-            near=[i for i,t in enumerate(tokens) if to_utf16(text,t.start)<b and a<to_utf16(text,t.start+t.length)]
-            if near:
-                window=tokens[max(0,near[0]-2):near[-1]+3]
-                target['context_morphology']=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in window]
-                first=tokens[near[0]];last=tokens[near[-1]]
-                quantity=quantity_context(text,tokens,first.start,last.start+last.length)
-                if quantity:target['quantity_context']={**quantity,'start':to_utf16(text,quantity['start']),'end':to_utf16(text,quantity['end'])}
             target['partial_word']=any(t.length>0 and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'} and (to_utf16(text,t.start+t.length)==a or to_utf16(text,t.start)==b) for t in tokens)
             if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
+            if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
         return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
 
 _default_engine=None

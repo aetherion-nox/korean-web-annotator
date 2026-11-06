@@ -40,7 +40,7 @@ export function safeDetail(value,config={}){
  return text.replace(/Bearer\s+[^\s"'<>]+/gi,'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,3000);
 }
 export function modelTargets(targets){
- return targets.map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.morphology?{morphology:t.morphology}:{}),...(t.context_morphology?{context_morphology:t.context_morphology}:{}),...(t.quantity_context?{quantity_context:t.quantity_context}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
+ return targets.map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.morphology?{morphology:t.morphology}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
 }
 export async function reviewTargets(config,targets,signal){
  if(!config.enableModelReview || !targets.length)return {accepted:[],unresolved:targets,errors:[]};

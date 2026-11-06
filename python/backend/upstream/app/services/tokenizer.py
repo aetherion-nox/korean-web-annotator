@@ -29,6 +29,15 @@ class MorphToken:
     is_suffix: bool    # Whether this is a suffix (XSV, XSA, XSN)
     is_particle: bool  # Whether this is a particle/ending
     is_punct: bool     # Whether this is punctuation
+    raw_tag: Optional[str] = None
+
+    @property
+    def is_modifier(self):
+        return self.tag in {'MAG','MAJ','MM','IC'}
+
+    @property
+    def is_lexical(self):
+        return self.is_noun or self.is_verb_stem or self.is_modifier
 
 @dataclass
 class WordGroup:
@@ -116,7 +125,7 @@ class TokenizerService:
             # Extract the ORIGINAL text from the input
             original = text[t.start:t.start + t.len]
             
-            tag = t.tag
+            tag = t.tag.split('-',1)[0]
             is_hangul = bool(re.match(r'^[가-힣]+$', t.form))
             
             # Noun tags: NNG (common), NNP (proper), NNB (bound), NR (numeral), NP (pronoun)
@@ -142,6 +151,7 @@ class TokenizerService:
                 is_suffix=is_suffix,
                 is_particle=is_particle,
                 is_punct=is_punct,
+                raw_tag=t.tag,
             ))
         
         return result

@@ -9,6 +9,7 @@ Core principles:
 5. Never do global syllable-by-syllable replacement
 """
 
+from app.services.quantity import has_quantity_before
 import time
 import re
 from bisect import bisect_right
@@ -17,7 +18,6 @@ from dataclasses import dataclass, field
 
 from app.services.tokenizer import TokenizerService, MorphToken, WordGroup
 from app.services.disambiguation import DisambiguationService, CandidateScore
-from app.services.usage import quantity_context
 
 
 @dataclass
@@ -91,11 +91,17 @@ class ConverterService:
                 neighbors = sentence[max(0,index-CONTEXT_RADIUS):index+CONTEXT_RADIUS+1]
                 context_by_start[token.start] = list(dict.fromkeys(t.form for t in neighbors if t is not token))
 
+        for token in tokens:
+            if not token.is_modifier:continue
+            neighbors=sentences.get(bisect_right(boundaries, token.start),[])
+            index=next((i for i,t in enumerate(neighbors) if t.start>token.start),len(neighbors))
+            context_by_start[token.start]=list(dict.fromkeys(t.form for t in neighbors[max(0,index-CONTEXT_RADIUS):index+CONTEXT_RADIUS]))
+
         for group in groups:
             if not group.has_content:
                 continue
             for token in group.tokens:
-                if token.is_hangul and (token.is_noun or token.is_verb_stem):
+                if token.is_hangul and token.is_lexical:
                     forms_to_lookup.add(token.form)
 
                 # For verb stems ending in 하 (e.g. 위하 in 위하여/위한), look up with -다
@@ -225,15 +231,19 @@ class ConverterService:
                 if not cands:
                     continue
 
+                head_tag=next((t.tag for t in reversed(sub_tokens) if t.is_noun),sub_tokens[-1].tag)
+                # The dictionary may lexicalize a nominal + suffix sequence as
+                # an adverb/determiner. Require an exact whole form and an actual
+                # suffix boundary, never a particle, copula or inflected verb.
+                derived_modifier=(sub_tokens[-1].tag=='XSN' and span_text==span_form and
+                                  any(t.is_noun or t.tag=='XR' for t in sub_tokens[:-1]))
                 scored = self.disambiguation.score_candidates(
                     cands,
                     # The lexical head, not a preceding prefix/determiner,
                     # supplies POS for an exact whole nominal dictionary word.
-                    token_tag=next((t.tag for t in reversed(sub_tokens) if t.is_noun),sub_tokens[-1].tag),
+                    token_tag=head_tag,
+                    compatible_tags=[head_tag,'MAG','MM'] if derived_modifier else None,
                     context_forms=[f for f in sentence_context if f not in (span_text, span_form)],
-                    context_text=text,token_start=span_start,token_end=span_end,
-                    quantity=quantity_context(text,all_tokens or group.tokens,span_start,span_end),
-                    context_tokens=all_tokens or group.tokens,
                 )
                 if not scored:
                     continue
@@ -241,7 +251,8 @@ class ConverterService:
 
                 converted=bool(selected and selected.replacement and selected.is_reliable and status == 'converted')
                 keep_competitor=self.disambiguation.has_keep_competitor(scored)
-                if converted or keep_competitor:
+                whole_modifier=derived_modifier and any(c.part_of_speech in {'부사','관형사'} for c in scored)
+                if converted or keep_competitor or whole_modifier:
                     selected=selected or scored[0]
                     whole_status='converted' if converted else 'ambiguous' if any(c.replacement for c in scored) else 'kept'
                     cand_list = [
@@ -304,7 +315,7 @@ class ConverterService:
 
             candidates = []
             candidate_tag = token.tag
-            if token.is_hangul and (token.is_noun or token.is_verb_stem):
+            if token.is_hangul and token.is_lexical:
                 # Dictionary predicates are indexed by their lemma ending 다.
                 # Homographic bare stems are often unrelated nouns; their
                 # existence must never suppress the real lemma lookup.
@@ -326,9 +337,7 @@ class ConverterService:
                         token_tag=candidate_tag,
                         context_forms=context_forms,
                         is_verbal_context=is_verbal_context,
-                        context_text=text,token_start=token_start,token_end=token_end,
-                        quantity=quantity_context(text,all_tokens or group.tokens,token_start,token_end),
-                        context_tokens=all_tokens or group.tokens,
+                        quantity=has_quantity_before(text, all_tokens or group.tokens, token.start),
                     )
                     selected, status = self.disambiguation.select_best(scored)
 

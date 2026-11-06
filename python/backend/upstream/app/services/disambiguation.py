@@ -10,6 +10,8 @@ Uses local, explainable heuristics based on:
 
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
+
+
 @dataclass
 class CandidateScore:
     """Scored candidate with explanation."""
@@ -34,10 +36,11 @@ MIN_SCORE_GAP = 0.15
 class DisambiguationService:
     """Select the best Hanja conversion candidate using local heuristics."""
 
-    def __init__(self, collocations=None):
-        self._collocations = collocations or {}
+    def __init__(self, collocations: Optional[Dict[Tuple[str, str], str]] = None):
+        # (hangul_word, context_word) -> expected origin_hanja
+        self._collocations: Dict[Tuple[str, str], str] = collocations or {}
 
-    def set_collocations(self, collocations):
+    def set_collocations(self, collocations: Dict[Tuple[str, str], str]):
         self._collocations = collocations
 
     def score_candidates(
@@ -46,11 +49,8 @@ class DisambiguationService:
         token_tag: Optional[str] = None,
         context_forms: Optional[List[str]] = None,
         is_verbal_context: bool = False,
-        context_text: Optional[str] = None,
-        token_start: Optional[int] = None,
-        token_end: Optional[int] = None,
-        quantity: Optional[dict] = None,
-        context_tokens=None,
+        quantity: bool = False,
+        compatible_tags=None,
     ) -> List[CandidateScore]:
         """Score and rank candidates for a given token.
         
@@ -70,7 +70,8 @@ class DisambiguationService:
         for c in candidates:
             # POS incompatibility is a structural rejection, including reviewAll.
             # A lower score must not turn a noun into a predicate candidate.
-            if token_tag and self._pos_matches(token_tag, c.get('part_of_speech')) is False:
+            effective_tag=next((tag for tag in (compatible_tags or [token_tag]) if tag and self._pos_matches(tag,c.get('part_of_speech')) is True),token_tag)
+            if effective_tag and self._pos_matches(effective_tag, c.get('part_of_speech')) is False:
                 continue
             cs = CandidateScore(
                 entry_id=c.get('entry_id', 0),
@@ -89,8 +90,8 @@ class DisambiguationService:
                 cs.reasons.append('reliable_replacement')
 
             # 2. POS match
-            if token_tag and cs.part_of_speech:
-                pos_match=self._pos_matches(token_tag, cs.part_of_speech)
+            if effective_tag and cs.part_of_speech:
+                pos_match=self._pos_matches(effective_tag, cs.part_of_speech)
                 if pos_match is True:
                     cs.score += 0.2
                     cs.reasons.append('pos_match')
@@ -109,11 +110,9 @@ class DisambiguationService:
                             cs.reasons.append(f'collocation_match({ctx}->{expected_orig})')
                             break
 
-            if quantity:
-                cs.reasons.append('quantity_context')
-                if c.get('unit_usage') is True:
-                    cs.score += 0.05
-                    cs.reasons.append('explicit_unit_usage')
+            if quantity and token_tag == 'NNB' and c.get('unit_usage') is True:
+                cs.score += 0.3
+                cs.reasons.append('quantity_unit_bonus')
 
             # 4. A generic verbal context is not semantic evidence. In
             # particular, do not special-case examples such as 발전하다:
@@ -187,12 +186,6 @@ class DisambiguationService:
         scored_candidates = list(ranked.values())
 
         top = scored_candidates[0]
-
-        # Numeric adjacency and POS cannot establish which disputed origin fits.
-        if ('quantity_context' in top.reasons and
-                len({c.replacement for c in scored_candidates})>1 and
-                not any(r.startswith('collocation_match(') for r in top.reasons)):
-            return top, 'ambiguous'
 
         # Generic reliability and POS points only establish a usable spelling.
         # They cannot establish that its meaning wins over a native homograph.

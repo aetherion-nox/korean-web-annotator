@@ -14,7 +14,7 @@ from app.services.disambiguation import DisambiguationService
 HANGUL=re.compile(r'^[가-힣]+$')
 LATIN=re.compile(r'[A-Za-zÀ-ÖØ-öø-ÿ]')
 NATIVE_SYLLABLE=re.compile(r'[가-힣]')
-LEXICAL={'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'}
+LEXICAL={'NNG','NNP','NNB','NR','XR','XPN','XSN','MM','MAG','MAJ','IC'}
 
 def _align_origin(surface, origin):
     if not HANGUL.fullmatch(surface) or len(surface)>80 or not isinstance(origin,str):return None
@@ -100,9 +100,9 @@ def candidate_spans(text,tokens):
             if HANGUL.fullmatch(text[start:end]):spans.add((start,end,text[start:end]))
     return sorted(spans,key=lambda r:(r[0],-r[1]))
 
-async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=()):
+async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=(),review_ranges=()):
     spans=candidate_spans(text,tokens)
-    proper_ranges=proper_noun_ranges(tokens)
+    proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
     entries=await engine.lookup_entries([form for _,_,form in spans])
     annotations=[];targets=[];ranges=[];skipped=0
     for start,end,word in spans:

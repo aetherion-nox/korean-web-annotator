@@ -29,6 +29,13 @@ function parseAnswer(text){
  return response;
 }
 
+export function prepareManualRequest(config,targets){
+ const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join('');
+ const wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
+ const bindings=config.manualBindings?.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};});
+ return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId}),limitReason:config.batchBudget?.limitReason}};
+}
+
 export function createManualReviewSession({operationId,post,signal}={}){
  let pending=null,batchNumber=0;
  const notify=(type,extra)=>post({type,operationId,...extra});
@@ -36,14 +43,14 @@ export function createManualReviewSession({operationId,post,signal}={}){
   request(config,targets,requestSignal=signal){
    const activeSignal=requestSignal||signal;activeSignal?.throwIfAborted();
    if(pending)throw Error('已有一批手动审核正在等待结果。');
-   const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join(''),wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
-   const bindings=Array.isArray(config.manualBindings)?config.manualBindings.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};}):undefined;
+   const prepared=config.manualPrepared||prepareManualRequest({...config,batchNumber:config.batchNumber||++batchNumber},targets);
+   const {requestId}=prepared,wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
    return new Promise((resolve,reject)=>{
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
     pending={requestId,targets,wireTargets,resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
-    try{notify('MANUAL_REVIEW_REQUEST',{requestId,bindings,batchNumber:config.batchNumber||++batchNumber,batchTotal:config.batchTotal||null,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId}),limitReason:config.batchBudget?.limitReason}});}catch(error){clear();reject(error);}
+    try{notify('MANUAL_REVIEW_REQUEST',prepared);}catch(error){clear();reject(error);}
    });
   },
   submit(message){

@@ -54,3 +54,17 @@ async def name_ranges(text,tokens,lookup):
     for word in names:
         for match in re.finditer(r'(?<![가-힣])'+re.escape(word)+r'(?![가-힣])',text):ranges.append(match.span())
     return sorted(set(ranges))
+
+
+def is_dictionary_person(record):
+    """Only explicit dictionary classifications establish a person-name entry."""
+    return any(re.search(r'(?<!\w)(?:인명|人名|personal name)(?!\w)', str(record.get(key) or ''), re.I)
+               for key in ('subject_category','semantic_category'))
+
+async def dictionary_name_ranges(text,tokens,lookup):
+    # Reuse the same bounded lexical spans and cached candidate lookup as the
+    # whole-entry path. This also catches names split into ordinary nouns.
+    from backend.mixed_origins import candidate_spans
+    spans=candidate_spans(text,tokens)
+    entries=await lookup(list(dict.fromkeys(word for _,_,word in spans))) if spans else {}
+    return [(a,b) for a,b,word in spans if any(is_dictionary_person(r) for r in entries.get(word,[]))]

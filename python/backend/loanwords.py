@@ -40,7 +40,7 @@ def nonconversion_options(surface, records, *, definitions_by_entry=None, **mode
             options.append(dict(choice_id=f'n{len(options)}',type='nonconversion',replacement=surface,entry_id=entry,definitions=[definition] if definition else []))
     return options
 
-def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True) -> dict:
+def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True, review_ranges=()) -> dict:
     """Return UTF-16 annotations/targets; input token and occupied offsets are Python indices.
 
     Mixed origins belong to the validated whole-entry segmentation path.
@@ -48,7 +48,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
     Hanja homonyms) participates in certainty; non-conversion senses are explicit.
     """
     annotations=[];targets=[];skipped_mixed=0
-    occupied=list(occupied_ranges); seen=set();proper_ranges=proper_noun_ranges(tokens)
+    occupied=list(occupied_ranges); seen=set();proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
     for token in tokens:
         start=token.start;end=start+token.length;form=token.form
         if (start,end) in seen:continue

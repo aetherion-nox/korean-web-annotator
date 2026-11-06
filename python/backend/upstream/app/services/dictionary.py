@@ -130,7 +130,7 @@ class DictionaryService:
                     SELECT cc.id as candidate_id, cc.entry_id, cc.written_form,
                            cc.origin_raw, cc.replacement, cc.replacement_type,
                            cc.is_reliable,
-                           e.part_of_speech, e.vocabulary_level, e.homonym_number
+                           e.part_of_speech, e.vocabulary_level, e.homonym_number, e.subject_category, e.semantic_category
                     FROM conversion_candidates cc
                     JOIN entries e ON cc.entry_id = e.id
                     WHERE cc.written_form IN ({placeholders})
@@ -138,27 +138,34 @@ class DictionaryService:
                     SELECT NULL as candidate_id, e.id as entry_id, e.written_form,
                            e.origin_raw, NULL as replacement, NULL as replacement_type,
                            0 as is_reliable,
-                           e.part_of_speech, e.vocabulary_level, e.homonym_number
+                           e.part_of_speech, e.vocabulary_level, e.homonym_number, e.subject_category, e.semantic_category
                     FROM entries e
                     WHERE e.written_form IN ({placeholders})
                       AND NOT EXISTS (SELECT 1 FROM conversion_candidates cc WHERE cc.entry_id = e.id)
                     ORDER BY written_form, is_reliable DESC, homonym_number ASC
                 '''
                 async with db.execute(query, batch + batch) as cursor:
-                    rows = [dict(row) for row in await cursor.fetchall()]
-                ids=list(dict.fromkeys(row['entry_id'] for row in rows))
-                evidence={i:dict(unit_usage=False,surname_usage=False,definition_preview=None) for i in ids}
-                from app.services.usage import sense_evidence
-                for begin in range(0,len(ids),400):
-                    part=ids[begin:begin+400];marks=','.join('?' for _ in part)
-                    async with db.execute(f'SELECT entry_id,definition FROM senses WHERE entry_id IN ({marks}) ORDER BY entry_id,sense_number,id',part) as cursor:
+                    rows = await cursor.fetchall()
+                    rows = [dict(row) for row in rows]
+                # Only read senses for entries whose POS can receive this bonus.
+                ids = list(dict.fromkeys(row['entry_id'] for row in rows
+                           if row.get('part_of_speech') in {'명사', '의존 명사'}))
+                unit_ids = set()
+                surname_ids = set()
+                from app.services.quantity import UNIT_DEFINITION
+                for begin in range(0, len(ids), 400):
+                    part = ids[begin:begin + 400]
+                    marks = ','.join('?' for _ in part)
+                    async with db.execute(f'SELECT entry_id,definition FROM senses WHERE entry_id IN ({marks})', part) as cursor:
                         for sense in await cursor.fetchall():
-                            flags=evidence[sense['entry_id']]
-                            if flags['definition_preview'] is None:flags['definition_preview']=sense['definition']
-                            for key,value in sense_evidence(sense['definition']).items():flags[key]|=value
+                            if re.search(r'(?:성\s*[(（]\s*姓\s*[)）]|성씨)\s*의\s*하나',sense['definition'] or ''):
+                                surname_ids.add(sense['entry_id'])
+                            if UNIT_DEFINITION.search(sense['definition'] or ''):
+                                unit_ids.add(sense['entry_id'])
                 for row in rows:
-                    row.update(evidence[row['entry_id']])
-                    result.setdefault(row['written_form'],[]).append(row)
+                    row['unit_usage'] = row['entry_id'] in unit_ids
+                    row['surname_usage'] = row['entry_id'] in surname_ids
+                    result.setdefault(row['written_form'], []).append(row)
 
             for wf in missing:
                 self._cache_candidates(wf, result.get(wf, []))
@@ -176,8 +183,8 @@ class DictionaryService:
         try:
             for start in range(0,len(ids),500):
                 batch=ids[start:start+500];placeholders=','.join('?' for _ in batch)
-                async with db.execute(f'SELECT id,written_form,part_of_speech FROM entries WHERE id IN ({placeholders})',batch) as cursor:
-                    for row in await cursor.fetchall():result[row['id']]=dict(written_form=row['written_form'],part_of_speech=row['part_of_speech'])
+                async with db.execute(f'SELECT id,written_form,part_of_speech,subject_category,semantic_category FROM entries WHERE id IN ({placeholders})',batch) as cursor:
+                    for row in await cursor.fetchall():result[row['id']]={k:row[k] for k in ('written_form','part_of_speech','subject_category','semantic_category') if row[k] is not None}
             return result
         finally:
             await db.close()

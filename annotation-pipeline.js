@@ -1,14 +1,9 @@
 import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './local-engine.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
-import {manualReviewBatches} from './manual-review.js';
+import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
-import {withKiwiLease} from './browser-engine.js';
 export const CACHE_KEY='kraDictionaryReviewCacheV1Alignment3';
-export async function runSentencePipeline(message,post,options={}){
- const live=(!options.analyze||options.analyze===analyzeLocal)&&(!options.status||options.status===engineStatus);
- return live?withKiwiLease(()=>runPipeline(message,post,options)):runPipeline(message,post,options);
-}
-async function runPipeline(message,post,{signal,analyze=analyzeLocal,status=engineStatus,modelConfig,enabled=false,cache=new Map(),persist=async()=>{}}={}){
+export async function runSentencePipeline(message,post,{signal,analyze=analyzeLocal,status=engineStatus,modelConfig,enabled=false,cache=new Map(),persist=async()=>{}}={}){
  const sentences=message.sentences;
  const selectionReview=message.reviewAll===true;
  const reviewAll=selectionReview || message.reviewAllCandidates===true;
@@ -36,6 +31,12 @@ async function runPipeline(message,post,{signal,analyze=analyzeLocal,status=engi
     analysis={...analysis,targets:analysis.targets.filter(t=>sentence.selected.some(r=>Number.isInteger(r.start)&&Number.isInteger(r.end)&&t.start>=r.start&&t.end<=r.end))};
    }
    analysis.stats={...analysis.stats,pending:analysis.targets.length};
+  }
+  if(message.restrictToSelection===true){
+   if(!Array.isArray(sentence.selected)||sentence.selected.some(r=>!Number.isInteger(r.start)||!Number.isInteger(r.end)||r.start<0||r.end<=r.start||r.end>sentence.text.length))throw Error('Invalid paragraph selection');
+   const selected=a=>sentence.selected.some(r=>a.start>=r.start&&a.end<=r.end);
+   analysis={...analysis,annotations:analysis.annotations.filter(selected),targets:analysis.targets.filter(selected)};
+   analysis.stats={...analysis.stats,local_determined:analysis.annotations.length,pending:analysis.targets.length};
   }
   for(const warning of analysis.diagnostics||[])diagnostic(warning);
   for(const name of ['local_determined','pending','structural_rejections','rejected_options','skipped_mixed','protected_names','upstream_converted','upstream_ambiguous','upstream_no_match','upstream_kept'])stats[name]+=Number(analysis.stats[name]||0);
@@ -69,7 +70,7 @@ async function runPipeline(message,post,{signal,analyze=analyzeLocal,status=engi
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify(['id-review-v13-morph-boundaries',config.endpoint,config.model,config.provider,!!config.disableThinking,config.reasoningEffort]);
+   const fingerprint=JSON.stringify(['id-review-v14-exact-usage',config.endpoint,config.model,config.provider,!!config.disableThinking,config.reasoningEffort]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
    const cached=!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
@@ -80,14 +81,20 @@ async function runPipeline(message,post,{signal,analyze=analyzeLocal,status=engi
  reportProgress();
  const tier=normalizeBatchContextTier(config?.batchContextTier);
  const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true}):config?.manualReview?manualReviewBatches(pending,context):sentenceReviewBatches(pending,context);
- for(const [batchIndex,batch] of batches.entries()){
-  if(batch.budget)diagnostic({stage:'batch-budget',level:'info',message:`${batch.budget.label} 档批次：预估输入 ${batch.budget.inputTokens}、答案 ${batch.budget.outputTokens}、安全余量 ${batch.budget.safetyTokens} tokens。${batch.budget.limitReason==='output'?'本批受答案长度预算限制。':''}`,detail:JSON.stringify(batch.budget)});
+ const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
   const targets=batch.rows?batch.rows.map(({item,target},i)=>{const id=`b0t${i}`;owners.set(id,{item,target});return {...target,target_id:id};}):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
    const id=`b${i}t${j}`;owners.set(id,{item,target});return {...target,target_id:id};
   }));
   const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,choices:target.options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
-  await reviewTargets({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||120000,enableModelReview:true,context:batch.context,
+  const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
+  return {owners,targets,manualBindings,manualPrepared};
+ });
+ if(config?.manualReview)emit('MANUAL_REVIEW_PLAN',{batches:preparedBatches.map(b=>b.manualPrepared)});
+ for(const [batchIndex,batch] of batches.entries()){
+  if(batch.budget)diagnostic({stage:'batch-budget',level:'info',message:`${batch.budget.label} 档批次：预估输入 ${batch.budget.inputTokens}、答案 ${batch.budget.outputTokens}、安全余量 ${batch.budget.safetyTokens} tokens。${batch.budget.limitReason==='output'?'本批受答案长度预算限制。':''}`,detail:JSON.stringify(batch.budget)});
+  const {owners,targets,manualBindings,manualPrepared}=preparedBatches[batchIndex];
+  await reviewTargets({...config,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||120000,enableModelReview:true,context:batch.context,
    ...(progressive?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
    onAccepted:accepted=>{for(const a of accepted){const owner=owners.get(a.target.target_id);owner.item.result.accepted.push({target:owner.target,option:a.option});}progress.modelCompleted+=accepted.length;reportProgress();for(const item of batch.items)if(progressive)publishModel(item);}
   },targets,signal);

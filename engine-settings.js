@@ -25,24 +25,24 @@ const manualCopy={
 };
 for(const [locale,labels] of Object.entries(manualCopy)){copy[locale].manual=labels[0];copy[locale].manualHint=labels[1];}
 const capacityCopy={
- 'zh-CN':['每批上下文容量（API／手动）','当前（保留现有分批）','按共享池去重后的输入与预计 JSON 答案分批，另留窗口的 8% + 1024 tokens 余量。128K/1M 不再受原来的固定词数和字符数限制，但答案长度预算仍可能使批次提前结束。token 数为通用估算，非服务商精确分词。请选择模型实际支持的窗口，手动聊天建议使用新对话。下一次标注生效。'],
- 'zh-TW':['每批上下文容量（API／手動）','目前（保留原有分批）','依共享池去重後的輸入與預計 JSON 答案分批，另留視窗的 8% + 1024 tokens。128K/1M 不受原有固定詞數與字元數限制，但答案長度預算仍可能提早分批。token 數為通用估算，非服務商精確分詞。請選模型支援的視窗，手動聊天建議使用新對話。下次任務生效。'],
- en:['Context capacity per batch (API / manual)','Current (keep existing batching)','Pack the deduplicated prompt plus estimated JSON answer, reserving another 8% of the window + 1024 tokens. 128K/1M remove fixed word/character caps; reply-length budgets can still split earlier. Tokens are approximate, not provider-specific counts. Choose a supported context size; use a fresh chat for manual review. Applies to new tasks.'],
- ja:['バッチごとのコンテキスト容量（API／手動）','現在（従来の分割）','重複除去した入力とJSON回答を見積もり、別にウィンドウの8%＋1024トークンを確保します。128K/1Mでは従来の語数・文字数上限を解除しますが、回答長の予算で早めに分割する場合があります。トークン数は概算です。対応する容量を選び、手動では新規チャットを推奨します。次の処理から適用。'],
- ko:['배치당 컨텍스트 용량 (API / 수동)','현재 (기존 분할 유지)','중복을 제거한 입력과 JSON 답변을 추정하고, 별도로 창의 8% + 1024토큰을 남깁니다. 128K/1M은 기존 단어·문자 수 제한을 해제하지만 답변 길이 예산으로 일찍 나눌 수 있습니다. 토큰 수는 제공업체별 정확한 값이 아닌 추정치입니다. 지원하는 용량을 선택하고 수동 검토는 새 채팅을 권장합니다. 새 작업부터 적용됩니다.']
+ 'zh-CN':['每批上下文容量（API／手动）','当前（保留现有分批）','按共享池去重后的输入与预计 JSON 答案分批，另留窗口的 8% + 1024 tokens 余量。32K/128K/256K/512K/1M 不再受原来的固定词数和字符数限制，但答案长度预算仍可能使批次提前结束。token 数为通用估算，非服务商精确分词。请选择模型实际支持的窗口，手动聊天建议使用新对话。下一次标注生效。'],
+ 'zh-TW':['每批上下文容量（API／手動）','目前（保留原有分批）','依共享池去重後的輸入與預計 JSON 答案分批，另留視窗的 8% + 1024 tokens。32K/128K/256K/512K/1M 不受原有固定詞數與字元數限制，但答案長度預算仍可能提早分批。token 數為通用估算，非服務商精確分詞。請選模型支援的視窗，手動聊天建議使用新對話。下次任務生效。'],
+ en:['Context capacity per batch (API / manual)','Current (keep existing batching)','Pack the deduplicated prompt plus estimated JSON answer, reserving another 8% of the window + 1024 tokens. 32K/128K/256K/512K/1M remove fixed word/character caps; reply-length budgets can still split earlier. Tokens are approximate, not provider-specific counts. Choose a supported context size; use a fresh chat for manual review. Applies to new tasks.'],
+ ja:['バッチごとのコンテキスト容量（API／手動）','現在（従来の分割）','重複除去した入力とJSON回答を見積もり、別にウィンドウの8%＋1024トークンを確保します。32K/128K/256K/512K/1Mでは従来の語数・文字数上限を解除しますが、回答長の予算で早めに分割する場合があります。トークン数は概算です。対応する容量を選び、手動では新規チャットを推奨します。次の処理から適用。'],
+ ko:['배치당 컨텍스트 용량 (API / 수동)','현재 (기존 분할 유지)','중복을 제거한 입력과 JSON 답변을 추정하고, 별도로 창의 8% + 1024토큰을 남깁니다. 32K/128K/256K/512K/1M은 기존 단어·문자 수 제한을 해제하지만 답변 길이 예산으로 일찍 나눌 수 있습니다. 토큰 수는 제공업체별 정확한 값이 아닌 추정치입니다. 지원하는 용량을 선택하고 수동 검토는 새 채팅을 권장합니다. 새 작업부터 적용됩니다.']
 };
-for(const [locale,labels] of Object.entries(capacityCopy)){Object.assign(copy[locale],{batchLabel:labels[0],batchCurrent:labels[1],batch128k:'128K',batch1m:'1M',batchHint:labels[2]});}
+for(const [locale,labels] of Object.entries(capacityCopy)){Object.assign(copy[locale],{batchLabel:labels[0],batchCurrent:'32K',batch128k:'128K',batch256k:'256K',batch512k:'512K',batch1m:'1M',batchHint:labels[2]});}
 copy['zh-CN'].reviewAllHint=copy['zh-CN'].reviewAllHint.replace('需配置 API','需配置 API 或开启手动聊天审核');
 copy['zh-TW'].reviewAllHint=copy['zh-TW'].reviewAllHint.replace('需設定 API','需設定 API 或開啟手動聊天審核');
 copy.en.reviewAllHint=copy.en.reviewAllHint.replace('requires API configuration','requires API configuration or manual chat review');
 copy.ja.reviewAllHint=copy.ja.reviewAllHint.replace('API設定と辞書が必要','API設定または手動チャット審査と辞書が必要');
 copy.ko.reviewAllHint=copy.ko.reviewAllHint.replace('API 설정과 사전이 필요','API 설정 또는 수동 채팅 검토와 사전이 필요');
 const nameCopy={
- 'zh-CN':['姓名整段保护（默认开启）','结合词典姓氏与分词结构，保留疑似姓名的完整范围，避免拆分误标。关闭后跳过此保护及额外姓名查询，恢复此前的片段处理；Kiwi 标为专有名词的候选仍交给模型审核。下一次标注生效。'],
- 'zh-TW':['姓名整段保護（預設開啟）','結合詞典姓氏與分詞結構，保留疑似姓名的完整範圍，避免拆分誤標。關閉後略過此保護與額外姓名查詢，恢復先前的片段處理；Kiwi 標為專有名詞的候選仍交給模型審核。下次標註生效。'],
- en:['Protect complete names (on by default)','Use dictionary surname evidence and morphology to preserve suspected names as a whole. Turning this off skips name protection and its extra lookups, restoring earlier fragment handling. Kiwi proper-noun candidates still require model review. Applies to new tasks.'],
- ja:['姓名全体を保護（初期設定は有効）','辞書の姓情報と形態素から推定した姓名全体を保持します。無効にすると保護と追加検索を省き、以前の断片処理に戻ります。Kiwiの固有名詞候補は引き続きモデル審査に回します。次の処理から適用。'],
- ko:['이름 전체 보호 (기본 켜짐)','사전의 성씨 정보와 형태소 구조로 추정한 이름 전체를 보존합니다. 끄면 보호와 추가 이름 조회를 생략하고 이전의 부분 처리로 돌아갑니다. Kiwi 고유명사 후보는 계속 모델 검토에 보냅니다. 새 작업부터 적용됩니다.']
+ 'zh-CN':['姓名整段保护（默认开启）','根据本地词典和分词结果保留疑似姓名原文，避免拆分或套用同名人物的汉字。关闭后不保护姓名；词典人名与 Kiwi 专名候选仍须模型审核。下次标注生效。'],
+ 'zh-TW':['姓名整段保護（預設開啟）','依本機詞典和分詞結果保留疑似姓名原文，避免拆分或套用同名人物的漢字。關閉後不保護姓名；詞典人名與 Kiwi 專名候選仍須模型審核。下次標註生效。'],
+ en:['Protect complete names (on by default)','Preserve suspected names using the local dictionary and tokenization, avoiding split names or another person’s spelling. When off, dictionary person names and Kiwi proper nouns still require model review. Applies to new tasks.'],
+ ja:['姓名全体を保護（初期設定は有効）','辞書と形態素から推定した姓名を原文のまま保護し、分割や同名人物の漢字流用を防ぎます。無効時も辞書の人名・Kiwi固有名詞はモデル審査へ回します。次の処理から適用。'],
+ ko:['이름 전체 보호 (기본 켜짐)','로컬 사전과 형태소 분석으로 추정한 이름을 보존하여 분할 및 동명이인의 한자 오용을 막습니다. 꺼도 사전의 인명과 Kiwi 고유명사 후보는 모델 검토를 거칩니다. 새 작업부터 적용됩니다.']
 };
 for(const [locale,labels] of Object.entries(nameCopy))Object.assign(copy[locale],{nameProtection:labels[0],nameProtectionHint:labels[1]});
 const t=key=>(copy[$('uiLocale').value]||copy.en)[key];

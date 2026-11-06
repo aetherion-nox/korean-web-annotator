@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.33';
+  const VERSION = '1.1.42';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -72,7 +72,7 @@
     const scope=element.closest('[itemprop~="articleBody"],article,main')||document.body;
     const selector=scope.matches('[itemprop~="articleBody"]')?'[itemprop~="articleBody"]':scope.tagName.toLowerCase();
     const scopeIndex=Array.from(document.querySelectorAll(selector)).indexOf(scope),context=recoveryContext(element);
-    let block=Array.from(recoveryBlocks).find(b=>b.element===element&&b.text===source.text&&b.context===context);
+    let block=Array.from(recoveryBlocks).find(b=>b.element===element&&b.text===source.text);
     if(!block){
       const previous=Array.from(recoveryBlocks).filter(b=>!b.element.isConnected&&b.text===source.text&&b.context===context&&b.tag===element.tagName.toLowerCase()&&b.selector===selector&&b.scopeIndex===scopeIndex);
       if(previous.length===1){block=previous[0];block.element=element;block.scope=scope;}
@@ -82,6 +82,7 @@
       if(recoveryBlocks.size>=MAX_ENTRIES)return null;
       block={element,text:source.text,context,tag:element.tagName.toLowerCase(),scope,selector,scopeIndex,annotations:new Map()};recoveryBlocks.add(block);
     }
+    block.context=context;
     return {block,start:run.start};
   }
 
@@ -126,9 +127,10 @@
   function restoreKnownAnnotations() {
     if(uiSettings.restoreExistingAnnotations===false)return;
     if(recoveryPage!==pageIdentity()){resetRecovery();return;}
-    // Streams retain ownership of their original nodes. Rebind only once the
-    // task has committed its final choices (including KEEP or failed previews).
-    if(currentTask)return;
+    // Only committed choices enter the recovery cache. During a human-paced
+    // manual wait these are safe to restore; active analysis/previews retain
+    // ownership of their nodes until a safe pause or task completion.
+    if(currentTask&&!currentTask.manualRequest&&!currentTask.manualLocalOnly)return;
     const candidateIndexes=new Map();
     for(const block of recoveryBlocks){
       if(!block.annotations.size)continue;
@@ -143,11 +145,19 @@
         if(!byTag.has(block.tag)){
           const index=new Map();for(const candidate of scope.querySelectorAll(block.tag)){const key=sourceOf(candidate).text;const list=index.get(key)||[];list.push(candidate);index.set(key,list);}byTag.set(block.tag,index);
         }
-        const matches=(byTag.get(block.tag).get(block.text)||[]).filter(e=>recoveryContext(e)===block.context&&!Array.from(recoveryBlocks).some(other=>other!==block&&other.element===e));
+        const candidates=(byTag.get(block.tag).get(block.text)||[]).filter(e=>!Array.from(recoveryBlocks).some(other=>other!==block&&other.element===e));
+        const contextual=candidates.filter(e=>recoveryContext(e)===block.context);
+        // Neighboring ads or paragraphs may change independently of this source.
+        // A unique exact source can recover without neighbors only when no
+        // other detached record could claim the same location.
+        const unresolved=Array.from(recoveryBlocks).filter(other=>!other.element.isConnected&&other.annotations.size&&other.text===block.text&&other.tag===block.tag&&other.selector===block.selector&&other.scopeIndex===block.scopeIndex);
+        const matches=contextual.length===1?contextual:contextual.length===0&&candidates.length===1&&unresolved.length===1?candidates:[];
         if(matches.length!==1)continue;
         element=matches[0];block.element=element;block.scope=scope;
       }
-      if(recoveryContext(element)!==block.context)continue;
+      // An existing node with identical source remains the same paragraph even
+      // when adjacent content changed. Source spans are checked again below.
+      block.context=recoveryContext(element);
       const source=sourceOf(element);
       const pending=[];
       for(const a of block.annotations.values()){
@@ -478,7 +488,7 @@
     if(uiSettings.restoreExistingAnnotations===false||recoveryPage!==pageIdentity())return false;
     const element=node.parentElement?.closest(BLOCK_TAGS)||node.parentElement;
     const block=Array.from(recoveryBlocks).find(b=>b.element===element&&b.annotations.size);
-    return Boolean(block&&sourceOf(element).text===block.text&&recoveryContext(element)===block.context);
+    return Boolean(block&&sourceOf(element).text===block.text);
   }
 
   function loanwordDisplay(value) {
@@ -592,6 +602,7 @@
         try{applyManualRecovery(task,panel.querySelector('.kra-manual-response').value);}catch(error){note(error.message);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;}return;
       }
       panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;note('正在校验本批结果…');
+      task.manualSubmitted={requestId:task.manualRequest,text:panel.querySelector('.kra-manual-response').value};
       watchManualReply(task);
       try{task.port.postMessage({type:'MANUAL_REVIEW_RESPONSE',operationId:task.operationId,requestId:task.manualRequest,text:panel.querySelector('.kra-manual-response').value});}
       catch{clearInterval(task.keepalive);if(!recoverManualConnection(task,'提交连接已断开。')){clearTimeout(task.manualTimer);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;note('标注连接已断开；答案已保留，请下载保存。');}}
@@ -622,20 +633,22 @@
   function recoverManualConnection(task,reason){
     const backup=task.manualBackup;
     if(task.finished||currentTask!==task||!backup?.bindings?.length)return false;
-    clearTimeout(task.manualTimer);
+    clearTimeout(task.manualTimer);clearInterval(task.keepalive);
+    if(task.manualLocalOnly)return true;
     task.manualLocalOnly=true;task.manualRequest=backup.requestId;
+    try{task.port.disconnect();}catch{}
     const panel=document.querySelector('.kra-manual-review');
     panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
-    panel.querySelector('.kra-manual-status').textContent=reason+' 当前批次数据与答案仍保留在本页，可继续粘贴或导入并校验应用；后续批次需重新开始。';
+    panel.querySelector('.kra-manual-status').textContent=reason+' 当前批次与剩余批次已保留在本页；继续提交答案即可自动进入下一批。';
     status('当前批次可在本页恢复并应用');return true;
   }
 
   function watchManualReply(task){
     clearTimeout(task.manualTimer);const requestId=task.manualBackup?.requestId;
-    task.manualTimer=setTimeout(()=>{if(!task.finished&&currentTask===task&&task.manualBackup?.requestId===requestId)recoverManualConnection(task,'后台超过 10 秒未完成确认。');},10000);
+    task.manualTimer=setTimeout(()=>{if(!task.finished&&currentTask===task&&task.manualBackup?.requestId===requestId)recoverManualConnection(task,'提交后 30 秒未收到后台确认，切换到页面备份。');},30000);
   }
 
-  function applyManualRecovery(task,text){
+  function applyManualRecovery(task,text,{advance=true,paint=true}={}){
     const backup=task.manualBackup;
     if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
     if(typeof text!=='string'||text.length>5*1024*1024)throw Error('请提供不超过 5 MiB 的完整 JSON 结果。');
@@ -650,12 +663,12 @@
       seen.add(row.target_id);accepted.push({binding,choice});
     }
     const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry])),groups=new Map();
-    for(const {binding:b,choice} of accepted){
+    for(const {binding,choice} of accepted)for(const b of (task.paragraphPlan?task.paragraphPlan.projectBinding(binding,choice):[{...binding,annotations:choice.annotations}])){
       const entry=entries.get(b.sentenceId);
       if(!entry||!Number.isInteger(b.start)||!Number.isInteger(b.end)||b.start<0||b.end<=b.start||entry.text.slice(b.start,b.end)!==b.surface)throw Error('当前批次的原文位置已失效，未应用任何答案。');
       if(!groups.has(entry))groups.set(entry,{annotations:[],reviewed:[]});const group=groups.get(entry);
       if(entry.selected.some(r=>b.start>=r.start&&b.end<=r.end))group.reviewed.push({start:b.start,end:b.end});
-      for(const a of choice.annotations){
+      for(const a of b.annotations){
         if(!Number.isInteger(a.start)||!Number.isInteger(a.end)||a.start<0||a.end<=a.start||entry.text.slice(a.start,a.end)!==a.surface||typeof a.replacement!=='string'||!['hanja','loanword'].includes(a.type))throw Error('恢复数据的标注位置无效，未应用任何答案。');
         if(task.modes[a.type==='hanja'?'hanja':'loanword']&&entry.selected.some(r=>a.start>=r.start&&a.end<=r.end)){group.annotations.push(a);group.reviewed.push({start:a.start,end:a.end});}
       }
@@ -666,12 +679,22 @@
       entry.modelAnnotations=model;entry.committedModelAnnotations=model;entry.modelReviewed=true;entry.committedModelReviewed=true;entry.hasPreview=false;
       entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...model];
     }
-    const count=task.paint();const more=backup.batchTotal&&backup.batchNumber<backup.batchTotal;
-    // A recovered final batch does not prove earlier model results reached this page.
-    const complete=backup.batchNumber===1&&backup.batchTotal===1;
-    const message=`本批答案已在页面校验并应用，当前显示 ${count} 个标注。${complete?'本次恢复已完成。':more?'后续批次请重新开始标注。':'其他批次是否应用无法确认，请检查页面并重新开始未完成的标注。'}`;
-    finishTask(task,message,complete);status(message);publishState();
+    (task.manualApplied ||= new Set()).add(backup.requestId);
+    if(!advance)return;
+    const count=paint?task.paint():0;
+    const next=task.manualPlan?.find(batch=>!task.manualApplied.has(batch.requestId));
+    if(next){
+      handleManualEvent(task,{...next,type:'MANUAL_REVIEW_REQUEST'});task.manualLocalOnly=true;
+      panelStatus(`本批已应用，当前显示 ${count} 个标注。后台断线，已从本页备份继续下一批。`);
+      return;
+    }
+    const complete=Boolean(task.manualPlan?.length)&&task.manualPlan.every(batch=>task.manualApplied.has(batch.requestId));
+    const message=`本批答案已在页面校验并应用，当前显示 ${count} 个标注。${complete?'全部手动批次已完成。':'本批已恢复，但缺少后续批次备份，请保留答案。'}`;
+    if(complete){for(const entry of task.entries.values())seenSources.add(entry.text);if(task.wholePage)pageCompleted=true;}
+    finishTask(task,message,complete);status(message);if(complete)configureAutomaticAnnotation();publishState();
   }
+
+  function panelStatus(message){const panel=document.querySelector('.kra-manual-review');if(panel)panel.querySelector('.kra-manual-status').textContent=message;}
 
   function handleManualEvent(task,event){
     const panel=manualPanel();
@@ -682,7 +705,11 @@
       if(event.budget){const b=event.budget;panel.querySelector('.kra-manual-summary').textContent+=`\n${b.label}档 · 预估输入 ${b.inputTokens.toLocaleString()} / 答案 ${b.outputTokens.toLocaleString()} tokens${b.contextTokens?` / 余量 ${b.safetyTokens.toLocaleString()}（窗口 ${b.contextTokens.toLocaleString()}）`:''}${b.limitReason==='output'?' · 受答案长度预算限制':''}。估算与实际分词可能不同。`;}
       panel.querySelector('.kra-manual-prompt').value=event.text;panel.querySelector('.kra-manual-response').value='';
       panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;panel.querySelector('.kra-manual-file').value='';panel.querySelector('.kra-manual-cancel').disabled=false;
-      panel.querySelector('.kra-manual-status').textContent='等待粘贴或导入本批结果；未调用 API。';panel.hidden=false;refreshManualReopen();
+      panel.querySelector('.kra-manual-status').textContent='等待粘贴或导入本批结果；未调用 API。';panel.hidden=false;
+      const firstAppearance=!task.manualPanelShown;task.manualPanelShown=true;
+      if(firstAppearance&&uiSettings.hideToolbarOnFirstManual!==false)dismissToolbar();
+      refreshManualReopen();
+      configureRecovery();
       getToolbar().querySelector('.kra-manual-open').hidden=false;status(`等待手动回填：第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次（${event.targetCount} 个词）`);return;
     }
     if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
@@ -690,7 +717,9 @@
       clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
       panel.querySelector('.kra-manual-status').textContent=event.error;panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
     }else{
-      task.manualRequest=null;watchManualReply(task);panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
+      clearTimeout(task.manualTimer);
+      try{applyManualRecovery(task,task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value,{advance:false,paint:false});}catch(error){addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message});}
+      task.manualRequest=null;panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }
 
@@ -757,7 +786,13 @@
     return startAnnotation({ranges,reviewAll,forceRegenerate:true,modes:{hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true}});
   }
 
+  let createParagraphPlan;
+  let paragraphModule;
   function startAnnotation(message) {
+    if(!createParagraphPlan){
+      paragraphModule ||= import(chrome.runtime.getURL('paragraph-plan.js'));
+      return paragraphModule.then(module=>{createParagraphPlan=module.createParagraphPlan;return startAnnotation(message);}).catch(error=>{status('无法加载段落分析模块，请刷新网页重试');return {ok:false,error:error.message};});
+    }
     const modes = { hanja: message.modes?.hanja ?? true, loanword: message.modes?.loanword ?? true };
     if (!modes.hanja && !modes.loanword) return { ok: false, error: '请至少启用一种标注模式。' };
     cancelTask();
@@ -769,11 +804,14 @@
     if(entries.size)pageHasHangul=true;
     if (!entries.size) { status('没有未标注的韩语文字', 100); return { ok: true, started: false }; }
     if ([...entries.values()].some(entry => entry.text.length > 20000)) return { ok: false, error: '单个文本节点过长，超过本地引擎限制。' };
+    let paragraphPlan;
+    try{paragraphPlan=createParagraphPlan(entries,sourceOf,BLOCK_TAGS);}catch(error){return {ok:false,error:error.message};}
+    if(paragraphPlan.sentences.some(s=>s.text.length>20000))return {ok:false,error:'单个完整段落超过 20,000 字符，请缩小范围。'};
     const operationId = `page-${Date.now().toString(36)}-${++sequence}`;
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
-    const task = { operationId, port, entries, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, operation:[], historyRecorded:false };
+    const task = { operationId, port, entries, paragraphPlan, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges, operation:[], historyRecorded:false };
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
     task.paint=paint;
     task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
@@ -781,7 +819,7 @@
     currentTask = task;
     status(task.progressive?'分析中，完成的标注将陆续显示…':'分析中，完成后一次性写入标注…');
     port.onDisconnect.addListener(() => {
-      if (task.finished) return;
+      if (task.finished||task.manualLocalOnly) return;
       clearInterval(task.keepalive);
       if(recoverManualConnection(task,'标注后台连接已中断。'))return;
       status('分析连接中断，请重试', 0);
@@ -789,6 +827,8 @@
     });
     port.onMessage.addListener(result => {
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
+      if(task.manualLocalOnly)return;
+      if(result.type==='MANUAL_REVIEW_PLAN'){task.manualPlan=result.batches;return;}
       if(['MANUAL_REVIEW_REQUEST','MANUAL_REVIEW_ERROR','MANUAL_REVIEW_ACCEPTED'].includes(result.type)){handleManualEvent(task,result);return;}
       if (result.type === 'ERROR') { addDiagnostic({level:'error',message:result.error});if(recoverManualConnection(task,result.error||'标注后台异常。'))return;status(result.error || '分析失败', 0); finishTask(task,result.error||'分析失败'); return; }
       if (result.type === 'DIAGNOSTIC') {
@@ -803,7 +843,7 @@
       if (result.type !== 'RESULTS' && result.type !== 'DONE') return;
       globalThis.__KRA_PIPELINE_STATUS__ = { stats: result.stats, engine_version: result.engine_version, dictionary_metadata: result.dictionary_metadata };
       const changedEntries=new Map();
-      for (const item of result.results || []) {
+      for (const item of (result.results||[]).flatMap(item=>task.paragraphPlan.projectResult(item))) {
         const entry = byId.get(item.id);
         if (!entry) continue;
         changedEntries.set(entry.node,entry);
@@ -837,7 +877,7 @@
     });
     task.keepalive = setInterval(() => { try { port.postMessage({ type: 'KEEPALIVE' }); } catch { clearInterval(task.keepalive);if(!recoverManualConnection(task,'后台保活连接已断开。'))finishTask(task); } }, 20000);
     try {
-      port.postMessage({ type: 'START', operationId, sentences: [...entries.values()].map(({id,text,selected})=>({id,text,selected})), context: [...entries.values()].map(entry => entry.text).join('\n'), progressiveAnnotation:task.progressive, modes, forceRegenerate: Boolean(message.forceRegenerate), reviewAll: message.reviewAll===true });
+      port.postMessage({ type: 'START', operationId, sentences:paragraphPlan.sentences, context:paragraphPlan.context, restrictToSelection:true, progressiveAnnotation:task.progressive, modes, forceRegenerate: Boolean(message.forceRegenerate), reviewAll: message.reviewAll===true });
     } catch (error) { finishTask(task); status(error.message || '无法启动分析', 0); return { ok: false, error: error.message }; }
     return { ok: true, started: true };
   }
@@ -846,12 +886,12 @@
     switch (message?.type) {
       case 'KRA_PING': respond({ ok: true, version: VERSION }); break;
       case 'KRA_CONTEXT_STATE': respond(contextState()); break;
-      case 'START_ANNOTATION': if(message.uiSettings)applySettings(message.uiSettings);respond(startAnnotation(message)); break;
+      case 'START_ANNOTATION': if(message.uiSettings)applySettings(message.uiSettings);Promise.resolve(startAnnotation(message)).then(respond,error=>respond({ok:false,error:error.message}));return true;
       case 'RESTORE_ANNOTATION': restorePage();respond({ok:true});break;
       case 'UNDO_LAST_ANNOTATION':respond(undoLast());break;
       case 'APPLY_UI_SETTINGS':applySettings(message.uiSettings||{});respond({ok:true});break;
       case 'APPLY_FLOATING_BALL_POSITION':applySettings({floatingBallPosition:message.position});respond({ok:true});break;
-      case 'START_SELECTION_ANNOTATION':{const ranges=captureSelection();respond(ranges?startAnnotation({...message,ranges}):{ok:false,error:'请先选中需要标注的文字。'});break;}
+      case 'START_SELECTION_ANNOTATION':{const ranges=captureSelection();Promise.resolve(ranges?startAnnotation({...message,ranges}):{ok:false,error:'请先选中需要标注的文字。'}).then(respond,error=>respond({ok:false,error:error.message}));return true;}
     }
   });
 

@@ -13,3 +13,7 @@ Kiwi and Pyodide are bundled runtime components; their respective upstream licen
 Furiganator is a Japanese furigana extension used as a reference for annotation display and text selection: https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa
 
 Dictionary data is obtained separately from the National Institute of Korean Language: https://krdict.korean.go.kr/download/downloadPopup
+
+## Bundled Kiwi 0.24.1
+
+kiwi-nlp 0.24.1 (WASM/JavaScript) and the official Kiwi v0.24.1 CoNg-base model are bundled. Source: https://github.com/bab2min/Kiwi/tree/v0.24.1 . License: Apache-2.0; see third_party/Kiwi-LICENSE.txt. The legacy runtime metadata field kiwipiepy_model identifies the bundled model release, not an installed Python package.
