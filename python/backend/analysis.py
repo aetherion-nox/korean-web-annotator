@@ -14,7 +14,7 @@ from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 from app.services.usage import quantity_context
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-name-quantity-14'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-name-quantity-16'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -114,7 +114,7 @@ class Engine:
         segments,_=await converter.convert(text,self.lookup_fn)
         tokens=await self.tokens(text)
         proper_ranges=proper_noun_ranges(tokens)
-        protected_names=await name_ranges(text,tokens,self.lookup_fn)
+        protected_names=await name_ranges(text,tokens,self.lookup_fn) if modes.get('nameProtection',True) is not False else []
         upstream_counts={f'upstream_{status}':sum(s.status==status for s in segments) for status in ('converted','ambiguous','no_match','kept')}
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
         if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):

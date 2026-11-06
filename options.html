@@ -26,6 +26,8 @@
 
     <section id="enginePanel">
       <h2 data-engine-i18n="title"></h2>
+      <label class="inline"><input id="nameProtection" type="checkbox" checked aria-describedby="nameProtectionHint"><span data-engine-i18n="nameProtection">姓名整段保护（默认开启）</span></label>
+      <p id="nameProtectionHint" class="profile-note" data-engine-i18n="nameProtectionHint"></p>
       <label class="inline"><input id="enableModelReview" type="checkbox"><span data-engine-i18n="model"></span></label>
       <label class="inline"><input id="reviewAllCandidates" type="checkbox" aria-describedby="reviewAllHint"><span data-engine-i18n="reviewAll">全部交给大模型审核（默认关闭）</span></label>
       <p id="reviewAllHint" class="profile-note" data-engine-i18n="reviewAllHint"></p>
@@ -40,6 +42,14 @@
       <progress id="dictionaryProgress" hidden aria-label="Dictionary import progress"></progress>
       <div class="buttons"><button id="importDictionary" type="button" data-engine-i18n="importButton"></button><button id="clearDictionary" type="button" data-engine-i18n="clear"></button></div>
       <pre id="engineStatus" role="status"></pre>
+    </section>
+    <section class="profile-panel" id="kiwiUpdatePanel" aria-labelledby="kiwiUpdateHeading">
+      <h2 id="kiwiUpdateHeading">Kiwi 引擎更新</h2>
+      <p id="kiwiRuntimeSummary"></p><p id="kiwiLatestSummary"></p>
+      <p id="kiwiUpdateHint" class="profile-note"></p>
+      <div class="buttons"><button id="kiwiCheckUpdate" type="button">检查更新</button><button id="kiwiInstallUpdate" type="button" disabled>下载并启用最新版</button><button id="kiwiRestoreBuiltin" type="button" disabled>恢复内置版本</button></div>
+      <progress id="kiwiUpdateProgress" hidden aria-label="Kiwi update progress"></progress>
+      <p id="kiwiUpdateStatus" role="status" aria-live="polite"></p>
     </section>
     <section class="profile-panel" aria-labelledby="featureHeading">
       <h2 id="featureHeading" data-feature-i18n="title">显示与请求日志</h2>
@@ -97,5 +107,6 @@
   <script src="options.js"></script>
   <script type="module" src="engine-settings.js"></script>
   <script type="module" src="feature-settings.js"></script>
+  <script type="module" src="kiwi-settings.js"></script>
 </body>
 </html>

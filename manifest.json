@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Korean Hanja & Loanword Annotator",
-  "version": "1.1.31",
+  "version": "1.1.32",
   "description": "Dictionary-based Korean Hanja and loanword annotations entirely in your browser, with optional model review.",
   "permissions": [
     "activeTab",
@@ -55,6 +55,12 @@
   },
   "minimum_chrome_version": "116",
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+    "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-eval' blob:; worker-src blob:; child-src blob:; connect-src blob:;"
+  },
+  "sandbox": {
+    "pages": [
+      "kiwi-sandbox.html"
+    ]
   }
 }

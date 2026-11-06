@@ -16,13 +16,13 @@ async def name_ranges(text,tokens,lookup):
     """
     spans=[]
     for i,token in enumerate(tokens):
-        if token.tag.split('-')[0] not in {'NNG','NNP'} or token.length<=0:continue
+        if token.tag.split('-')[0] not in {'NNG','NNP','NR'} or token.length<=0:continue
         start=token.start
         if start and re.match(r'[가-힣]',text[start-1]):continue
         end=start;parts=[];j=i
         while j<len(tokens):
             t=tokens[j]
-            if t.tag.split('-')[0] not in {'NNG','NNP'} or t.start!=end or t.length<=0 or text[t.start:t.start+t.length]!=t.form:break
+            if t.tag.split('-')[0] not in {'NNG','NNP','NR'} or t.start!=end or t.length<=0 or text[t.start:t.start+t.length]!=t.form:break
             parts.append(t);end=t.start+t.length;j+=1
         word=text[start:end]
         if not 2<=len(word)<=4 or not re.fullmatch(r'[가-힣]+',word):continue
@@ -38,11 +38,14 @@ async def name_ranges(text,tokens,lookup):
         if not (case or mistagged_case):continue
         spans.append((start,end,word,parts))
     if not spans:return []
-    forms={f for _,_,word,_ in spans for f in (word,word[:1],word[:2])}
+    forms={f for _,_,word,parts in spans for f in (word,word[:1],word[:2],*(t.form for t in parts))}
     entries=await lookup(list(forms))
     names=set();ranges=[]
     for start,end,word,parts in spans:
         if entries.get(word):continue
+        # A number followed by an explicitly documented unit is counterevidence
+        # to a name guess, even when the numeral is also a dictionary surname.
+        if parts[0].tag.split('-')[0]=='NR' and any(r.get('unit_usage') is True for t in parts[1:] for r in entries.get(t.form,[])):continue
         split_hint=len(parts)>1 and parts[0].tag.split('-')[0]=='NNP' and len(parts[0].form)<=2
         surname=any(r.get('surname_usage') is True for prefix in (word[:1],word[:2]) if len(prefix)<len(word) for r in entries.get(prefix,[]))
         if split_hint or surname:

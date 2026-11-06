@@ -18,6 +18,12 @@ export async function importBrowserDictionary(file){
  try{return await call({action:'import',upload:id});}finally{await storage('delete',id);}
 }
 export function clearBrowserDictionary(){return call({action:'clear'});}
+export function kiwiAction(action,extra={}){return call({action:'kiwi-'+action,...extra});}
+export async function withKiwiLease(run){
+ const id=crypto.randomUUID();await kiwiAction('lock',{id});
+ const timer=setInterval(()=>kiwiAction('lock',{id}).catch(()=>{}),20000);
+ try{return await run();}finally{clearInterval(timer);await kiwiAction('unlock',{id}).catch(()=>{});}
+}
 
 // A key count reads saved state without loading the dictionary or WASM runtime.
 export async function readDictionaryInfo(){return {imported:Boolean(await storage('has','dictionary'))};}

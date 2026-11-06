@@ -75,6 +75,7 @@ class DisambiguationService:
             return []
 
         scored = []
+        phrase_origins = {}
         for c in candidates:
             # POS incompatibility is a structural rejection, including reviewAll.
             # A lower score must not turn a noun into a predicate candidate.
@@ -108,16 +109,20 @@ class DisambiguationService:
 
             # 3. Context collocation match from dictionary
             if context_text is not None and token_start is not None and token_end is not None and cs.origin_raw:
-                origins=set()
-                for phrase in self._collocations.get(cs.written_form,[]):
-                    for match in _phrase_pattern(tuple(phrase['words'])).finditer(context_text):
-                        end=match.end()
-                        if end<len(context_text) and re.match(r'[가-힣A-Za-z0-9_]',context_text[end]):
-                            # Attached case particles are valid only when the
-                            # tokenizer proves the final dictionary-word boundary.
-                            following=[t for t in (context_tokens or []) if t.start==end and t.tag.startswith('J')]
-                            if not following or not any(t.start+t.length==end for t in context_tokens):continue
-                        if match.span(phrase['index']+1)==(token_start,token_end):origins.add(phrase['origin'])
+                if cs.written_form not in phrase_origins:
+                    origins=set()
+                    for phrase in self._collocations.get(cs.written_form,[]):
+                        # Necessary condition only: final ordered, anchored
+                        # matching below still decides all phrase evidence.
+                        if any(word not in context_text for word in phrase['words']):continue
+                        for match in _phrase_pattern(tuple(phrase['words'])).finditer(context_text):
+                            end=match.end()
+                            if end<len(context_text) and re.match(r'[가-힣A-Za-z0-9_]',context_text[end]):
+                                following=[t for t in (context_tokens or []) if t.start==end and t.tag.startswith('J')]
+                                if not following or not any(t.start+t.length==end for t in context_tokens):continue
+                            if match.span(phrase['index']+1)==(token_start,token_end):origins.add(phrase['origin'])
+                    phrase_origins[cs.written_form]=origins
+                origins=phrase_origins[cs.written_form]
                 if origins=={cs.origin_raw}:
                     cs.score += 0.25
                     cs.reasons.append('collocation_match(full_phrase)')

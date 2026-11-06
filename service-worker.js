@@ -9,7 +9,7 @@ import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.31';
+const CONTENT_SCRIPT_VERSION='1.1.32';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -144,6 +144,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.runtime.onConnect.addListener(port => {
   if (![STREAM_PORT_NAME, 'KRA_SENTENCE_STREAM_V1'].includes(port.name)) return;
   handleStreamingPort(port);
+});
+
+// Offscreen documents have chrome.runtime, not chrome.storage.
+chrome.runtime.onMessage.addListener((message,sender,reply)=>{
+ if(!['KIWI_UPDATE_PROGRESS','KIWI_UPDATE_TICK'].includes(message?.type))return;
+ if(sender.id!==chrome.runtime.id||sender.url!==chrome.runtime.getURL('engine-page.html')){reply({ok:false,error:'Invalid update sender'});return;}
+ if(message.type==='KIWI_UPDATE_TICK'){reply({ok:true});return;}
+ const p=message.state||{};
+ const state={message:String(p.message||'').slice(0,500),loaded:Math.max(0,Number(p.loaded)||0),total:Math.max(0,Number(p.total)||0),at:Date.now()};
+ chrome.storage.local.set({kiwiUpdateProgress:state}).then(()=>reply({ok:true}),error=>reply({ok:false,error:error.message}));return true;
 });
 
 
@@ -440,7 +450,7 @@ async function runModern(message,post,signal,manualSession){
  await loadCache();const config=await engineConfig();
  if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
  const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier});
- return runSentencePipeline({...message,reviewAllCandidates:config.reviewAllCandidates},post,{signal,enabled:config.enableModelReview,modelConfig,cache,persist:async map=>chrome.storage.local.set({[CACHE_KEY]:Array.from(map)})});
+ return runSentencePipeline({...message,nameProtection:config.nameProtection,reviewAllCandidates:config.reviewAllCandidates},post,{signal,enabled:config.enableModelReview,modelConfig,cache,persist:async map=>chrome.storage.local.set({[CACHE_KEY]:Array.from(map)})});
 }
 function legacyPlan(message){
  const candidates=Array.isArray(message.candidates)?message.candidates:(message.batches||[]).flat();

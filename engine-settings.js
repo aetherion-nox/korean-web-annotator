@@ -37,20 +37,28 @@ copy['zh-TW'].reviewAllHint=copy['zh-TW'].reviewAllHint.replace('需設定 API',
 copy.en.reviewAllHint=copy.en.reviewAllHint.replace('requires API configuration','requires API configuration or manual chat review');
 copy.ja.reviewAllHint=copy.ja.reviewAllHint.replace('API設定と辞書が必要','API設定または手動チャット審査と辞書が必要');
 copy.ko.reviewAllHint=copy.ko.reviewAllHint.replace('API 설정과 사전이 필요','API 설정 또는 수동 채팅 검토와 사전이 필요');
+const nameCopy={
+ 'zh-CN':['姓名整段保护（默认开启）','结合词典姓氏与分词结构，保留疑似姓名的完整范围，避免拆分误标。关闭后跳过此保护及额外姓名查询，恢复此前的片段处理；Kiwi 标为专有名词的候选仍交给模型审核。下一次标注生效。'],
+ 'zh-TW':['姓名整段保護（預設開啟）','結合詞典姓氏與分詞結構，保留疑似姓名的完整範圍，避免拆分誤標。關閉後略過此保護與額外姓名查詢，恢復先前的片段處理；Kiwi 標為專有名詞的候選仍交給模型審核。下次標註生效。'],
+ en:['Protect complete names (on by default)','Use dictionary surname evidence and morphology to preserve suspected names as a whole. Turning this off skips name protection and its extra lookups, restoring earlier fragment handling. Kiwi proper-noun candidates still require model review. Applies to new tasks.'],
+ ja:['姓名全体を保護（初期設定は有効）','辞書の姓情報と形態素から推定した姓名全体を保持します。無効にすると保護と追加検索を省き、以前の断片処理に戻ります。Kiwiの固有名詞候補は引き続きモデル審査に回します。次の処理から適用。'],
+ ko:['이름 전체 보호 (기본 켜짐)','사전의 성씨 정보와 형태소 구조로 추정한 이름 전체를 보존합니다. 끄면 보호와 추가 이름 조회를 생략하고 이전의 부분 처리로 돌아갑니다. Kiwi 고유명사 후보는 계속 모델 검토에 보냅니다. 새 작업부터 적용됩니다.']
+};
+for(const [locale,labels] of Object.entries(nameCopy))Object.assign(copy[locale],{nameProtection:labels[0],nameProtectionHint:labels[1]});
 const t=key=>(copy[$('uiLocale').value]||copy.en)[key];
 function translate(){for(const el of document.querySelectorAll('[data-engine-i18n]'))el.textContent=t(el.dataset.engineI18n);}
 async function save(changed){
  if(['reviewAllCandidates','manualModelReview'].includes(changed)&&$(changed).checked)$('enableModelReview').checked=true;
  if(changed==='enableModelReview'&&!$('enableModelReview').checked){$('reviewAllCandidates').checked=false;$('manualModelReview').checked=false;}
- await chrome.storage.local.set({enableModelReview:$('enableModelReview').checked,reviewAllCandidates:$('reviewAllCandidates').checked,manualModelReview:$('manualModelReview').checked,batchContextTier:normalizeBatchContextTier($('batchContextTier').value)});status.textContent=t('saved');
+ await chrome.storage.local.set({nameProtection:$('nameProtection').checked,enableModelReview:$('enableModelReview').checked,reviewAllCandidates:$('reviewAllCandidates').checked,manualModelReview:$('manualModelReview').checked,batchContextTier:normalizeBatchContextTier($('batchContextTier').value)});status.textContent=t('saved');
 }
 const dictionaryLabels={en:['Dictionary imported','Dictionary not imported'],'zh-CN':['词典已导入','词典未导入，请选择 ZIP 或 DB 文件。'],'zh-TW':['詞典已匯入','詞典未匯入，請選擇 ZIP 或 DB 檔案。'],ja:['辞書を取り込み済み','辞書は未取り込みです。JSON ZIP を選択してください。'],ko:['사전 가져오기 완료','사전이 없습니다. JSON ZIP을 가져오세요.']};
 let importedDictionary=false;
 function show(result){importedDictionary=result.imported;status.textContent=(dictionaryLabels[$('uiLocale').value]||dictionaryLabels.en)[importedDictionary?0:1];}
 async function refreshDictionaryStatus(){show(await readDictionaryInfo());}
 function busy(value){$('dictionaryProgress').hidden=!value;for(const id of ['importDictionary','clearDictionary','dictionaryFile'])$(id).disabled=value;}
-for(const key of ['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier'])$(key).addEventListener('change',()=>save(key).catch(e=>status.textContent=e.message));
+for(const key of ['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection'])$(key).addEventListener('change',()=>save(key).catch(e=>status.textContent=e.message));
 $('importDictionary').addEventListener('click',async()=>{const file=$('dictionaryFile').files?.[0];if(!file){status.textContent=t('missing');return;}busy(true);status.textContent=t('busy');try{await importBrowserDictionary(file);await refreshDictionaryStatus();}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('clearDictionary').addEventListener('click',async()=>{busy(true);try{await clearBrowserDictionary();await refreshDictionaryStatus();}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('uiLocale').addEventListener('change',()=>{translate();show({imported:importedDictionary});});
-chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','uiSettings']).then(async s=>{$('reviewAllCandidates').checked=s.reviewAllCandidates===true;$('manualModelReview').checked=s.manualModelReview===true;$('batchContextTier').value=normalizeBatchContextTier(s.batchContextTier);$('enableModelReview').checked=s.enableModelReview===true||s.reviewAllCandidates===true||s.manualModelReview===true;if(s.enableModelReview===undefined)await chrome.storage.local.set({enableModelReview:$('enableModelReview').checked});if(s.uiSettings?.uiLocale)$('uiLocale').value=s.uiSettings.uiLocale;translate();await refreshDictionaryStatus();}).catch(e=>status.textContent=e.message);translate();
+chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection','uiSettings']).then(async s=>{$('nameProtection').checked=s.nameProtection!==false;$('reviewAllCandidates').checked=s.reviewAllCandidates===true;$('manualModelReview').checked=s.manualModelReview===true;$('batchContextTier').value=normalizeBatchContextTier(s.batchContextTier);$('enableModelReview').checked=s.enableModelReview===true||s.reviewAllCandidates===true||s.manualModelReview===true;if(s.enableModelReview===undefined)await chrome.storage.local.set({nameProtection:$('nameProtection').checked,enableModelReview:$('enableModelReview').checked});if(s.uiSettings?.uiLocale)$('uiLocale').value=s.uiSettings.uiLocale;translate();await refreshDictionaryStatus();}).catch(e=>status.textContent=e.message);translate();
