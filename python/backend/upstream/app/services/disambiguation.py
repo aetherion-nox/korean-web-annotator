@@ -10,14 +10,6 @@ Uses local, explainable heuristics based on:
 
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
-import re
-from functools import lru_cache
-
-@lru_cache(maxsize=1024)
-def _phrase_pattern(words):
-    return re.compile(r'(?<![가-힣A-Za-z0-9_])'+r'\s+'.join('('+re.escape(w)+')' for w in words))
-
-
 @dataclass
 class CandidateScore:
     """Scored candidate with explanation."""
@@ -75,7 +67,6 @@ class DisambiguationService:
             return []
 
         scored = []
-        phrase_origins = {}
         for c in candidates:
             # POS incompatibility is a structural rejection, including reviewAll.
             # A lower score must not turn a noun into a predicate candidate.
@@ -108,24 +99,15 @@ class DisambiguationService:
                     cs.reasons.append('pos_mismatch')
 
             # 3. Context collocation match from dictionary
-            if context_text is not None and token_start is not None and token_end is not None and cs.origin_raw:
-                if cs.written_form not in phrase_origins:
-                    origins=set()
-                    for phrase in self._collocations.get(cs.written_form,[]):
-                        # Necessary condition only: final ordered, anchored
-                        # matching below still decides all phrase evidence.
-                        if any(word not in context_text for word in phrase['words']):continue
-                        for match in _phrase_pattern(tuple(phrase['words'])).finditer(context_text):
-                            end=match.end()
-                            if end<len(context_text) and re.match(r'[가-힣A-Za-z0-9_]',context_text[end]):
-                                following=[t for t in (context_tokens or []) if t.start==end and t.tag.startswith('J')]
-                                if not following or not any(t.start+t.length==end for t in context_tokens):continue
-                            if match.span(phrase['index']+1)==(token_start,token_end):origins.add(phrase['origin'])
-                    phrase_origins[cs.written_form]=origins
-                origins=phrase_origins[cs.written_form]
-                if origins=={cs.origin_raw}:
-                    cs.score += 0.25
-                    cs.reasons.append('collocation_match(full_phrase)')
+            if context_forms and cs.origin_raw:
+                for ctx in context_forms:
+                    key = (cs.written_form, ctx)
+                    if key in self._collocations:
+                        expected_orig = self._collocations[key]
+                        if expected_orig and (expected_orig in cs.origin_raw or cs.origin_raw in expected_orig):
+                            cs.score += 0.25
+                            cs.reasons.append(f'collocation_match({ctx}->{expected_orig})')
+                            break
 
             if quantity:
                 cs.reasons.append('quantity_context')
