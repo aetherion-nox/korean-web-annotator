@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from app.services.tokenizer import TokenizerService, MorphToken, WordGroup
 from app.services.disambiguation import DisambiguationService, CandidateScore
+from app.services.usage import quantity_context
 
 
 @dataclass
@@ -147,7 +148,7 @@ class ConverterService:
                 continue
 
             group_segments = self._process_word_group(
-                text, group, candidates_map, segment_id, context_by_start
+                text, group, candidates_map, segment_id, context_by_start, tokens
             )
             segments.extend(group_segments)
             segment_id += len(group_segments)
@@ -165,6 +166,7 @@ class ConverterService:
         candidates_map: Dict[str, List[dict]],
         start_id: int,
         context_by_start: Dict[int, List[str]],
+        all_tokens=None,
     ) -> List[ConversionSegment]:
         segments = []
         seg_id = start_id
@@ -229,6 +231,9 @@ class ConverterService:
                     # supplies POS for an exact whole nominal dictionary word.
                     token_tag=next((t.tag for t in reversed(sub_tokens) if t.is_noun),sub_tokens[-1].tag),
                     context_forms=[f for f in sentence_context if f not in (span_text, span_form)],
+                    context_text=text,token_start=span_start,token_end=span_end,
+                    quantity=quantity_context(text,all_tokens or group.tokens,span_start,span_end),
+                    context_tokens=all_tokens or group.tokens,
                 )
                 if not scored:
                     continue
@@ -321,6 +326,9 @@ class ConverterService:
                         token_tag=candidate_tag,
                         context_forms=context_forms,
                         is_verbal_context=is_verbal_context,
+                        context_text=text,token_start=token_start,token_end=token_end,
+                        quantity=quantity_context(text,all_tokens or group.tokens,token_start,token_end),
+                        context_tokens=all_tokens or group.tokens,
                     )
                     selected, status = self.disambiguation.select_best(scored)
 

@@ -16,7 +16,7 @@ class DictionaryService:
         self._candidate_cache = OrderedDict()
         self._max_cache = 20000
         self._stats = None
-        self._collocations: Dict[Tuple[str, str], str] = {}
+        self._collocations: Dict[str, List[dict]] = {}
         self._cjk_re = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
     async def get_connection(self) -> aiosqlite.Connection:
@@ -25,8 +25,8 @@ class DictionaryService:
         await db.execute('PRAGMA foreign_keys=ON')
         return db
 
-    async def load_collocations(self, db: Optional[aiosqlite.Connection] = None) -> Dict[Tuple[str, str], str]:
-        """Extract word-pair collocations from multi-word dictionary entries."""
+    async def load_collocations(self, db: Optional[aiosqlite.Connection] = None) -> Dict[str, List[dict]]:
+        """Index full dictionary phrases and each component's aligned origin."""
         if self._collocations:
             return self._collocations
 
@@ -34,36 +34,27 @@ class DictionaryService:
         if close_db:
             db = await self.get_connection()
         try:
-            query = """
-                SELECT written_form, origin_raw 
-                FROM entries 
-                WHERE written_form LIKE '% %' AND origin_raw IS NOT NULL
-            """
+            # Preserve every word of the originating phrase and its aligned origin.
+            # Nonadjacent pairs from a long technical term are not collocations.
+            query = "SELECT id, written_form, origin_raw FROM entries WHERE written_form LIKE '% %' AND origin_raw IS NOT NULL"
             async with db.execute(query) as cursor:
                 rows = await cursor.fetchall()
-
-            possibilities = defaultdict(set)
+            phrases = defaultdict(list)
+            seen=set()
             for row in rows:
-                wf = row['written_form'].strip()
-                origin = row['origin_raw'].strip()
-                words = wf.split(' ')
-                pure_cjk = re.sub(r'[^ \u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]', '', origin)
-                clean_origin = pure_cjk.replace(' ', '')
-                clean_wf = ''.join(words)
-                if len(clean_origin) == len(clean_wf):
-                    idx = 0
-                    word_origins = []
-                    for w in words:
-                        w_orig = clean_origin[idx:idx + len(w)]
-                        word_origins.append((w, w_orig))
-                        idx += len(w)
-
-                    for i, (w, w_orig) in enumerate(word_origins):
-                        for j, (other_w, _) in enumerate(word_origins):
-                            if i != j:
-                                possibilities[(w, other_w)].add(w_orig)
-
-            self._collocations = {key: next(iter(values)) for key, values in possibilities.items() if len(values) == 1}
+                words=tuple(row['written_form'].split())
+                origin=row['origin_raw'].strip()
+                if len(words)<2 or not all(re.fullmatch(r'[가-힣]+',w) for w in words):continue
+                clean_origin=''.join(origin.split())
+                if not re.fullmatch(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+',clean_origin) or len(clean_origin)!=sum(map(len,words)):continue
+                offset=0
+                for index,word in enumerate(words):
+                    target_origin=clean_origin[offset:offset+len(word)];offset+=len(word)
+                    key=(words,index,target_origin)
+                    if key in seen:continue
+                    seen.add(key)
+                    phrases[word].append(dict(words=words,index=index,origin=target_origin))
+            self._collocations=dict(phrases)
             return self._collocations
         finally:
             if close_db:
@@ -145,11 +136,20 @@ class DictionaryService:
                     ORDER BY written_form, is_reliable DESC, homonym_number ASC
                 '''
                 async with db.execute(query, batch + batch) as cursor:
-                    rows = await cursor.fetchall()
-                    for row in rows:
-                        d = dict(row)
-                        wf = d['written_form']
-                        result.setdefault(wf, []).append(d)
+                    rows = [dict(row) for row in await cursor.fetchall()]
+                ids=list(dict.fromkeys(row['entry_id'] for row in rows))
+                evidence={i:dict(unit_usage=False,surname_usage=False,definition_preview=None) for i in ids}
+                from app.services.usage import sense_evidence
+                for begin in range(0,len(ids),400):
+                    part=ids[begin:begin+400];marks=','.join('?' for _ in part)
+                    async with db.execute(f'SELECT entry_id,definition FROM senses WHERE entry_id IN ({marks}) ORDER BY entry_id,sense_number,id',part) as cursor:
+                        for sense in await cursor.fetchall():
+                            flags=evidence[sense['entry_id']]
+                            if flags['definition_preview'] is None:flags['definition_preview']=sense['definition']
+                            for key,value in sense_evidence(sense['definition']).items():flags[key]|=value
+                for row in rows:
+                    row.update(evidence[row['entry_id']])
+                    result.setdefault(row['written_form'],[]).append(row)
 
             for wf in missing:
                 self._cache_candidates(wf, result.get(wf, []))

@@ -100,12 +100,13 @@ def candidate_spans(text,tokens):
             if HANGUL.fullmatch(text[start:end]):spans.add((start,end,text[start:end]))
     return sorted(spans,key=lambda r:(r[0],-r[1]))
 
-async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=()):
+async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=()):
     spans=candidate_spans(text,tokens)
     proper_ranges=proper_noun_ranges(tokens)
     entries=await engine.lookup_entries([form for _,_,form in spans])
     annotations=[];targets=[];ranges=[];skipped=0
     for start,end,word in spans:
+        if overlaps_proper_noun(start,end,blocked_ranges):continue
         # Respect the original converter's longer whole-word match, including
         # native whole words. Equal spans are still unified here.
         if any(a<=start and end<=b and (a<start or end<b) for a,b in whole_word_ranges):continue

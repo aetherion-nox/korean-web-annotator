@@ -11,7 +11,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  enabled=enabled || reviewAll;
  if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>5000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
  const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
- const stats={local_determined:0,pending:0,model_resolved:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
+ const stats={local_determined:0,pending:0,model_resolved:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
  identity=await status(signal);const work=[];
@@ -33,11 +33,12 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    analysis.stats={...analysis.stats,pending:analysis.targets.length};
   }
   for(const warning of analysis.diagnostics||[])diagnostic(warning);
-  for(const name of ['local_determined','pending','structural_rejections','rejected_options','skipped_mixed','upstream_converted','upstream_ambiguous','upstream_no_match','upstream_kept'])stats[name]+=Number(analysis.stats[name]||0);
+  for(const name of ['local_determined','pending','structural_rejections','rejected_options','skipped_mixed','protected_names','upstream_converted','upstream_ambiguous','upstream_no_match','upstream_kept'])stats[name]+=Number(analysis.stats[name]||0);
   hasOriginalCounts ||= Number.isInteger(analysis.stats.upstream_converted);
   completedSentences++;emit('RESULTS',{source:'local',results:[{id:sentence.id,annotations:analysis.annotations}]});
   work.push({sentence,analysis,localKey});
  }
+ if(stats.protected_names)diagnostic({stage:'rules',level:'info',message:`已按完整名称范围保留 ${stats.protected_names} 处疑似姓名，未使用内部普通词义替换。`,detail:JSON.stringify({protected_names:stats.protected_names})});
  if(hasOriginalCounts)diagnostic({stage:'rules',level:'info',message:`原作者规则：自动转换 ${stats.upstream_converted}，歧义 ${stats.upstream_ambiguous}，未匹配 ${stats.upstream_no_match}；本地标注 ${stats.local_determined}，待审核 ${stats.pending}。`,detail:JSON.stringify({upstream_converted:stats.upstream_converted,upstream_ambiguous:stats.upstream_ambiguous,upstream_no_match:stats.upstream_no_match,upstream_kept:stats.upstream_kept,local_determined:stats.local_determined,pending:stats.pending,structural_rejections:stats.structural_rejections,rejected_options:stats.rejected_options,skipped_mixed:stats.skipped_mixed})});
  let config;
  if(enabled && work.some(w=>w.analysis.targets.length)){

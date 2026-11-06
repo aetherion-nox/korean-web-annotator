@@ -10,6 +10,12 @@ Uses local, explainable heuristics based on:
 
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
+import re
+from functools import lru_cache
+
+@lru_cache(maxsize=1024)
+def _phrase_pattern(words):
+    return re.compile(r'(?<![가-힣A-Za-z0-9_])'+r'\s+'.join('('+re.escape(w)+')' for w in words))
 
 
 @dataclass
@@ -36,11 +42,10 @@ MIN_SCORE_GAP = 0.15
 class DisambiguationService:
     """Select the best Hanja conversion candidate using local heuristics."""
 
-    def __init__(self, collocations: Optional[Dict[Tuple[str, str], str]] = None):
-        # (hangul_word, context_word) -> expected origin_hanja
-        self._collocations: Dict[Tuple[str, str], str] = collocations or {}
+    def __init__(self, collocations=None):
+        self._collocations = collocations or {}
 
-    def set_collocations(self, collocations: Dict[Tuple[str, str], str]):
+    def set_collocations(self, collocations):
         self._collocations = collocations
 
     def score_candidates(
@@ -49,6 +54,11 @@ class DisambiguationService:
         token_tag: Optional[str] = None,
         context_forms: Optional[List[str]] = None,
         is_verbal_context: bool = False,
+        context_text: Optional[str] = None,
+        token_start: Optional[int] = None,
+        token_end: Optional[int] = None,
+        quantity: Optional[dict] = None,
+        context_tokens=None,
     ) -> List[CandidateScore]:
         """Score and rank candidates for a given token.
         
@@ -97,15 +107,26 @@ class DisambiguationService:
                     cs.reasons.append('pos_mismatch')
 
             # 3. Context collocation match from dictionary
-            if context_forms and cs.origin_raw:
-                for ctx in context_forms:
-                    key = (cs.written_form, ctx)
-                    if key in self._collocations:
-                        expected_orig = self._collocations[key]
-                        if expected_orig and (expected_orig in cs.origin_raw or cs.origin_raw in expected_orig):
-                            cs.score += 0.25
-                            cs.reasons.append(f'collocation_match({ctx}->{expected_orig})')
-                            break
+            if context_text is not None and token_start is not None and token_end is not None and cs.origin_raw:
+                origins=set()
+                for phrase in self._collocations.get(cs.written_form,[]):
+                    for match in _phrase_pattern(tuple(phrase['words'])).finditer(context_text):
+                        end=match.end()
+                        if end<len(context_text) and re.match(r'[가-힣A-Za-z0-9_]',context_text[end]):
+                            # Attached case particles are valid only when the
+                            # tokenizer proves the final dictionary-word boundary.
+                            following=[t for t in (context_tokens or []) if t.start==end and t.tag.startswith('J')]
+                            if not following or not any(t.start+t.length==end for t in context_tokens):continue
+                        if match.span(phrase['index']+1)==(token_start,token_end):origins.add(phrase['origin'])
+                if origins=={cs.origin_raw}:
+                    cs.score += 0.25
+                    cs.reasons.append('collocation_match(full_phrase)')
+
+            if quantity:
+                cs.reasons.append('quantity_context')
+                if c.get('unit_usage') is True:
+                    cs.score += 0.05
+                    cs.reasons.append('explicit_unit_usage')
 
             # 4. A generic verbal context is not semantic evidence. In
             # particular, do not special-case examples such as 발전하다:
@@ -179,6 +200,12 @@ class DisambiguationService:
         scored_candidates = list(ranked.values())
 
         top = scored_candidates[0]
+
+        # Numeric adjacency and POS cannot establish which disputed origin fits.
+        if ('quantity_context' in top.reasons and
+                len({c.replacement for c in scored_candidates})>1 and
+                not any(r.startswith('collocation_match(') for r in top.reasons)):
+            return top, 'ambiguous'
 
         # Generic reliability and POS points only establish a usable spelling.
         # They cannot establish that its meaning wins over a native homograph.
