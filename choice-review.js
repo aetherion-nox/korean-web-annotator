@@ -1,9 +1,10 @@
+import {filterReviewTarget,filterReviewTargets} from './review-pos.js';
 import {qwenRequestSettings} from './qwen-api.js';
 import {readModelContent,choicePreviewParser} from './model-stream.js';
 import {requestLogger} from './request-log.js';
 import './model-catalog.js';
 import {buildReviewPayload,REVIEW_INSTRUCTIONS} from './review-payload.js';
-export function validateChoices(targets,response) {
+export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
  const rows=Array.isArray(response?.results)?response.results:[];
  const known=new Set(targets.map(t=>t.target_id));
@@ -11,7 +12,7 @@ export function validateChoices(targets,response) {
  const invalid=rows.some(r=>!r || !known.has(r.target_id));
  for(const target of targets){
   const matches=rows.filter(r=>r?.target_id===target.target_id);
-  const option=matches.length===1 && target.options.find(o=>o.choice_id===matches[0].choice_id);
+  const option=matches.length===1 && filterReviewTarget(target,config).options.find(o=>o.choice_id===matches[0].choice_id);
   if(!invalid && option) accepted.push({target,option}); else unresolved.push(target);
  }
  return {accepted,unresolved};
@@ -39,8 +40,8 @@ export function safeDetail(value,config={}){
  for(const secret of [config.apiKey,config.engineToken])if(secret)text=text.split(secret).join('[REDACTED]');
  return text.replace(/Bearer\s+[^\s"'<>]+/gi,'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,3000);
 }
-export function modelTargets(targets){
- return targets.map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.morphology?{morphology:t.morphology}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
+export function modelTargets(targets,config={}){
+ return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
 }
 export async function reviewTargets(config,targets,signal){
  if(!config.enableModelReview || !targets.length)return {accepted:[],unresolved:targets,errors:[]};
@@ -52,8 +53,8 @@ export async function reviewTargets(config,targets,signal){
   config.onPreview?.([]);
   notify({stage:'request',level:'info',attempt:attempt+1,model:config.model,thinking:thinking.label,message:`正在请求模型审核：${pending.length} 个候选；${thinking.label}`});
   try {
-   const response=await (config.request || requestChoices)({...config,attempt:attempt+1},modelTargets(pending),signal);
-   const result=validateChoices(pending,response);accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);config.onPreview?.([]);
+   const response=await (config.request || requestChoices)({...config,attempt:attempt+1},modelTargets(pending,config),signal);
+   const result=validateChoices(pending,response,config);accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);config.onPreview?.([]);
    notify({stage:'response',level:pending.length?'warning':'info',message:`模型返回：采纳 ${result.accepted.length} 项，未解决 ${pending.length} 项`,detail:pending.length?JSON.stringify(response):''});
   }catch(error){
    config.onPreview?.([]);
@@ -71,7 +72,7 @@ async function requestChoices(config,targets,signal){
  const native=provider==='openai'||provider==='anthropic';
  const timeout=AbortSignal.timeout(config.timeoutMs || (native||provider==='qwen'?120000:20000));
  const requestSignal=signal?AbortSignal.any([signal,timeout]):timeout;
- const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets);
+ const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets,config);
  config.onDiagnostic?.({stage:'request',level:'info',message:`共享请求：${payloadStats.targets} 个词，${payloadStats.sentences} 份句子，${payloadStats.candidates} 个候选；用户输入 ${payloadStats.legacyUserBytes} → ${payloadStats.userBytes} 字节。`});
  let body={model:config.model,messages:[
   {role:'system',content:REVIEW_INSTRUCTIONS},
@@ -103,7 +104,7 @@ async function requestChoices(config,targets,signal){
   const content=await readModelContent(response,{protocol:responses?'responses':provider==='anthropic'?'anthropic':'chat',signal:requestSignal,onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
   let result;try{if(typeof content!=='string'||!content.trim())throw Error('empty');result=JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}
   catch{const error=Error('模型最终回复为空、非 JSON 或不符合候选 ID 协议');error.detail=content||raw;throw error;}
-  const checked=validateChoices(targets,result);
+  const checked=validateChoices(targets,result,config);
   await logger.finish(logId,{status,responseHeaders,finishedAt:new Date().toISOString(),elapsedMs:Date.now()-started,firstByteMs,validation:{accepted:checked.accepted.length,unresolved:checked.unresolved.length},response:{raw,truncated:rawTruncated,...metadata}},secrets);
   return result;
  }catch(error){

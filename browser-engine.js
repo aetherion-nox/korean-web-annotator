@@ -2,14 +2,18 @@ import {storage} from './browser-storage.js';
 // The background cannot send runtime messages back to its own context.
 let backgroundHost;
 export function configureBrowserEngineHost(host){backgroundHost=host;}
-async function call(request,signal){
+async function call(request,signal,onProgress){
  if(signal?.aborted)throw new DOMException('Aborted','AbortError');
- const reply=await (backgroundHost?backgroundHost(request):chrome.runtime.sendMessage({type:'BROWSER_ENGINE_CALL',request}));
+ const progressId=onProgress?crypto.randomUUID():undefined;
+ const listener=(message,sender)=>{if(sender.id===chrome.runtime.id&&message.type==='BROWSER_ENGINE_PROGRESS'&&message.progressId===progressId&&!signal?.aborted)onProgress?.(message.progress);};
+ if(progressId){request={...request,progressId};chrome.runtime.onMessage.addListener(listener);}
+ let reply;try{reply=await (backgroundHost?backgroundHost(request):chrome.runtime.sendMessage({type:'BROWSER_ENGINE_CALL',request}));}finally{if(progressId)chrome.runtime.onMessage.removeListener(listener);}
  if(signal?.aborted)throw new DOMException('Aborted','AbortError');
  if(!reply?.ok)throw Error(reply?.error||`浏览器引擎请求未收到回复（${request.action}）：后台消息转发失败。请重新加载插件后重试。`);return reply.result;
 }
-export function browserEngineStatus(signal){return call({action:'status'},signal);}
-export function browserAnalyze(text,modes,signal){return call({action:'analyze',text,modes},signal);}
+export function warmBrowserEngine(signal,onProgress){return call({action:'warmup'},signal,onProgress);}
+export function browserEngineStatus(signal,onProgress){return call({action:'status'},signal,onProgress);}
+export function browserAnalyze(text,modes,signal,onProgress){return call({action:'analyze',text,modes},signal,onProgress);}
 export async function importBrowserDictionary(file){
  if(!file)throw Error('请选择官方 JSON ZIP 或预处理词典数据库');
  const kind=/\.(db|sqlite|sqlite3)$/i.test(file.name)?'db':'zip';

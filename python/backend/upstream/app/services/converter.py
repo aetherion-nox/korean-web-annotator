@@ -52,6 +52,8 @@ class ConverterService:
         self,
         text: str,
         lookup_fn,  # async callable: (List[str]) -> Dict[str, List[dict]]
+        *,
+        tokens: Optional[List[MorphToken]] = None,
     ) -> Tuple[List[ConversionSegment], float]:
         start_time = time.perf_counter()
 
@@ -72,7 +74,8 @@ class ConverterService:
             return [seg], elapsed
 
         # Step 1: Tokenize
-        tokens = await self.tokenizer.tokenize_async(text)
+        if tokens is None:
+            tokens = await self.tokenizer.tokenize_async(text)
 
         # Step 2: Build word groups (whitespace-delimited units)
         groups = self.tokenizer.build_word_groups(text, tokens)

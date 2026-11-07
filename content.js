@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.42';
+  const VERSION = '1.1.52';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -7,7 +7,7 @@
   const MAX_ENTRIES = 3000;
   let currentTask = null;
   let sequence = 0;
-  let uiSettings = { mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
+  let uiSettings = { toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
   let toolbar = null;
   let toolbarDismissed = false;
   let toolbarForcedOpen = false;
@@ -203,7 +203,13 @@
   }
 
   function applySettings(settings) {
+    const wasBallOnly=uiSettings.toolbarBallOnly===true;
     uiSettings={...uiSettings,...settings};
+    if(settings.floatingBallEnabled===false||settings.mobileSelectionToolbar===false)uiSettings.toolbarBallOnly=false;
+    else if(uiSettings.toolbarBallOnly===true){
+      uiSettings.floatingBallEnabled=true;uiSettings.mobileSelectionToolbar=true;
+      if(!wasBallOnly)toolbarForcedOpen=false;
+    }
     if(Object.hasOwn(settings,'floatingBallPosition')&&!floatingDrag){
       const p=settings.floatingBallPosition;
       if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y))floatingBallPosition={x:Math.max(0,Math.min(1,p.x)),y:Math.max(0,Math.min(1,p.y))};
@@ -278,7 +284,7 @@
       (uiSettings.toolbarHangulOnly===false||pageHasHangul);
     if(!show){if(floatingBall)floatingBall.hidden=true;return;}
     if(!floatingBall){
-      floatingBall=document.createElement('button');floatingBall.type='button';floatingBall.className='kra-floating-ball';floatingBall.textContent='한';
+      floatingBall=document.createElement('button');floatingBall.type='button';floatingBall.className='kra-floating-ball';for(const [className,text] of [['kra-ball-hangul','한'],['kra-ball-hanja','漢']]){const glyph=document.createElement('span');glyph.className=className;glyph.textContent=text;glyph.setAttribute('aria-hidden','true');floatingBall.append(glyph);}
       floatingBall.setAttribute('aria-expanded','false');
       floatingBall.setAttribute('aria-label','打开韩语标注工具条');floatingBall.title='打开韩语标注工具条 · 拖动可移动位置';
       floatingBall.addEventListener('pointerdown',event=>{
@@ -339,7 +345,7 @@
     const eligible = uiSettings.toolbarHangulOnly === false ||
       (always ? pageHasHangul : selectionHasHangul(selected));
     const show=!toolbarDismissed&&uiSettings.mobileSelectionToolbar!==false&&(uiSettings.toolbarHangulOnly===false||pageHasHangul)&&
-      (toolbarForcedOpen||currentTask||(eligible&&(always||Boolean(selected))));
+      (toolbarForcedOpen||(uiSettings.toolbarBallOnly!==true&&(currentTask||(eligible&&(always||Boolean(selected))))));
     if(!toolbar&&!show)return;
     const bar=getToolbar();bar.hidden=!show;
     floatingBall?.setAttribute('aria-expanded',String(Boolean(show)));
@@ -803,10 +809,8 @@
     const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
     if(entries.size)pageHasHangul=true;
     if (!entries.size) { status('没有未标注的韩语文字', 100); return { ok: true, started: false }; }
-    if ([...entries.values()].some(entry => entry.text.length > 20000)) return { ok: false, error: '单个文本节点过长，超过本地引擎限制。' };
     let paragraphPlan;
     try{paragraphPlan=createParagraphPlan(entries,sourceOf,BLOCK_TAGS);}catch(error){return {ok:false,error:error.message};}
-    if(paragraphPlan.sentences.some(s=>s.text.length>20000))return {ok:false,error:'单个完整段落超过 20,000 字符，请缩小范围。'};
     const operationId = `page-${Date.now().toString(36)}-${++sequence}`;
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
@@ -817,7 +821,7 @@
     task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
     const byId = new Map([...entries.values()].map(entry => [entry.id, entry]));
     currentTask = task;
-    status(task.progressive?'分析中，完成的标注将陆续显示…':'分析中，完成后一次性写入标注…');
+    status('加载词典…');
     port.onDisconnect.addListener(() => {
       if (task.finished||task.manualLocalOnly) return;
       clearInterval(task.keepalive);
@@ -836,6 +840,10 @@
         if (result.diagnostic?.level === 'error') status(result.diagnostic.message || '分析错误', 0);
         return;
       }
+      if(result.type==='LOCAL_PROGRESS'){
+        status(result.stage==='dictionary'?'加载词典…':result.stage==='tokenizer'?'初始化分词器…':`正在分析第 ${result.currentSentence}/${result.totalSentences} 段（${result.sentenceCharacters} 字符） · ${result.percent}%`);
+        return;
+      }
       if (result.type === 'MODEL_PROGRESS') {
         status(result.modelTotal ? `模型审核 ${result.modelCompleted || 0}/${result.modelTotal}` : '模型：无需审核');
         return;
@@ -843,7 +851,7 @@
       if (result.type !== 'RESULTS' && result.type !== 'DONE') return;
       globalThis.__KRA_PIPELINE_STATUS__ = { stats: result.stats, engine_version: result.engine_version, dictionary_metadata: result.dictionary_metadata };
       const changedEntries=new Map();
-      for (const item of (result.results||[]).flatMap(item=>task.paragraphPlan.projectResult(item))) {
+      for (const item of (result.results||[]).flatMap(item=>task.paragraphPlan.projectResult(item,{source:result.source,provisional:result.provisional}))) {
         const entry = byId.get(item.id);
         if (!entry) continue;
         changedEntries.set(entry.node,entry);
@@ -855,8 +863,9 @@
         if(result.source==='model'){
           entry.modelAnnotations=incoming;
           entry.modelReviewed=Boolean(item.reviewed?.length||incoming.length);
-          entry.hasPreview=result.provisional===true;
-          if(!entry.hasPreview){entry.committedModelAnnotations=incoming;entry.committedModelReviewed=entry.modelReviewed;}
+          entry.hasPreview=item.hasPreview??result.provisional===true;
+          entry.committedModelAnnotations=item.committedAnnotations??incoming;
+          entry.committedModelReviewed=item.committedReviewed??entry.modelReviewed;
         }else entry.localAnnotations=incoming;
         const model=entry.modelAnnotations||[];
         entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];

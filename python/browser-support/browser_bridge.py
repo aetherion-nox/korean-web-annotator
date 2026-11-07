@@ -12,6 +12,7 @@ import types
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = '/dictionary/hanja_dict.db'
 _engine = None
+_stats_cache = {}
 
 async def _to_thread(func, /, *args, **kwargs):
     return func(*args, **kwargs)
@@ -34,6 +35,7 @@ def configure(tokenizer, project_root=None, database=DB_PATH):
     bootstrap.ensure_environment = lambda: None
     sys.modules['backend.bootstrap'] = bootstrap
     _engine = None
+    _stats_cache.clear()
 
 async def _get_engine(db_path=None):
     global _engine
@@ -64,8 +66,22 @@ async def status(db_path=None):
             raise ValueError('Database lacks dictionary import metadata; use the original dictionary importer.')
         metadata = {key:row[key] for key in row.keys() if key!='sha256'}
         fingerprint = row['sha256']
+    def signature(path):
+        try:
+            info = path.stat()
+            return (info.st_size, info.st_mtime_ns, info.st_ctime_ns) if info.st_size else None
+        except FileNotFoundError:
+            return None
+    def snapshot():
+        return (str(database), fingerprint, signature(database), signature(Path(str(database)+'-wal')))
+    cache_key = snapshot()
+    if cache_key not in _stats_cache:
+        statistics = await DictionaryService(str(database)).get_stats()
+        _stats_cache.clear()
+        cache_key = snapshot()
+        _stats_cache[cache_key] = statistics
     return {'ready':True,'engine_version':ENGINE_VERSION,'dictionary_fingerprint':fingerprint,
-            'dictionary_metadata':metadata,'dictionary':await DictionaryService(str(database)).get_stats(),'runtime':'browser'}
+            'dictionary_metadata':metadata,'dictionary':_stats_cache[cache_key],'runtime':'browser'}
 
 async def import_database(source, db_path=None):
     """Validate a completed original-importer DB before atomically replacing it."""
@@ -81,6 +97,7 @@ async def import_database(source, db_path=None):
     destination.parent.mkdir(parents=True,exist_ok=True)
     os.replace(source,destination)
     _engine = None
+    _stats_cache.clear()
     return {'imported':True,**result}
 
 async def tokens(text, db_path=None):
@@ -108,6 +125,7 @@ def import_dictionary(zip_path, db_path=None):
                 if exc.code not in (None,0):
                     raise RuntimeError('Dictionary import failed:\n'+capture.getvalue()[-12000:]) from exc
         _engine = None
+        _stats_cache.clear()
         return {'imported':True, 'log':capture.getvalue()[-12000:]}
     finally:
         sys.argv = old_argv
@@ -126,6 +144,9 @@ async def request(raw):
         result = {'ready':False,'runtime':'browser','dictionary':None}
     elif action in ('status','initialize'):
         result = await status(database)
+    elif action == 'warmup':
+        await _get_engine(database)
+        result = {'ready':True,'preloaded':True}
     elif action == 'analyze':
         result = await analyze(message['text'],message.get('modes',{}),database)
     elif action == 'import-db':

@@ -56,10 +56,40 @@ class Tests(unittest.IsolatedAsyncioTestCase):
   from app.services.quantity import has_quantity_before
   for text in ['2, 주','주 연료 차단 장치']:
    self.assertFalse(has_quantity_before(text,tokenizer().tokenize(text),text.index('주')))
- async def test_nnb_alone_does_not_imply_unit(self):
+ async def test_numeric_dependent_noun_needs_no_definition_keywords(self):
   self.add('주','舟','의존 명사','의존하여 쓰이는 말.')
   s=await self.segment('2주')
-  self.assertAlmostEqual(next(c['score'] for c in s.candidates if c['replacement']=='舟'),.55)
+  self.assertAlmostEqual(next(c['score'] for c in s.candidates if c['replacement']=='舟'),.85)
+ async def test_dependent_noun_aliases_and_missing_definitions(self):
+  for pos,definition in [('불완전 명사',''),(' 불완전  명사 ','사람 수.'),('의존 명사','사람 수.'),('依存名詞','사람을 세는 단위.'),('不完全名词',''),('不完全名詞','인원을 뜻함.'),('依存名词',''),(' 의존  명사 ','')]:
+   with self.subTest(pos=pos):
+    self.dictionary._candidate_cache.clear()
+    key=self.add('명','名',pos,definition)
+    rows=(await self.dictionary.batch_lookup_candidates(['명']))['명']
+    row=next(r for r in rows if r['entry_id']==key)
+    d=DisambiguationService()
+    numeric=d.score_candidates([row],token_tag='NNB',quantity=True)[0]
+    plain=d.score_candidates([row],token_tag='NNB',quantity=False)[0]
+    self.assertAlmostEqual(numeric.score,.85)
+    self.assertAlmostEqual(plain.score,.55)
+    self.assertIn('quantity_unit_bonus',numeric.reasons)
+    self.assertNotIn('quantity_unit_bonus',plain.reasons)
+    self.dictionary._candidate_cache.clear()
+ async def test_non_dependent_entries_get_no_quantity_bonus(self):
+  for pos in ['명사','名詞','접사','接辭',None]:
+   with self.subTest(pos=pos):
+    d=DisambiguationService()
+    c=dict(entry_id=1,written_form='명',origin_raw='名',replacement='名',replacement_type='pure_hanja',is_reliable=True,part_of_speech=pos,unit_usage=True)
+    for tag in ['NNB','NNG','XSN']:
+     scored=d.score_candidates([c],token_tag=tag,quantity=True)
+     self.assertTrue(all('quantity_unit_bonus' not in x.reasons for x in scored))
+ async def test_multiple_dependent_senses_stay_ambiguous(self):
+  self.add('주','舟','依存名詞','다른 뜻.')
+  segment=await self.segment('2주')
+  scores={c['replacement']:c['score'] for c in segment.candidates}
+  self.assertAlmostEqual(scores['舟'],.85)
+  self.assertAlmostEqual(scores['週'],.85)
+  self.assertEqual(segment.status,'ambiguous')
  async def test_other_units_and_later_sense(self):
   c=(await self.dictionary.batch_lookup_candidates(['년']))['년']
   d=DisambiguationService()

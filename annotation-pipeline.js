@@ -1,4 +1,5 @@
 import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './local-engine.js';
+import {filterReviewTarget} from './review-pos.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
@@ -14,16 +15,21 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const stats={local_determined:0,pending:0,model_resolved:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
- identity=await status(signal);const work=[];
+ const loading=progress=>emit('LOCAL_PROGRESS',progress);
+ loading({stage:'dictionary'});
+ identity=await status(signal,loading);const work=[];
  const diagnostic=d=>emit('DIAGNOSTIC',{diagnostic:d});
  const dictionary=identity.dictionary_metadata||{};
  diagnostic({stage:'dictionary',level:'info',message:'当前使用的本机词典与引擎。',detail:JSON.stringify({source_filename:dictionary.source_filename||'未知',data_version:dictionary.data_version||'未知',total_entries:dictionary.total_entries??'未知',total_senses:dictionary.total_senses??'未知',engine_version:identity.engine_version,dictionary_fingerprint:identity.dictionary_fingerprint})});
  let hasOriginalCounts=false;
  for(const sentence of sentences){
   signal?.throwIfAborted();
+  const currentSentence=completedSentences+1;
+  const progress=detail=>loading({...detail,currentSentence,sentenceCharacters:sentence.text.length});
+  progress({stage:'analysis'});
   const localKey=JSON.stringify(['dictionary-v3-alignment',reviewAll,identity.engine_version,identity.dictionary_fingerprint,modes,sentence.text]);
   let analysis=!bypassCache&&cache.get(localKey);
-  if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:modes,signal));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
+  if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:modes,signal,progress));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
   if(reviewAll){
    if(analysis.annotations.length)throw Error('模型重审不允许使用本地直接标注结果。');
    if(selectionReview){
@@ -42,6 +48,12 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   for(const name of ['local_determined','pending','structural_rejections','rejected_options','skipped_mixed','protected_names','upstream_converted','upstream_ambiguous','upstream_no_match','upstream_kept'])stats[name]+=Number(analysis.stats[name]||0);
   hasOriginalCounts ||= Number.isInteger(analysis.stats.upstream_converted);
   completedSentences++;emit('RESULTS',{source:'local',results:[{id:sentence.id,annotations:analysis.annotations}]});
+  // Supplemental text never enters local analysis or changes source offsets.
+  if(sentence.adjacentContext){
+   const {before,after}=sentence.adjacentContext;
+   if(typeof before!=='string'||typeof after!=='string'||before.length>1000||after.length>1000)throw Error('Invalid adjacent context');
+   if(before||after)analysis={...analysis,targets:analysis.targets.map(t=>({...t,adjacent_context:{before,after}}))};
+  }
   work.push({sentence,analysis,localKey});
  }
  if(stats.protected_names)diagnostic({stage:'rules',level:'info',message:`已按完整名称范围保留 ${stats.protected_names} 处疑似姓名，未使用内部普通词义替换。`,detail:JSON.stringify({protected_names:stats.protected_names})});
@@ -70,23 +82,23 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify(['id-review-v14-exact-usage',config.endpoint,config.model,config.provider,!!config.disableThinking,config.reasoningEffort]);
+   const fingerprint=JSON.stringify(['id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
    const cached=!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
-   if(cached){item.result=validateChoices(analysis.targets,cached);if(progressive)publishModel(item);stats.cacheHits++;diagnostic({stage:'cache',level:'info',message:'使用已验证的模型审核缓存；无需重复请求。'});}
+   if(cached){item.result=validateChoices(analysis.targets,cached,config);if(progressive)publishModel(item);stats.cacheHits++;diagnostic({stage:'cache',level:'info',message:'使用已验证的模型审核缓存；无需重复请求。'});}
    if(item.result.unresolved.length){pending.push(item);progress.modelTotal+=item.result.unresolved.length;}
   }
  }
  reportProgress();
  const tier=normalizeBatchContextTier(config?.batchContextTier);
- const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true}):config?.manualReview?manualReviewBatches(pending,context):sentenceReviewBatches(pending,context);
+ const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter}):sentenceReviewBatches(pending,context);
  const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
   const targets=batch.rows?batch.rows.map(({item,target},i)=>{const id=`b0t${i}`;owners.set(id,{item,target});return {...target,target_id:id};}):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
    const id=`b${i}t${j}`;owners.set(id,{item,target});return {...target,target_id:id};
   }));
-  const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,choices:target.options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
+  const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
   const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
   return {owners,targets,manualBindings,manualPrepared};
  });

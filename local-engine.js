@@ -88,8 +88,8 @@ export function validateAnalysis(text,data){
  return {...data,annotations,targets,diagnostics,stats:{...data.stats,local_determined:Math.max(0,Number(data.stats.local_determined||0)-rejectedAnnotations),pending:Math.max(0,Number(data.stats.pending||0)-rejectedTargets),structural_rejections:Number(data.stats.structural_rejections||0)+rejectedAnnotations+rejectedTargets,rejected_options:Number(data.stats.rejected_options||0)+rejectedOptions}};
 }
 export async function engineConfig(){
- const {enableModelReview=false,reviewAllCandidates=false,manualModelReview=false,batchContextTier,nameProtection=true}=await chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection']);
- return {nameProtection:nameProtection!==false,enableModelReview:enableModelReview===true||reviewAllCandidates===true||manualModelReview===true,reviewAllCandidates:reviewAllCandidates===true,manualModelReview:manualModelReview===true,batchContextTier:normalizeBatchContextTier(batchContextTier)};
+ const {enableModelReview=false,reviewAllCandidates=false,manualModelReview=false,batchContextTier,nameProtection=true,reviewPosFilter=true}=await chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection','reviewPosFilter']);
+ return {reviewPosFilter:reviewPosFilter!==false,nameProtection:nameProtection!==false,enableModelReview:enableModelReview===true||reviewAllCandidates===true||manualModelReview===true,reviewAllCandidates:reviewAllCandidates===true,manualModelReview:manualModelReview===true,batchContextTier:normalizeBatchContextTier(batchContextTier)};
 }
 export const engineStatus=browserEngineStatus;
 export const analyzeLocal=browserAnalyze;

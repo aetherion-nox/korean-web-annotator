@@ -10,6 +10,7 @@ Uses local, explainable heuristics based on:
 
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
+from app.services.quantity import is_dependent_noun
 
 
 @dataclass
@@ -110,7 +111,9 @@ class DisambiguationService:
                             cs.reasons.append(f'collocation_match({ctx}->{expected_orig})')
                             break
 
-            if quantity and token_tag == 'NNB' and c.get('unit_usage') is True:
+            # Numeric context plus explicit dependent POS is sufficient evidence
+            # for this bonus; gloss wording and legacy unit_usage are irrelevant.
+            if quantity and token_tag == 'NNB' and is_dependent_noun(cs.part_of_speech):
                 cs.score += 0.3
                 cs.reasons.append('quantity_unit_bonus')
 
@@ -215,6 +218,8 @@ class DisambiguationService:
             return None, 'ambiguous'
 
     def _pos_matches(self, kiwi_tag: str, dict_pos: str) -> Optional[bool]:
+        if is_dependent_noun(dict_pos):
+            dict_pos = '의존 명사'
         pos_map = {
             '명사': ['NNG', 'NNP', 'NNB', 'NR', 'NP'],
             '동사': ['VV', 'VX', 'XSV'],

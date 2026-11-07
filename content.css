@@ -6,14 +6,18 @@
 .kra-floating-ball {
   all: initial;
   position: fixed !important; z-index: 2147483646 !important;
-  display: grid !important; place-items: center !important;
+  display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 0 !important;
   box-sizing: border-box !important; width: 44px !important; height: 44px !important;
   padding: 0 !important; margin: 0 !important; border: 1px solid #ffffff80 !important;
-  border-radius: 50% !important; background: linear-gradient(135deg,#376bd5,#7553cb) !important;
+  border-radius: 50% !important; background: #737d8b !important;
   color: #fff !important; font: 700 19px/1 system-ui,sans-serif !important;
   box-shadow: 0 3px 14px #0004 !important; cursor: grab !important;
   user-select: none !important; touch-action: none !important;
 }
+.kra-floating-ball[aria-expanded="true"] { background: #285b97 !important; }
+.kra-floating-ball > .kra-ball-hangul, .kra-floating-ball > .kra-ball-hanja { all: initial !important; display: block !important; color: #fff !important; text-align: center !important; pointer-events: none !important; }
+.kra-floating-ball > .kra-ball-hangul { font: 700 12px/12px system-ui,sans-serif !important; }
+.kra-floating-ball > .kra-ball-hanja { font: 700 23px/24px system-ui,sans-serif !important; }
 .kra-floating-ball[hidden] { display: none !important; }
 .kra-floating-ball:focus-visible { outline: 3px solid #78bfff !important; outline-offset: 3px !important; }
 .kra-floating-ball.kra-floating-dragging { cursor: grabbing !important; }

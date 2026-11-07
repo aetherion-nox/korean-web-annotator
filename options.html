@@ -26,9 +26,13 @@
 
     <section id="enginePanel">
       <h2 data-engine-i18n="title"></h2>
+      <label class="inline"><input id="enableModelReview" type="checkbox"><span data-engine-i18n="model"></span></label>
+      <label class="inline"><input id="preloadEngineOnStartup" type="checkbox" checked aria-describedby="preloadEngineHint"><span data-engine-i18n="preloadEngineOnStartup">浏览器启动时预加载（默认开启）</span></label>
+      <p id="preloadEngineHint" class="profile-note" data-engine-i18n="preloadEngineHint"></p>
       <label class="inline"><input id="nameProtection" type="checkbox" checked aria-describedby="nameProtectionHint"><span data-engine-i18n="nameProtection">姓名整段保护（默认开启）</span></label>
       <p id="nameProtectionHint" class="profile-note" data-engine-i18n="nameProtectionHint"></p>
-      <label class="inline"><input id="enableModelReview" type="checkbox"><span data-engine-i18n="model"></span></label>
+      <label class="inline"><input id="reviewPosFilter" type="checkbox" checked aria-describedby="reviewPosFilterHint"><span data-engine-i18n="reviewPosFilter">送审候选词性过滤（默认开启）</span></label>
+      <p id="reviewPosFilterHint" class="profile-note" data-engine-i18n="reviewPosFilterHint"></p>
       <label class="inline"><input id="reviewAllCandidates" type="checkbox" aria-describedby="reviewAllHint"><span data-engine-i18n="reviewAll">全部交给大模型审核（默认关闭）</span></label>
       <p id="reviewAllHint" class="profile-note" data-engine-i18n="reviewAllHint"></p>
       <label class="inline"><input id="manualModelReview" type="checkbox" aria-describedby="manualReviewHint"><span data-engine-i18n="manual">手动聊天审核（复制提示词／粘贴结果）</span></label>

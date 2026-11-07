@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.42';
+const CONTENT_SCRIPT_VERSION = '1.1.50';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -15,6 +15,7 @@ const toolbarHangulOnly=document.querySelector('#toolbarHangulOnly');
 const toolbarDisplay = document.querySelector('#toolbarDisplay');
 const mobileSelectionToolbar = document.querySelector('#mobileSelectionToolbar');
 const floatingBallEnabled = document.querySelector('#floatingBallEnabled');
+const toolbarBallOnly = document.querySelector('#toolbarBallOnly');
 const selectionButton = document.querySelector('#selectionButton');
 const runButton = document.querySelector('#runButton');
 const undoButton = document.querySelector('#undoButton');
@@ -48,6 +49,21 @@ const STRINGS = {
 
 for(const [locale,label] of Object.entries({'zh-CN':'手动填写框首次弹出时隐藏工具条','zh-TW':'手動填寫框首次彈出時隱藏工具條',en:'Hide toolbar when the manual panel first opens',ja:'手動入力欄の初回表示時にツールバーを隠す',ko:'수동 입력창이 처음 열릴 때 도구 모음 숨기기'}))STRINGS[locale].hideToolbarOnFirstManual=label;
 
+
+for(const [lang,labels] of Object.entries({
+ 'zh-CN':['仅点击悬浮球显示工具条','选中文字时不自动显示；开启时自动启用网页工具条和悬浮球。'],
+ 'zh-TW':['僅點擊浮動球顯示工具列','選取文字時不自動顯示；開啟時自動啟用網頁工具列和浮動球。'],
+ en:['Show toolbar only by clicking the floating button','Text selection does not open the toolbar. Enabling this also enables the page toolbar and floating button.'],
+ ja:['フローティングボタンでのみツールバーを表示','文字選択では表示しません。有効にするとページツールバーとフローティングボタンも有効になります。'],
+ ko:['플로팅 버튼을 눌렀을 때만 도구 모음 표시','텍스트를 선택해도 자동으로 표시하지 않습니다. 켜면 페이지 도구 모음과 플로팅 버튼도 켜집니다.']
+}))Object.assign(STRINGS[lang],{toolbarBallOnly:labels[0],toolbarBallOnlyHint:labels[1]});
+
+function syncToolbarOptions(changed){
+ if(changed===toolbarBallOnly&&toolbarBallOnly.checked){floatingBallEnabled.checked=true;mobileSelectionToolbar.checked=true;}
+ if(!floatingBallEnabled.checked||!mobileSelectionToolbar.checked)toolbarBallOnly.checked=false;
+ toolbarDisplay.disabled=toolbarBallOnly.checked;
+}
+
 let locale = 'zh-CN';
 const t = key => STRINGS[locale]?.[key] || STRINGS.en[key] || key;
 
@@ -66,12 +82,14 @@ async function init() {
   forceRegenerate.checked = false;
   mobileSelectionToolbar.checked = uiSettings.mobileSelectionToolbar ?? true;
   floatingBallEnabled.checked = uiSettings.floatingBallEnabled !== false;
+  toolbarBallOnly.checked=uiSettings.toolbarBallOnly===true;
   stopAutoAfterPageComplete.checked=uiSettings.stopAutoAfterPageComplete ?? true;
   restoreExistingAnnotations.checked=uiSettings.restoreExistingAnnotations ?? true;
   hideToolbarOnFirstManual.checked=uiSettings.hideToolbarOnFirstManual !== false;
   clearCacheOnExit.checked=uiSettings.clearCacheOnExit ?? true;
   toolbarHangulOnly.checked=uiSettings.toolbarHangulOnly ?? true;
   toolbarDisplay.value=uiSettings.toolbarDisplay==='always'?'always':'selection';
+  syncToolbarOptions();
   // Loading the popup must not inject scripts or warm up the engine.
 }
 
@@ -85,18 +103,19 @@ uiLocale.addEventListener('change', async () => {
   chrome.runtime.sendMessage({ type: 'REFRESH_CONTEXT_MENU' }).catch(() => {});
 });
 
-for (const input of [...copyModes, hanjaMode, loanwordMode, mobileSelectionToolbar, floatingBallEnabled, toolbarDisplay, stopAutoAfterPageComplete, restoreExistingAnnotations, hideToolbarOnFirstManual, clearCacheOnExit, toolbarHangulOnly]) {
+for (const input of [...copyModes, hanjaMode, loanwordMode, mobileSelectionToolbar, floatingBallEnabled, toolbarBallOnly, toolbarDisplay, stopAutoAfterPageComplete, restoreExistingAnnotations, hideToolbarOnFirstManual, clearCacheOnExit, toolbarHangulOnly]) {
   input.addEventListener('change', persistNonCopySettings);
 }
 
-async function persistNonCopySettings() {
+async function persistNonCopySettings(event) {
+  syncToolbarOptions(event?.target);
   const { uiSettings: stored = {} } = await chrome.storage.local.get('uiSettings');
   const next = {
     ...removeLegacyUiSettings(stored),
     copyMode:selectedCopyMode(),
     hanjaMode: hanjaMode.checked,
     loanwordMode: loanwordMode.checked,
-    floatingBallEnabled:floatingBallEnabled.checked, mobileSelectionToolbar: mobileSelectionToolbar.checked, toolbarDisplay:toolbarDisplay.value, toolbarHangulOnly:toolbarHangulOnly.checked, stopAutoAfterPageComplete:stopAutoAfterPageComplete.checked, restoreExistingAnnotations:restoreExistingAnnotations.checked,hideToolbarOnFirstManual:hideToolbarOnFirstManual.checked, clearCacheOnExit:clearCacheOnExit.checked,
+    toolbarBallOnly:toolbarBallOnly.checked,floatingBallEnabled:floatingBallEnabled.checked, mobileSelectionToolbar: mobileSelectionToolbar.checked, toolbarDisplay:toolbarDisplay.value, toolbarHangulOnly:toolbarHangulOnly.checked, stopAutoAfterPageComplete:stopAutoAfterPageComplete.checked, restoreExistingAnnotations:restoreExistingAnnotations.checked,hideToolbarOnFirstManual:hideToolbarOnFirstManual.checked, clearCacheOnExit:clearCacheOnExit.checked,
     uiLocale: locale
   };
   await chrome.storage.local.set({ uiSettings: next });
@@ -137,8 +156,9 @@ runButton.addEventListener('click', async () => {
 });
 
 function currentUiSettings(){
+  syncToolbarOptions();
   return {hanjaMode:hanjaMode.checked,loanwordMode:loanwordMode.checked,
-    copyMode:selectedCopyMode(),deepAnalysis:true,floatingBallEnabled:floatingBallEnabled.checked,mobileSelectionToolbar:mobileSelectionToolbar.checked,
+    copyMode:selectedCopyMode(),deepAnalysis:true,toolbarBallOnly:toolbarBallOnly.checked,floatingBallEnabled:floatingBallEnabled.checked,mobileSelectionToolbar:mobileSelectionToolbar.checked,
     toolbarDisplay:toolbarDisplay.value,toolbarHangulOnly:toolbarHangulOnly.checked,
     stopAutoAfterPageComplete:stopAutoAfterPageComplete.checked, restoreExistingAnnotations:restoreExistingAnnotations.checked,hideToolbarOnFirstManual:hideToolbarOnFirstManual.checked,clearCacheOnExit:clearCacheOnExit.checked,uiLocale:locale};
 }
@@ -173,10 +193,11 @@ clearCacheButton.addEventListener('click', async () => {
 optionsButton.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 async function saveAndGetRunSettings() {
+  syncToolbarOptions();
   const modes = { hanja: hanjaMode.checked, loanword: loanwordMode.checked };
   if (!modes.hanja && !modes.loanword) throw new Error(t('chooseMode'));
   const settings = { modes, deepAnalysis: true, requestConcurrency: FIXED_CONCURRENCY, forceRegenerate: forceRegenerate.checked };
-  const nextUiSettings = { hanjaMode: modes.hanja, loanwordMode: modes.loanword, copyMode:selectedCopyMode(), deepAnalysis: true, floatingBallEnabled:floatingBallEnabled.checked, mobileSelectionToolbar: mobileSelectionToolbar.checked, toolbarDisplay:toolbarDisplay.value, toolbarHangulOnly:toolbarHangulOnly.checked, stopAutoAfterPageComplete:stopAutoAfterPageComplete.checked, restoreExistingAnnotations:restoreExistingAnnotations.checked,hideToolbarOnFirstManual:hideToolbarOnFirstManual.checked, clearCacheOnExit:clearCacheOnExit.checked, uiLocale: locale };
+  const nextUiSettings = { hanjaMode: modes.hanja, loanwordMode: modes.loanword, copyMode:selectedCopyMode(), deepAnalysis: true, toolbarBallOnly:toolbarBallOnly.checked,floatingBallEnabled:floatingBallEnabled.checked, mobileSelectionToolbar: mobileSelectionToolbar.checked, toolbarDisplay:toolbarDisplay.value, toolbarHangulOnly:toolbarHangulOnly.checked, stopAutoAfterPageComplete:stopAutoAfterPageComplete.checked, restoreExistingAnnotations:restoreExistingAnnotations.checked,hideToolbarOnFirstManual:hideToolbarOnFirstManual.checked, clearCacheOnExit:clearCacheOnExit.checked, uiLocale: locale };
   await chrome.storage.local.set({ uiSettings: nextUiSettings });
   await applyUiSettingsToActivePage(nextUiSettings);
   const apiReady = await chrome.runtime.sendMessage({ type: 'CHECK_ENGINE_READY' });

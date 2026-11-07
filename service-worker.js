@@ -1,3 +1,4 @@
+import {createEnginePreloader} from './engine-preload.js';
 import {menuAction} from './context-menu-state.js';
 import {callBrowserEngine,copyTextToClipboard} from './browser-engine-host.js';
 import {configureBrowserEngineHost} from './browser-engine.js';
@@ -9,19 +10,25 @@ import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.42';
+const CONTENT_SCRIPT_VERSION='1.1.52';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
 let cacheLoaded=false;
 let cacheLoadPromise;
+const enginePreloader=createEnginePreloader();
+const preloadEngine=()=>enginePreloader.run().catch(error=>console.warn('[KRA preload]',error.message));
+// Also covers extension reload/enabling and browsers that resume the worker.
+preloadEngine();
 initializeStorageAccess().then(migrateLegacyApiKeyStorage).catch(console.error);
 chrome.runtime.onInstalled.addListener(() => {
+  preloadEngine();
   initializeStorageAccess().then(migrateLegacyApiKeyStorage).catch(console.error);
   ensureContextMenu().catch(console.error);
   initializeExistingWebTabs().catch(console.error);
 });
 chrome.runtime.onStartup.addListener(() => {
+  preloadEngine();
   loadCache().catch(console.error);
   initializeStorageAccess().then(migrateLegacyApiKeyStorage).catch(console.error);
   ensureContextMenu().catch(console.error);
@@ -43,6 +50,7 @@ chrome.tabs.onUpdated?.addListener((tabId,change,tab)=>{
 // Local storage is restricted to trusted contexts. Forward the display switch
 // from the background so already-open pages receive it without reading logs/keys.
 chrome.storage.onChanged.addListener((changes,area)=>{
+ if(area==='local'&&changes.preloadEngineOnStartup&&changes.preloadEngineOnStartup.newValue!==false)preloadEngine();
  if(area==='local'&&changes.floatingBallPosition){
   const position=sanitizeFloatingBallPosition(changes.floatingBallPosition.newValue);
   if(position)chrome.tabs.query({}).then(tabs=>Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.tabs.sendMessage(tab.id,{type:'APPLY_FLOATING_BALL_POSITION',position})))).catch(()=>{});
@@ -53,6 +61,10 @@ chrome.storage.onChanged.addListener((changes,area)=>{
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(message?.type==='KRA_PRELOAD_ENGINE'){
+    if(sender.id!==chrome.runtime.id){sendResponse({ok:false,error:'Invalid extension sender'});return;}
+    preloadEngine().then(()=>sendResponse({ok:true}));return true;
+  }
   if(message?.type==='SET_FLOATING_BALL_POSITION'){
     const position=sanitizeFloatingBallPosition(message.position);
     if(sender.id!==chrome.runtime.id||!position){sendResponse({ok:false,error:'Invalid floating ball position'});return;}
@@ -169,6 +181,7 @@ function sanitizeUiSettings(value) {
     loanwordMode: source.loanwordMode ?? true,
     mobileSelectionToolbar: source.mobileSelectionToolbar ?? true,
     floatingBallEnabled: source.floatingBallEnabled !== false,
+    toolbarBallOnly:source.toolbarBallOnly===true&&source.floatingBallEnabled!==false&&source.mobileSelectionToolbar!==false,
     selectAnnotations:source.selectAnnotations ?? false,
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
@@ -440,7 +453,7 @@ async function loadCache(){
 async function runModern(message,post,signal,manualSession){
  await loadCache();const config=await engineConfig();
  if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
- const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier});
+ const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,reviewPosFilter:config.reviewPosFilter});
  return runSentencePipeline({...message,nameProtection:config.nameProtection,reviewAllCandidates:config.reviewAllCandidates},post,{signal,enabled:config.enableModelReview,modelConfig,cache,persist:async map=>chrome.storage.local.set({[CACHE_KEY]:Array.from(map)})});
 }
 function legacyPlan(message){

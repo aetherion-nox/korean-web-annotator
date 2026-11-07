@@ -13,7 +13,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-pos-coverage-1.1.41'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-performance-1.1.47'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -110,8 +110,8 @@ class Engine:
         # for general conversion. Exact mixed/cross-origin words have a
         # complete whole-entry choice path below, before source projection.
         converter=ConverterService(self.tokenizer,self.disambiguation)
-        segments,_=await converter.convert(text,self.lookup_fn)
         tokens=await self.tokens(text)
+        segments,_=await converter.convert(text,self.lookup_fn,tokens=tokens)
         dictionary_names=await dictionary_name_ranges(text,tokens,self.lookup_fn)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
         protected_names=sorted(set(await name_ranges(text,tokens,self.lookup_fn)+dictionary_names)) if modes.get('nameProtection',True) is not False else []
@@ -217,13 +217,18 @@ class Engine:
                         native.append({**option,'choice_id':f'n{len(native)}','definitions':[definition]})
                 else:conversions.append({**option,'choice_id':f'c{len(conversions)}','definitions':definitions})
             target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
+        # Encode each token boundary once, not once per review target.
+        # This retains the existing surrogate/astral offset conversion exactly.
+        token_morphology=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens]
+        nominal_bounds=[m for t,m in zip(tokens,token_morphology) if t.length>0 and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'}]
+        nominal_starts={m['start'] for m in nominal_bounds};nominal_ends={m['end'] for m in nominal_bounds}
         proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
         dictionary_name_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in dictionary_names]
         for i,target in enumerate(targets):
             target['target_id']=f't{i}'
             a=target['start'];b=target['end']
-            target['morphology']=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens if to_utf16(text,t.start)<b and a<to_utf16(text,t.start+t.length)]
-            target['partial_word']=any(t.length>0 and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'} and (to_utf16(text,t.start+t.length)==a or to_utf16(text,t.start)==b) for t in tokens)
+            target['morphology']=[dict(m) for m in token_morphology if m['start']<b and a<m['end']]
+            target['partial_word']=a in nominal_ends or b in nominal_starts
             if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
             if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
         return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
