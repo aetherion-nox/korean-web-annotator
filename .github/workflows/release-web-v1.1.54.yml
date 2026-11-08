@@ -5,13 +5,13 @@ on:
     branches: [main]
     paths:
       - manifest.json
+      - .github/workflows/release-web-v1.1.54.yml
 
 permissions:
   contents: write
 
 jobs:
   release:
-    if: github.event.head_commit.message == 'release: Korean Web Annotator v1.1.54'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
