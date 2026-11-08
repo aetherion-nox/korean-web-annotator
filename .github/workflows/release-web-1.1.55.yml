@@ -58,3 +58,4 @@ jobs:
           else
             gh release create v1.1.55 Korean-Web-Annotator-v1.1.55.zip --target "$GITHUB_SHA" --title "Korean Web Annotator v1.1.55" --notes-file CHANGELOG-1.1.55.md --latest
           fi
+          gh release edit v1.1.55 --title "Korean Web Annotator v1.1.55" --notes-file CHANGELOG-1.1.55.md
