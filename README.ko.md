@@ -1,49 +1,56 @@
-# 한국어 웹 주석 도구 1.1.11
+# 한국어 웹 주석 도구
 
-v1.1.6: Native homographs now compete with Hanja readings; complete KEEP meanings are preserved. Existing dictionaries work without reimport.
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [English](README.en.md) · [日本語](README.ja.md) · **한국어**
 
-v1.1.5: Shared sentence/candidate pools reduce repeated model input while preserving per-occurrence allowed choices, progressive display and request logs.
+한국어 웹 페이지에 한자어와 외래어의 원어를 표시합니다. 페이지 전체 및 선택 영역의 기본 주석 처리는 브라우저에서 실행되며, 필요하면 AI로 애매한 사전 항목을 검토할 수 있습니다. 기본 기능에는 API 키나 로컬 서버가 필요하지 않습니다.
 
-1.1.4: 설정에 로컬/모델 주석의 순차 표시 및 요청 로그 저장·JSON 다운로드를 추가했습니다. 두 설정 모두 기본 꺼짐이며 API 키는 가립니다.
+## 1. 확장 프로그램 설치
 
-[简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · **한국어**
+1. [GitHub Releases](https://github.com/aetherion-nox/korean-web-annotator/releases/latest)에서 첨부된 **`Korean-Web-Annotator-v*.zip`**(전체 설치 패키지)을 다운로드하세요. GitHub에서 자동으로 제공하는 **Source code** ZIP은 사용하지 마세요.
+2. ZIP 압축을 풉니다. Chrome에서 `chrome://extensions`를 열고 **개발자 모드**를 켠 다음 **압축해제된 확장 프로그램 로드**로 `manifest.json`이 있는 폴더를 선택합니다.
+3. 휴대폰에서는 Quetta처럼 확장 프로그램을 불러올 수 있는 브라우저를 사용합니다.
 
-한국어 웹 페이지에 한자와 외래어의 원어를 표시해 읽기를 돕습니다. 사전을 가져오면 별도의 로컬 서버 없이 브라우저 안에서 사용할 수 있습니다. 자신의 API를 설정해 선택적으로 모델 검토를 사용할 수도 있습니다.
+업데이트한 뒤 확장 프로그램을 다시 로드하고 기존에 열려 있던 웹 페이지도 새로 고치세요. 일반적으로 사전을 다시 가져올 필요는 없습니다.
 
-## 설치
+> **소스에서 설치:** **Code → Download ZIP**을 사용하는 경우 Python 3.10 이상을 설치하고, 압축을 푼 디렉터리에서 `python restore_distribution.py`를 실행해 저장소에 포함되지 않은 대용량 런타임을 복원해야 합니다. Release 첨부 ZIP에는 이 과정이 필요하지 않습니다.
 
-1. 제공된 전체 패키지 `Korean-Web-Annotator-v1.1.11.zip`을 사용하세요.
-2. ZIP의 압축을 풉니다. 전체 런타임이 포함되어 있어 Python 설치나 복원 스크립트 실행이 필요하지 않습니다.
-3. Chrome의 `chrome://extensions`에서 개발자 모드를 켜고, 압축 해제된 확장 프로그램 로드 기능으로 `manifest.json`이 있는 폴더를 선택합니다. 휴대폰에서는 Quetta의 확장 프로그램 로드 기능을 사용합니다.
+## 2. 사전 가져오기
 
-업데이트 후 확장 프로그램을 다시 로드하고 열려 있는 웹 페이지도 새로 고치세요.
+1. [한국어기초사전 공식 다운로드 페이지](https://krdict.korean.go.kr/download/downloadPopup)에서 **JSON 형식의 사전 ZIP**을 다운로드합니다.
+2. 확장 프로그램의 **엔진 / API 설정**에서 ZIP을 선택해 가져옵니다. **사전 ZIP은 미리 압축 해제하지 마세요.**
 
-**Code → Download ZIP**으로 소스를 받은 경우에는 Python 3.10 이상을 설치하고, 압축을 푼 폴더에서 `python restore_distribution.py`를 실행한 뒤 확장 프로그램을 로드합니다.
-
-## 사전 가져오기
-
-[한국어기초사전 공식 사이트](https://krdict.korean.go.kr/download/downloadPopup)에서 JSON 형식의 사전 ZIP을 다운로드해 확장 프로그램의 엔진 / API 설정에서 가져옵니다. ZIP을 미리 풀 필요는 없습니다. 사전은 별도로 다운로드해야 합니다.
-
-휴대폰에서 가져오기가 느리면 컴퓨터에서 먼저 DB로 변환할 수 있습니다.
+휴대폰에서 가져오기가 느리다면 컴퓨터에서 SQLite로 변환할 수 있습니다.
 
 ```sh
 python python/backend/upstream/scripts/import_dictionary.py "path/to/dictionary.zip"
 ```
 
-생성된 `python/backend/upstream/hanja_dict.db`를 휴대폰으로 옮겨 같은 설정 페이지에서 가져옵니다.
+생성된 `python/backend/upstream/hanja_dict.db`를 휴대폰으로 전송하고 같은 설정 화면에서 가져오세요.
 
-## 사용
+## 3. 주석과 복사
 
-- 한국어 웹 페이지를 열고 확장 프로그램, 도구 모음 또는 오른쪽 클릭 메뉴에서 전체 페이지 주석을 시작합니다.
-- 텍스트를 선택해 선택 영역에 주석을 달거나 다시 처리할 수 있습니다. 실행 취소 또는 복원 기능으로 주석을 제거할 수 있습니다.
-- 복사 방식은 표시된 본문, 본문과 주석, 원래 한국어(기본값), 위쪽 주석만 중에서 선택합니다.
-- OpenAI와 Claude를 지원하며 2026-10-12 공식 문서로 확인한 최신 모델을 포함합니다. 추론 설정은 각 모델의 지원 범위에 맞게 표시됩니다.
-- **모델 검토**: 일반 주석 작업에서 로컬 알고리즘이 해결하지 못한 중의성을 모델이 판단합니다. 제공 업체, 모델, API 키를 설정하고 검토를 켜세요.
-- **모델 재주석(선택 영역 재검토)**: 선택한 텍스트를 모델이 다시 판단하도록 직접 요청합니다. 이 기능도 모델 API 설정이 필요하지만, 검토 스위치를 켤 필요는 없습니다.
-- 로컬 알고리즘만 사용한 주석에는 모델 API가 필요하지 않습니다.
+1. 한국어 웹 페이지에서 확장 프로그램 아이콘을 클릭하고 필요에 따라 **한자어**와 **외래어** 주석을 켭니다.
+2. **페이지 전체 주석**을 누르거나 텍스트를 선택한 뒤 **선택 영역 주석**, 페이지 도구 모음 또는 오른쪽 클릭 메뉴를 사용합니다.
+3. **이전 주석 실행 취소** 또는 **모두 복원**으로 원래 표시로 되돌릴 수 있습니다. 도구 모음을 닫았다면 드래그할 수 있는 플로팅 버튼을 눌러 다시 열 수 있습니다.
+4. **텍스트 선택 및 복사**에서 현재 본문, 본문과 주석, **원래 한국어만(기본값)**, 위쪽 주석만 중 복사 방식을 선택합니다.
 
-## 감사의 말
+텍스트를 동적으로 다시 그리는 사이트에서는 **기존 주석 복원**을 켜두세요.
 
-- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script): 이 확장 프로그램은 해당 프로젝트의 한국어 한자 변환 및 사전 처리 코드를 직접 사용하고 수정했습니다. 오픈 소스 기여에 감사드립니다.
-- [Furiganator(Chrome 웹 스토어)](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa): 일본어 웹 페이지에 후리가나를 추가하는 확장 프로그램입니다. 주석 표시와 텍스트 선택 방식에 참고했습니다.
-- 도구와 사전 자료를 제공하는 Kiwi, Pyodide, 국립국어원에 감사드립니다.
+## 4. 선택 기능: AI 검토
+
+사전 기반 주석만 사용할 때는 AI가 필요하지 않습니다. 중의적 단어를 모델로 검토하려면 **엔진 / API 설정**에서 제공 업체, 모델, 엔드포인트, API 키를 설정하고 연결 테스트 및 저장 후 **선택적 모델 검토**를 켭니다.
+
+- **일반 검토:** 로컬에서 해결하지 못한 모호성을 모델이 판별합니다. **모든 후보 모델 검토**를 켜면 요청량과 비용이 늘어날 수 있습니다.
+- **선택 영역 다시 검토:** 텍스트를 선택하고 해당 버튼을 누릅니다. API 설정은 필요하지만 일반 검토 스위치는 꺼져 있어도 됩니다.
+- **수동 채팅 검토:** 설정에서 켠 뒤 패널의 프롬프트를 복사하거나 다운로드하여 채팅 모델에 보냅니다. 전체 JSON 응답을 붙여넣거나 파일로 가져와 현재 배치를 검증하고 적용합니다. **API 키는 필요 없지만** 사전은 필요합니다.
+- 큰 작업에서는 **배치별 컨텍스트 용량**을 조절할 수 있습니다. 완료된 배치부터 표시하려면 **완료되는 대로 주석 표시**를 켜세요.
+
+API 검토 시 관련 웹 페이지 텍스트와 사전 후보가 설정한 모델 서비스로 전송됩니다. 개인정보 보호와 API 요금에 주의하세요.
+
+## 5. 문제 해결
+
+- **주석이 시작되지 않음:** 사전 가져오기 여부를 확인하고 확장 프로그램 및 웹 페이지를 새로 고치세요.
+- **업데이트 후에도 예전 오류가 발생함:** `chrome://extensions`에서 확장 프로그램을 다시 로드한 다음 열려 있던 탭도 새로 고치세요.
+- **수동 검토 배치가 남아 있음:** 탭을 열린 상태로 두고 각 배치의 JSON을 제출·검증하세요. 완료 전에 페이지를 새로 고치지 마세요.
+
+[버전별 변경 사항 및 다운로드 (Releases)](https://github.com/aetherion-nox/korean-web-annotator/releases) · [개인정보 처리방침](PRIVACY.md) · [서드파티 고지](THIRD_PARTY_NOTICES.md)

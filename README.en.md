@@ -1,49 +1,56 @@
-# Korean Web Annotator 1.1.11
+# Korean Web Annotator
 
-v1.1.6: Native homographs now compete with Hanja readings; complete KEEP meanings are preserved. Existing dictionaries work without reimport.
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-v1.1.5: Shared sentence/candidate pools reduce repeated model input while preserving per-occurrence allowed choices, progressive display and request logs.
+Annotate Korean web pages with Hanja readings and original loanword forms. Whole-page and selected-text annotation run locally in your browser; optional AI review can resolve ambiguous dictionary entries. Basic annotation needs neither an API key nor a local server.
 
-Version 1.1.4 adds optional progressive local/model annotations and opt-in downloadable request logs in API settings. Both switches are off by default; logs redact API keys.
+## 1. Install the extension
 
-[简体中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
+1. Open [GitHub Releases](https://github.com/aetherion-nox/korean-web-annotator/releases/latest) and download the attached **`Korean-Web-Annotator-v*.zip`** (complete installation package). Do **not** use GitHub's automatically generated **Source code** ZIP.
+2. Extract the ZIP. In Chrome, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the folder containing `manifest.json`.
+3. On mobile, use a browser that supports unpacked extensions, such as Quetta.
 
-Read Korean web pages with Hanja and loanword-origin annotations. After importing a dictionary, the extension runs inside your browser without a local server. Optional model review is available through your own API configuration.
+After an update, reload the extension and refresh any already-open pages. You normally do not need to reimport your dictionary.
 
-## Install
+> **Installing from source:** If you use **Code → Download ZIP**, install Python 3.10+ and run `python restore_distribution.py` from the extracted directory first. This restores large runtime files omitted from the source repository. The Release attachment is ready to load without this step.
 
-1. Use the supplied full package `Korean-Web-Annotator-v1.1.11.zip`.
-2. Extract the ZIP. It includes the complete runtime; Python and the restoration script are not needed.
-3. In Chrome, open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`. On mobile, use Quetta's extension loading feature.
+## 2. Import a dictionary
 
-After updating, reload the extension and refresh open web pages.
+1. Download the **JSON dictionary ZIP** from the [official Korean Learners' Dictionary site](https://krdict.korean.go.kr/download/downloadPopup).
+2. Open the extension's **Engine / API settings**, choose the dictionary ZIP and import it. **Do not extract the dictionary ZIP first.**
 
-If you download the source using **Code → Download ZIP**, install Python 3.10 or newer and run `python restore_distribution.py` in the extracted folder before loading the extension.
-
-## Import a dictionary
-
-Download the JSON dictionary ZIP from the [official Korean Learners' Dictionary website](https://krdict.korean.go.kr/download/downloadPopup). Import it in the extension's **Engine / API settings** without extracting it. Dictionary data must be downloaded separately.
-
-If importing on your phone is slow, convert the ZIP on your computer first:
+If import is slow on your phone, convert the dictionary to SQLite on your computer:
 
 ```sh
 python python/backend/upstream/scripts/import_dictionary.py "path/to/dictionary.zip"
 ```
 
-Transfer the resulting `python/backend/upstream/hanja_dict.db` to your phone and import it on the same settings page.
+Transfer the generated `python/backend/upstream/hanja_dict.db` to your phone and import it on the same settings page.
 
-## Use
+## 3. Annotate and copy text
 
-- Open a Korean web page and start whole-page annotation from the extension, toolbar, or context menu.
-- Select text to annotate or reannotate a selection. Use undo or restore to remove annotations.
-- Choose a copy mode: displayed body text, body plus annotations, original Korean (default), or annotations only.
-- API providers include OpenAI and Claude, with the latest model families verified against official documentation on 2026-10-12. Thinking controls follow each model’s capabilities.
-- **Model review**: during normal annotation, the model resolves ambiguities that the local algorithm cannot settle. Configure your provider, model, and API key, then enable review.
-- **Model reannotation (review selection)**: select text and explicitly ask the model to reconsider it. This also requires a configured model API, but the model-review switch can remain off.
-- Local-only annotation does not require a model API.
+1. Open a Korean web page, click the extension icon, and enable **Hanja** and/or **loanword** annotation.
+2. Click **Annotate entire page**, or select text and use **Annotate selection**, the page toolbar or the context menu.
+3. Use **Undo last annotation** or **Restore all** to return to the original display. If you close the toolbar, click the draggable floating button to reopen it.
+4. Under **Text selection and copying**, choose displayed text, displayed text plus annotations, **original Korean only (default)**, or annotations only.
 
-## Acknowledgements
+For sites that redraw their text dynamically, leave **Restore existing annotations on dynamic pages** enabled.
 
-- [Arrow36 / Hangul-Hanja-mixed-script](https://github.com/Arrow36/Hangul-Hanja-mixed-script): this extension directly uses and adapts its Korean Hanja conversion and dictionary-processing code. Thank you for making it open source.
-- [Furiganator (Chrome Web Store)](https://chromewebstore.google.com/detail/furiganator/ijfcmmkkmogaclaafpgcjdfcfibmhcfa): an extension that adds furigana to Japanese web pages. It inspired this extension's annotation display and text selection.
-- Thanks to Kiwi, Pyodide, and the National Institute of Korean Language for their tools and dictionary resources.
+## 4. Optional AI review
+
+Dictionary-based annotation does not require AI. To review ambiguous words, open **Engine / API settings**, configure your provider, model, endpoint and API key, test the connection, save, and enable **Optional model review**.
+
+- **Normal review:** The model handles unresolved local ambiguities. You may also enable **Review all candidates with AI**, which can increase requests and costs.
+- **Review selected text again:** Select text and choose the corresponding button. A configured model API is required, but the general model-review toggle can stay off.
+- **Manual chat review:** Enable it in settings. Copy or download the prompt shown in the panel, send it to a chat model, then paste or import the complete JSON response and validate/apply the current batch. **No API key is required**, but a dictionary still is.
+- Adjust the **context capacity per batch** for large tasks, and enable **Annotate as results arrive** to display completed batches progressively.
+
+When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
+
+## 5. Troubleshooting
+
+- **Nothing happens:** Check that the dictionary was imported, reload the extension, and refresh the page.
+- **An old error persists after updating:** Reload in `chrome://extensions` and refresh the existing tab; old tabs may still run the previous content script.
+- **Manual review has unfinished batches:** Keep the tab open and submit/validate each JSON batch before refreshing.
+
+[Release notes and downloads](https://github.com/aetherion-nox/korean-web-annotator/releases) · [Privacy](PRIVACY.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
