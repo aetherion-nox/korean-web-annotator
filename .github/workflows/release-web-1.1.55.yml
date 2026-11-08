@@ -1,0 +1,55 @@
+name: Publish Web v1.1.55
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifest.json
+      - .github/workflows/release-web-1.1.55.yml
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test code
+        run: |
+          node --test tests/review-pos.test.mjs tests/name-homograph-payload.test.mjs
+          PYTHONPATH=python/browser-support python3 tests/test_name_ambiguity.py
+          PYTHONPATH=python/browser-support python3 tests/test_dictionary_names.py
+      - name: Restore runtime
+        run: python3 restore_distribution.py
+      - name: Refresh Pyodide Python source bundle and build ZIP
+        run: |
+          python3 - <<'PY'
+          import json,zipfile,hashlib,subprocess
+          from pathlib import Path
+          root=Path.cwd()
+          f=root/'runtime/python-sources.json'
+          old=json.loads(f.read_text())
+          for key in list(old):
+              if not key.startswith('/project/'):continue
+              local=root/'python'/key[len('/project/'):]
+              if local.is_file():old[key]=local.read_text()
+          path='/project/backend/name_homographs.py'
+          old[path]=(root/'python/backend/name_homographs.py').read_text()
+          f.write_text(json.dumps(old,ensure_ascii=False,separators=(',',':')))
+          files=set(Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split(chr(0)) if p)
+          files={p for p in files if p.parts[0] not in {'.github'} and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ['runtime','icons']:
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          dest=root/'Korean-Web-Annotator-v1.1.55.zip'
+          with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+              for p in sorted(files):z.write(root/p,'Korean-Web-Annotator/'+p.as_posix())
+          with zipfile.ZipFile(dest) as z:
+              assert not z.testzip()
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.55'
+              assert 'Korean-Web-Annotator/runtime/python-sources.json' in z.namelist()
+          print(dest.stat().st_size,hashlib.sha256(dest.read_bytes()).hexdigest())
+          PY
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create v1.1.55 Korean-Web-Annotator-v1.1.55.zip --target "$GITHUB_SHA" --title "Korean SRT Annotator v1.1.55" --notes-file CHANGELOG-1.1.55.md --latest

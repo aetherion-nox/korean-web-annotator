@@ -60,6 +60,7 @@ export function validateAnalysis(text,data){
  for(const a of annotations)ranges.push([a.start,a.end]);
  for(const t of data.targets){
   if(t.proper_noun!==undefined&&typeof t.proper_noun!=='boolean')throw Error('Invalid proper-noun hint');
+  if(t.suspected_person_name!==undefined&&typeof t.suspected_person_name!=='boolean')throw Error('Invalid suspected-name hint');
   if(typeof t.target_id!=='string'||ids.has(t.target_id)||!Number.isInteger(t.start)||!Number.isInteger(t.end)||t.start<0||t.end<=t.start||text.slice(t.start,t.end)!==t.surface||t.context!==text||!Array.isArray(t.options))throw Error('Invalid engine target');
   ids.add(t.target_id);const choices=new Set(),validOptions=[];
   for(const o of t.options){
@@ -81,7 +82,9 @@ export function validateAnalysis(text,data){
    validOptions.push(o);
   }
   if(!choices.has('KEEP'))throw Error('Missing KEEP');
-  if(!validOptions.some(o=>['hanja','loanword','mixed'].includes(o.type))){rejectedTargets++;continue;}
+  const convertible=validOptions.some(o=>['hanja','loanword','mixed'].includes(o.type));
+  const nameOnlyReview=(t.suspected_person_name===true||t.dictionary_name_homograph===true)&&validOptions.some(o=>o.type==='nonconversion');
+  if(!convertible&&!nameOnlyReview){rejectedTargets++;continue;}
   targets.push({...t,options:validOptions});ranges.push([t.start,t.end]);
  }
  ranges.sort((a,b)=>a[0]-b[0]);if(ranges.some((r,i)=>i&&r[0]<ranges[i-1][1]))throw Error('Overlapping engine spans');

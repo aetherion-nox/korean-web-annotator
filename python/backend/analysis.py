@@ -4,7 +4,8 @@ import re
 from pathlib import Path
 from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
-from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, name_ranges, dictionary_name_ranges
+from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, surname_name_evidence, dictionary_name_evidence
+from backend.name_homographs import homograph_target, surname_ambiguity_target
 from backend.loanwords import is_nonconversion_origin, nonconversion_options
 ensure_environment()
 from app.services.converter import ConverterService
@@ -13,7 +14,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-performance-1.1.47'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-name-homograph-1.1.55'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -112,19 +113,32 @@ class Engine:
         converter=ConverterService(self.tokenizer,self.disambiguation)
         tokens=await self.tokens(text)
         segments,_=await converter.convert(text,self.lookup_fn,tokens=tokens)
-        dictionary_names=await dictionary_name_ranges(text,tokens,self.lookup_fn)
+        dictionary_names,homograph_evidence=await dictionary_name_evidence(text,tokens,self.lookup_fn)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
-        protected_names=sorted(set(await name_ranges(text,tokens,self.lookup_fn)+dictionary_names)) if modes.get('nameProtection',True) is not False else []
+        name_protection=modes.get('nameProtection',True) is not False
+        homograph_evidence=homograph_evidence if name_protection else []
+        conflicting_ranges=[(a,b) for a,b,_,_ in homograph_evidence]
+        protected_dictionary_names=[(a,b) for a,b in dictionary_names if (a,b) not in conflicting_ranges]
+        inferred_names,surname_ambiguities=await surname_name_evidence(text,tokens,self.lookup_fn) if name_protection else ([],[])
+        protected_names=sorted(set(inferred_names+protected_dictionary_names)) if name_protection else []
+        homograph_evidence=[item for item in homograph_evidence if not any(a<=item[0] and item[1]<=b for a,b in protected_names)]
+        surname_ambiguities=[item for item in surname_ambiguities if not any(a<item[1] and item[0]<b for a,b in protected_names+dictionary_names)]
+        surname_ambiguities=[item for item in surname_ambiguities if not any(a<item[1] and item[0]<b for a,b,_,_ in homograph_evidence)]
+        conflicting_ranges=[(a,b) for a,b,_,_ in homograph_evidence]
+        suspect_ranges=[(a,b) for a,b,_,_ in surname_ambiguities]
+        homograph_targets=[homograph_target(text,a,b,word,records,modes) for a,b,word,records in homograph_evidence]
+        suspect_targets=[surname_ambiguity_target(text,a,b,word,records,modes) for a,b,word,records in surname_ambiguities]
+        blocked_for_local=protected_names+conflicting_ranges+suspect_ranges
         upstream_counts={f'upstream_{status}':sum(s.status==status for s in segments) for status in ('converted','ambiguous','no_match','kept')}
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
         if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):
             from backend.mixed_origins import collect_mixed
             whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')]
-            mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges,blocked_ranges=protected_names,review_ranges=dictionary_names)
+            mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges,blocked_ranges=blocked_for_local,review_ranges=dictionary_names)
         annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
-            if overlaps_proper_noun(s.start,s.end,protected_names):continue
+            if overlaps_proper_noun(s.start,s.end,blocked_for_local):continue
             if s.status not in ('converted','ambiguous'):continue
             if any(s.start<b and a<s.end for a,b in mixed['ranges']):continue
             if not valid(s.start,s.end,s.original):rejected+=1;continue
@@ -189,7 +203,7 @@ class Engine:
             entries=await self.lookup_entries([t.form for t in tokens])
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
-            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+protected_names,force_review=review_all,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
+            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_all,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.
@@ -199,7 +213,7 @@ class Engine:
                     loan['targets'].append(dict(start=annotation['start'],end=annotation['end'],surface=annotation['surface'],context=text,options=[dict(choice_id='KEEP',type='keep',replacement=annotation['surface'],entry_id=None,definitions=[]),dict(choice_id='c0',type='loanword',replacement=annotation['replacement'],entry_id=annotation['entry_id'],definitions=annotation['definitions'])]))
                 else:annotations.append({k:v for k,v in annotation.items() if k not in ('entry_id','definitions')})
             targets=merge_targets(text,targets+loan['targets'])
-        targets=sorted(targets+mixed['targets'],key=lambda t:(t['start'],t['end']))
+        targets=sorted(targets+mixed['targets']+homograph_targets+suspect_targets,key=lambda t:(t['start'],t['end']))
         # Complete every candidate, including sibling origins owned by mixed words.
         option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
         option_metadata=await self.dictionary.get_metadata_for_entries(option_definitions) if self.dictionary is not None else {}

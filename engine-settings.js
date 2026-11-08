@@ -38,11 +38,11 @@ copy.en.reviewAllHint=copy.en.reviewAllHint.replace('requires API configuration'
 copy.ja.reviewAllHint=copy.ja.reviewAllHint.replace('API設定と辞書が必要','API設定または手動チャット審査と辞書が必要');
 copy.ko.reviewAllHint=copy.ko.reviewAllHint.replace('API 설정과 사전이 필요','API 설정 또는 수동 채팅 검토와 사전이 필요');
 const nameCopy={
- 'zh-CN':['姓名整段保护（默认开启）','根据本地词典和分词结果保留疑似姓名原文，避免拆分或套用同名人物的汉字。关闭后不保护姓名；词典人名与 Kiwi 专名候选仍须模型审核。下次标注生效。'],
- 'zh-TW':['姓名整段保護（預設開啟）','依本機詞典和分詞結果保留疑似姓名原文，避免拆分或套用同名人物的漢字。關閉後不保護姓名；詞典人名與 Kiwi 專名候選仍須模型審核。下次標註生效。'],
- en:['Protect complete names (on by default)','Preserve suspected names using the local dictionary and tokenization, avoiding split names or another person’s spelling. When off, dictionary person names and Kiwi proper nouns still require model review. Applies to new tasks.'],
- ja:['姓名全体を保護（初期設定は有効）','辞書と形態素から推定した姓名を原文のまま保護し、分割や同名人物の漢字流用を防ぎます。無効時も辞書の人名・Kiwi固有名詞はモデル審査へ回します。次の処理から適用。'],
- ko:['이름 전체 보호 (기본 켜짐)','로컬 사전과 형태소 분석으로 추정한 이름을 보존하여 분할 및 동명이인의 한자 오용을 막습니다. 꺼도 사전의 인명과 Kiwi 고유명사 후보는 모델 검토를 거칩니다. 새 작업부터 적용됩니다.']
+ 'zh-CN':['姓名整段保护（默认开启）','根据词典和分词结果保护完整姓名；同一拼写有人名和普通词义，或普通词有明显姓氏/分词/助词证据时，跳过本地转换交给 API 或手动模型审核。无模型时保留韩文。下次标注生效。'],
+ 'zh-TW':['姓名整段保護（預設開啟）','依詞典與斷詞保護完整姓名；相同拼寫有人名與一般詞義，或一般詞有姓氏、斷詞和助詞證據時，跳過本機轉換交由模型審核。未啟用模型時保留韓文。'],
+ en:['Protect complete names (on by default)','When the exact spelling has both person-name and ordinary senses, or an ordinary word has strong surname, tokenization and particle evidence, skip local conversion and request API/manual review. Keep Korean without review.'],
+ ja:['姓名全体を保護（初期設定は有効）','人名と一般語が同表記の場合や、姓氏・分かち書き・助詞の証拠がある一般語は、ローカル変換せずモデル審査へ送ります。審査が無効なら韓国語を保持します。'],
+ ko:['이름 전체 보호 (기본 켜짐)','같은 표기에 인명과 일반 어휘가 함께 있거나 성씨·형태소 분리·조사 증거가 충분하면 로컬 변환을 건너뛰고 모델 검토로 보냅니다. 모델이 없으면 원래 한글을 유지합니다.']
 };
 for(const [locale,labels] of Object.entries(nameCopy))Object.assign(copy[locale],{nameProtection:labels[0],nameProtectionHint:labels[1]});
 const reviewPosCopy={
