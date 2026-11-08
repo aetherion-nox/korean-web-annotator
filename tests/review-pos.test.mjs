@@ -101,3 +101,42 @@ test('NNB keeps only explicit dependent POS and unknown senses across API and ma
  // Ordinary noun occurrences still keep the broader noun category.
  assert.deepEqual(ids(target('NNG',[option('c0','명사'),option('c1','부사')])),['KEEP','c0']);
 });
+
+test('wire prompt trims checked Kiwi POS and keeps dictionary entry POS and original target unchanged',()=>{
+ const t=target('NNG',[option('c0','명사'),option('c1','동사')]);
+ const before=JSON.stringify(t),{payload}=buildReviewPayload('가',[t]);
+ assert.deepEqual(Object.keys(payload.targets[0].options),['KEEP','c0']);
+ assert.equal(payload.targets[0].morphology,undefined);
+ assert.equal(payload.candidates[0].part_of_speech,'명사');
+ assert.equal(JSON.stringify(t),before);
+ const manual=JSON.parse(buildManualPrompt('가',[t],'batch').split('\n').at(-1));
+ assert.deepEqual(manual.targets[0].morphology,payload.targets[0].morphology);
+ assert.deepEqual(manual.candidates,payload.candidates);
+});
+test('proper noun protection survives compact POS prompt',()=>{
+ const t={...target('NNP',[option('c0','고유 명사'),option('c1','동사')]),proper_noun:true};
+ const out=packed(t).targets[0];
+ assert.equal(out.proper_noun,true);
+ assert.ok(!('morphology' in out));
+});
+test('derived word retains segments while stripping redundant Kiwi POS',()=>{
+ const t={...target('NNG',[]),surface:'사실상',context:'사실상',end:3,
+  morphology:[{form:'사실',tag:'NNG',start:0,end:2},{form:'상',tag:'XSN',start:2,end:3}],
+  options:[{choice_id:'KEEP',type:'keep'},option('c0','부사'),option('c1','동사')]};
+ const out=packed(t).targets[0];
+ assert.deepEqual(out.morphology,[{form:'사실',start:0,end:2},{form:'상',start:2,end:3}]);
+ assert.deepEqual(Object.keys(out.options),['KEEP','c0']);
+});
+test('conflict, disabled filter, unknown POS, partial-word and unknown meaning preserve original tags',()=>{
+ const cases=[
+  [target('MAG',[option('c0','명사')]),{}],
+  [target('NNG',[option('c0','명사')]),{reviewPosFilter:false}],
+  [target('UNKNOWN',[option('c0','명사')]),{}],
+  [{...target('NNG',[option('c0','명사')]),partial_word:true},{}],
+  [target('NNG',[option('c0',null)]),{}]
+ ];
+ for(const [t,config] of cases){
+  const out=buildReviewPayload('가',[t],config).payload.targets[0];
+  assert.equal(out.morphology[0].tag,t.morphology[0].tag);
+ }
+});

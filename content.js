@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.52';
+  const VERSION = '1.1.54';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -169,7 +169,7 @@
       // Work backwards so each surviving prefix keeps its source offsets.
       const prefixes=new Map();
       for(const a of pending.sort((a,b)=>b.start-a.start)){
-        const node=prefixes.get(a.node)||a.node;if(!node.isConnected||node.data.slice(a.offset,a.offset+a.surface.length)!==a.surface)continue;
+        const node=prefixes.get(a.node)||a.node;if(!node.isConnected||!node.parentNode||node.data.slice(a.offset,a.offset+a.surface.length)!==a.surface)continue;
         const prefix=document.createTextNode(node.data.slice(0,a.offset)),suffix=document.createTextNode(node.data.slice(a.offset+a.surface.length));
         const range=document.createRange();range.selectNode(node);
         const ruby=range.createContextualFragment(conversionHTML({text:a.surface,annotations:[{...a,start:0,end:a.surface.length}]})).firstChild;
@@ -530,12 +530,17 @@
       if(record){
         // Only replace the exact contiguous fragment this operation inserted.
         // A site's own updates always win over late model responses.
-        if(!record.inserted.every((n,i)=>n.parentNode===record.parent&&n.isEqualNode(record.snapshots[i])&&(i===0||record.inserted[i-1].nextSibling===n))){entry.invalidated=true;continue;}
+        if(!record.parent?.isConnected||!record.inserted.length||!record.inserted.every((n,i)=>n.isConnected&&n.parentNode===record.parent&&n.isEqualNode(record.snapshots[i])&&(i===0||record.inserted[i-1].nextSibling===n))){entry.invalidated=true;continue;}
       }else{
-        if(!node.isConnected || (entry.isRuby?node.outerHTML!==entry.originalOuterHTML:node.data!==entry.text)){entry.invalidated=true;continue;}
+        if(!node.isConnected||!node.parentNode||(entry.isRuby?node.outerHTML!==entry.originalOuterHTML:node.data!==entry.text)){entry.invalidated=true;continue;}
         record={parent:node.parentNode,original:node,originalSnapshot:node.cloneNode(true),inserted:[node]};
       }
-      range.selectNode(record.parent);
+      // Select the live insertion anchor, not its parent. The parent itself may
+      // be a root or a replaced/detached element with no parentNode, which makes
+      // Range.selectNode(parent) throw even when the anchor is valid.
+      const anchor=record.inserted[0];
+      if(!anchor?.isConnected||anchor.parentNode!==record.parent){entry.invalidated=true;continue;}
+      range.selectNode(anchor);
       const fragment=range.createContextualFragment(html),inserted=Array.from(fragment.childNodes);
       entry.renderCount=fragment.querySelectorAll(OWN_RUBY).length;
       for(const n of [...inserted,...record.inserted])ownDomChanges.add(n);

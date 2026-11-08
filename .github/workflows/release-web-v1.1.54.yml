@@ -1,0 +1,51 @@
+name: Publish Korean Web Annotator v1.1.54
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifest.json
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.head_commit.message == 'release: Korean Web Annotator v1.1.54'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check version and regression tests
+        run: |
+          python -c "import json; assert json.load(open('manifest.json'))['version'] == '1.1.54'"
+          node --test tests/review-pos.test.mjs tests/range-detachment.test.mjs tests/chunk-review.test.mjs
+      - name: Restore verified runtime from previous full release
+        run: python restore_distribution.py
+      - name: Build complete installable ZIP
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess,zipfile,hashlib,json
+          root=Path.cwd()
+          tracked=[Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if p]
+          files=set(p for p in tracked if p.parts[0] not in {'.github','distribution'} and p.name!='restore_distribution.py' and p.is_file())
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          output=root/'Korean-Web-Annotator-v1.1.54.zip'
+          with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
+              for p in sorted(files):
+                  archive.write(root/p,'Korean-Web-Annotator/'+p.as_posix())
+          with zipfile.ZipFile(output) as archive:
+              assert archive.testzip() is None
+              assert json.loads(archive.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.54'
+              assert 'Korean-Web-Annotator/runtime/pyodide/pyodide.js' in archive.namelist()
+          print('asset',output.name,output.stat().st_size,'sha256',hashlib.sha256(output.read_bytes()).hexdigest())
+          PY
+      - name: Publish release and attach full ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v1.1.54 Korean-Web-Annotator-v1.1.54.zip --target "$GITHUB_SHA" --title "Korean Web Annotator v1.1.54" --notes-file CHANGELOG-1.1.54.md --latest

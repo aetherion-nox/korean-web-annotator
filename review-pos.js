@@ -109,3 +109,15 @@ export function filterReviewTarget(target,config={}){
  return {...target,options:[...keep,...allowed]};
 }
 export function filterReviewTargets(targets,config={}){return targets.map(target=>filterReviewTarget(target,config));}
+
+// POS evidence is redundant only when all surviving senses were locally verified.
+export function canTrimReviewMorphology(target,config={}){
+ if(config.reviewPosFilter===false||target.pos_conflict===true||target.partial_word===true)return false;
+ const tags=occurrenceTags(target);
+ if(!tags)return false;
+ const choices=target.options.filter(option=>option.type!=='keep');
+ return choices.length>0&&choices.every(option=>{
+  const ownTags=optionTags(target,option,tags);
+  return !!ownTags&&compatible(ownTags,option.part_of_speech)===true;
+ });
+}
