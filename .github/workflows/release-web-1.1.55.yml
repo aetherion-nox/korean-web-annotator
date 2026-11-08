@@ -37,7 +37,7 @@ jobs:
           old[path]=(root/'python/backend/name_homographs.py').read_text()
           f.write_text(json.dumps(old,ensure_ascii=False,separators=(',',':')))
           files=set(Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split(chr(0)) if p)
-          files={p for p in files if p.parts[0] not in {'.github'} and p.name!='restore_distribution.py' and (root/p).is_file()}
+          files={p for p in files if p.parts[0] not in {'.github','distribution'} and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ['runtime','icons']:
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
           dest=root/'Korean-Web-Annotator-v1.1.55.zip'
@@ -52,4 +52,9 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create v1.1.55 Korean-Web-Annotator-v1.1.55.zip --target "$GITHUB_SHA" --title "Korean SRT Annotator v1.1.55" --notes-file CHANGELOG-1.1.55.md --latest
+        run: |
+          if gh release view v1.1.55 >/dev/null 2>&1; then
+            gh release upload v1.1.55 Korean-Web-Annotator-v1.1.55.zip --clobber
+          else
+            gh release create v1.1.55 Korean-Web-Annotator-v1.1.55.zip --target "$GITHUB_SHA" --title "Korean Web Annotator v1.1.55" --notes-file CHANGELOG-1.1.55.md --latest
+          fi
