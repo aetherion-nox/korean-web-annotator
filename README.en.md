@@ -53,6 +53,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 **v1.1.62 lexical-boundary safety:** Dictionary subword matches no longer authorize converting a longer unbroken Hangul word. Unsupported partial-word model answers safely fall back to KEEP, and irrelevant synthetic foreign-origin prefixes are rejected. Resegmentation prioritizes evidenced boundary errors instead of scanning all menu items. Up to 64 model decisions per batch, with no global target truncation.
 
+**v1.1.63 large-context batching:** The arbitrary 64-decision cap is removed. 512K/1M tiers keep all targets in one batch when prompt, estimated JSON reply and safety margin fit. Configure API max output tokens per profile (default 16,384) and manual chat reply budget separately (default 65,536); real provider limits still apply.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
