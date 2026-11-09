@@ -1,0 +1,48 @@
+name: Validate review and recovery
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'review-validation-core.js'
+      - 'choice-review.js'
+      - 'manual-review.js'
+      - 'model-origin.js'
+      - 'content.js'
+      - 'tests/**'
+      - '.github/workflows/validate-review.yml'
+  pull_request:
+    paths:
+      - 'review-validation-core.js'
+      - 'choice-review.js'
+      - 'manual-review.js'
+      - 'model-origin.js'
+      - 'content.js'
+      - 'tests/**'
+      - '.github/workflows/validate-review.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate syntax
+        run: |
+          node --check choice-review.js
+          node --check manual-review.js
+          node --check review-validation-core.js
+          node --check model-origin.js
+          node --check content.js
+          python3 -m py_compile python/backend/risk_review.py python/backend/analysis.py
+      - name: Run reviewer and recovery tests
+        run: |
+          node --test tests/shared-manual-validation.test.mjs tests/generated-segment-repair.test.mjs tests/unlisted-compound-recovery.test.mjs tests/large-window-batching.test.mjs tests/chunk-review.test.mjs tests/real-page-boundaries.test.mjs tests/risk-review.test.mjs tests/single-hangul-guard.test.mjs tests/model-segmentation.test.mjs tests/manual-segmentation-batch.test.mjs tests/browser-worker-failure.test.mjs tests/model-origin.test.mjs tests/model-origin-settings.test.mjs tests/review-pos.test.mjs tests/name-homograph-payload.test.mjs tests/manual-continuation.test.mjs
+          PYTHONPATH=python/browser-support python3 tests/test_unlisted_lexical_recovery.py
+          PYTHONPATH=python/browser-support python3 tests/test_real_page_boundaries.py
+          PYTHONPATH=python/browser-support python3 tests/test_risk_review.py
+          PYTHONPATH=python/browser-support python3 tests/test_single_hangul_guard.py
+          PYTHONPATH=python/browser-support python3 tests/test_name_ambiguity.py
+          PYTHONPATH=python/browser-support python3 tests/test_dictionary_names.py
