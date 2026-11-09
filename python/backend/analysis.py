@@ -6,7 +6,7 @@ from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, surname_name_evidence, dictionary_name_evidence
 from backend.name_homographs import homograph_target, surname_ambiguity_target
-from backend.risk_review import uncertain_compounds, weak_unique_candidate
+from backend.risk_review import uncertain_compounds, weak_unique_candidate, unverified_word_boundary, hangul_run
 from backend.loanwords import is_nonconversion_origin, nonconversion_options
 ensure_environment()
 from app.services.converter import ConverterService
@@ -15,7 +15,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-risk-review-1.1.61'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-boundary-safety-1.1.62'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -145,6 +145,17 @@ class Engine:
         annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
         verified_whole=list(mixed.get('verified_whole',[]))
         candidate_risk_ranges=set()
+        unsafe_boundaries=set()
+        unsafe_runs=set()
+        for segment in segments:
+            if (segment.status in ('converted','ambiguous') and
+                    unverified_word_boundary(text,segment.start,segment.end,tokens)):
+                unsafe_boundaries.add((segment.start,segment.end))
+                unsafe_runs.add(hangul_run(text,segment.start,segment.end))
+        # Non-converted adjacent token spellings can be a false Kiwi boundary as
+        # well; their source spans are sent for a single whole-word model review.
+        for start,end,_,_ in boundary_risks:
+            unsafe_runs.add(hangul_run(text,start,end))
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
             if overlaps_proper_noun(s.start,s.end,blocked_for_local):continue
@@ -153,9 +164,10 @@ class Engine:
             if not valid(s.start,s.end,s.original):rejected+=1;continue
             unique_risk=(risk_review and not review_all and
                          weak_unique_candidate(s,tokens))
+            unsafe=(s.start,s.end) in unsafe_boundaries
             if unique_risk:candidate_risk_ranges.add((s.start,s.end))
             if (s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges)
-                    and not unique_risk
+                    and not unique_risk and not unsafe
                     and not (single_guard and len(s.original)==1 and '가'<=s.original<='힣')):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
@@ -176,6 +188,13 @@ class Engine:
                 if (not review_all and not overlaps_proper_noun(start,end,proper_ranges) and not c.get('is_reliable')) or not safe_replacement(replacement):continue
                 # Preserve inflected Korean suffixes using unchanged upstream display builder.
                 token=next((t for t in review_tokens if t.start==start and t.start+t.length==end),None)
+                headword=str(c.get('written_form') or '').replace('-','').replace('^','')
+                # A reading of 시/진 cannot justify a synthetic whole-word
+                # 북경C / 향gin candidate. Inflection is the sole exception.
+                if (headword and headword!=surface and not
+                        (token is not None and token.is_verb_stem and
+                         headword==token.form+'다')):
+                    continue
                 if token is not None:
                     from app.services.disambiguation import CandidateScore
                     score=CandidateScore(**{k:c.get(k) for k in CandidateScore.__dataclass_fields__ if k in c})
@@ -246,11 +265,15 @@ class Engine:
                         native.append({**option,'choice_id':f'n{len(native)}','definitions':[definition]})
                 else:conversions.append({**option,'choice_id':f'c{len(conversions)}','definitions':definitions})
             target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
+        weak_ranges={(to_utf16(text,a),to_utf16(text,b)) for a,b in candidate_risk_ranges}
+        unsafe_ranges={(to_utf16(text,a),to_utf16(text,b)) for a,b in unsafe_boundaries}
         for target in targets:
-            if (target['start'],target['end']) in {
-                (to_utf16(text,a),to_utf16(text,b)) for a,b in candidate_risk_ranges
-            }:
-                target['review_reasons']=['weak_unique_dictionary_candidate']
+            key=(target['start'],target['end'])
+            if key in weak_ranges:
+                target.setdefault('review_reasons',[]).append('weak_unique_dictionary_candidate')
+            if key in unsafe_ranges:
+                target.setdefault('review_reasons',[]).append('unverified_word_boundary')
+                target['boundary_unverified']=True
         # Encode each token boundary once, not once per review target.
         # This retains the existing surrogate/astral offset conversion exactly.
         token_morphology=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens]
@@ -267,10 +290,15 @@ class Engine:
             if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
         return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],
                 boundary_suspicions=len(boundary_risks),
-                unique_risk_reviews=len(candidate_risk_ranges),**upstream_counts),
+                unique_risk_reviews=len(candidate_risk_ranges),unsafe_word_boundaries=len(unsafe_boundaries),**upstream_counts),
             boundary_risks=[dict(start=to_utf16(text,a),end=to_utf16(text,b),
                                  surface=word,reason=reason)
-                            for a,b,word,reason in boundary_risks],
+                            for a,b,word,reason in boundary_risks]+[
+                dict(start=to_utf16(text,a),end=to_utf16(text,b),
+                     surface=text[a:b],reason='unverified_word_boundary')
+                for a,b in sorted(unsafe_runs)],
+            protected_name_spans=[dict(start=to_utf16(text,a),end=to_utf16(text,b))
+                                  for a,b in protected_names],
             confirmed_whole_spans=[dict(start=to_utf16(text,a),end=to_utf16(text,b))
                                   for a,b in verified_whole],
             suffix_spans=[dict(start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length))

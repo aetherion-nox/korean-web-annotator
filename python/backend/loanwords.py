@@ -2,6 +2,7 @@
 import re
 from backend.offsets import to_utf16
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
+from backend.risk_review import unverified_word_boundary
 from app.services.disambiguation import DisambiguationService
 
 CJK = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U000323af]')
@@ -66,6 +67,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         span=dict(start=to_utf16(text,start),end=to_utf16(text,end),surface=form)
         partial=any(t is not token and t.length>0 and (t.start+t.length==start or t.start==end) and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'} for t in tokens)
         if (not force_review and not partial and not overlaps_proper_noun(start,end,proper_ranges)
+                and not unverified_word_boundary(text,start,end,tokens)
                 and not (protect_single_hangul and len(form)==1 and '가'<=form<='힣')
                 and len(origins)==1 and len(loans)==len(records)):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))

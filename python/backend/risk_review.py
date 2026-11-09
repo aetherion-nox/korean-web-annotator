@@ -78,3 +78,40 @@ def weak_unique_candidate(segment, tokens):
     if any(t.tag.split('-')[0] in {'NNP','VV','VA','VX','VCP'} and t.start < segment.end and t.start+t.length > segment.start for t in tokens):
         return False
     return True
+
+
+GRAMMAR_TAGS={'JKS','JKC','JKG','JKO','JKB','JKV','JKQ','JX','JC','EP','EF','EC','ETN','ETM'}
+def hangul_run(text,start,end):
+    """Return the maximal exact contiguous Hangul run around a source span."""
+    left=start
+    while left>0 and '가'<=text[left-1]<='힣':left-=1
+    right=end
+    while right<len(text) and '가'<=text[right]<='힣':right+=1
+    return left,right
+
+def grammatical_tail(tokens,start,end):
+    """Only attested, wholly contiguous particles/endings can complete a word."""
+    if start==end:return True
+    relevant=sorted((t for t in tokens if t.start>=start and t.start+t.length<=end
+                     and t.length>0 and t.tag.split('-')[0] in GRAMMAR_TAGS),
+                    key=lambda t:(t.start,-t.length))
+    cursor=start
+    for token in relevant:
+        if token.start==cursor:cursor+=token.length
+        elif token.start<cursor:continue
+        else:return False
+        if cursor==end:return True
+    return False
+
+def unverified_word_boundary(text,start,end,tokens):
+    """Do not accept a dictionary subword as the whole lexical item.
+
+    An exactly matching word followed by real grammatical particles is safe;
+    an unlisted lexical continuation (even with an incorrect Kiwi POS) is not.
+    """
+    if not 0<=start<end<=len(text) or not HANGUL.fullmatch(text[start:end]):
+        return False
+    left,right=hangul_run(text,start,end)
+    if left==start and (right==end or grammatical_tail(tokens,end,right)):
+        return False
+    return True
