@@ -166,8 +166,17 @@ class Engine:
                          weak_unique_candidate(s,tokens))
             unsafe=(s.start,s.end) in unsafe_boundaries
             if unique_risk:candidate_risk_ranges.add((s.start,s.end))
+            chosen=next((c for c in s.candidates if c.get('entry_id')==s.matched_entry_id),{})
+            head=str(chosen.get('written_form') or '').replace('-','').replace('^','')
+            stem_token=next((t for t in tokens if t.start==s.start and t.start+t.length==s.end
+                             and getattr(t,'is_verb_stem',False)),None)
+            from_subword=bool(head and head!=s.original and not
+                              (stem_token and head==stem_token.form+'다'))
+            if from_subword:
+                unsafe_boundaries.add((s.start,s.end))
+                unsafe_runs.add(hangul_run(text,s.start,s.end))
             if (s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges)
-                    and not unique_risk and not unsafe
+                    and not unique_risk and not unsafe and not from_subword
                     and not (single_guard and len(s.original)==1 and '가'<=s.original<='힣')):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
