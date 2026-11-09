@@ -13,7 +13,12 @@ export function validateChoices(targets,response,config={}) {
  // decisions for other targets. Duplicates invalidate only their own ID.
  for(const target of targets){
   const matches=rows.filter(r=>r?.target_id===target.target_id);
-  const candidate=matches.length===1 && (filterReviewTarget(target,config).options.find(o=>o.choice_id===matches[0].choice_id) || validateGeneratedRow(target,matches[0],config) || validateGeneratedSegmentsRow(target,matches[0],config));
+  const row=matches.length===1?matches[0]:null;
+  const dictionary=row&&filterReviewTarget(target,config).options.find(o=>o.choice_id===row.choice_id);
+  // Dictionary selections are IDs only. The model cannot attach invented
+  // replacements or metadata and have it silently treated as a dictionary sense.
+  const chosen=dictionary&&Object.keys(row).every(k=>k==='target_id'||k==='choice_id')?dictionary:null;
+  const candidate=row&&(chosen||validateGeneratedRow(target,row,config)||validateGeneratedSegmentsRow(target,row,config));
   const option=safeReviewOption(target,candidate);
   if(option) accepted.push({target,option}); else unresolved.push(target);
  }
