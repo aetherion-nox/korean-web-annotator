@@ -51,6 +51,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 **v1.1.61 risk review:** The enabled-by-default unique-candidate risk review defers weak-evidence short homophones and unlisted Kiwi-split compounds before local conversion. Verified complete mixed-origin headwords such as 팀장 → team長 may still be converted locally. Overlapping resegmentation and dictionary reviews are merged into one model task. Missing or invalid model answers leave Korean unchanged. This is a heuristic, not proof of semantic accuracy.
 
+**v1.1.62 lexical-boundary safety:** Dictionary subword matches no longer authorize converting a longer unbroken Hangul word. Unsupported partial-word model answers safely fall back to KEEP, and irrelevant synthetic foreign-origin prefixes are rejected. Resegmentation prioritizes evidenced boundary errors instead of scanning all menu items. Up to 64 model decisions per batch, with no global target truncation.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
