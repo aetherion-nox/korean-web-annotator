@@ -7,7 +7,7 @@
     "test:pos": "python3 tests/test_pos_coverage.py",
     "test:manual-toolbar": "node --test tests/manual-toolbar*.test.mjs"
   },
-  "version": "1.1.58",
+  "version": "1.1.59",
   "devDependencies": {
     "jsdom": "26.1.0"
   }

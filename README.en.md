@@ -45,6 +45,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 - **Manual chat review:** Enable it in settings. Copy or download the prompt shown in the panel, send it to a chat model, then paste or import the complete JSON response and validate/apply the current batch. **No API key is required**, but a dictionary still is.
 - Adjust the **context capacity per batch** for large tasks, and enable **Annotate as results arrive** to display completed batches progressively.
 
+**Experimental origin proposals and model resegmentation:** Three independent switches (off by default) permit the model to propose Hanja, original foreign spellings, and corrected lexical boundaries even if Kiwi split or missed a word. Resegmentation requires model review plus at least one origin-proposal switch. Hanja must have exactly one character per Korean syllable; name protection remains. Batching follows the selected context budget, without an arbitrary 120/12 target cap. Review experimental results and API costs.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
