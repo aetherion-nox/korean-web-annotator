@@ -22,7 +22,7 @@ class RealPageBoundarySafety(unittest.IsolatedAsyncioTestCase):
  async def test_wenjin_street_never_borrows_song_hanja(self):
   self.add('문진가','問津歌','명사','조선 중종 때 주세붕이 지은 단가.')
   r=await self.analyze('문진가두 선거구',[('문진가','NNG',0),('두','NNG',3),
-         ('선거구','NNG',6)])
+         ('선거구','NNG',5)])
   self.assertFalse(any(a['replacement']=='問津歌' for a in r['annotations']),r)
   self.assertTrue(any(t['surface']=='문진가두' for t in r['boundary_risks']),r)
 
