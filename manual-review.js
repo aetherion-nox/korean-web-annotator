@@ -29,6 +29,43 @@ function parseAnswer(text){
  return response;
 }
 
+function explainRejectedManualResult(targets,rows,config){
+ const known=new Map(targets.map(t=>[t.target_id,t])),seen=new Set();
+ for(const row of rows){
+  if(!row||!known.has(row.target_id))return '包含不属于当前批次的 target_id：'+String(row?.target_id??'(缺失)');
+  if(seen.has(row.target_id))return '重复的 target_id：'+row.target_id;
+  seen.add(row.target_id);
+ }
+ for(const target of targets){
+  if(!seen.has(target.target_id))return '缺少 target_id：'+target.target_id+'（'+target.surface+'）';
+  const row=rows.find(r=>r.target_id===target.target_id);
+  if(validateChoices([target],{results:[row]},config).accepted.length)return null;
+  const preface='目标 '+target.target_id+'（'+target.surface+'）的 '+String(row.choice_id)+' 无效：';
+  if(row.choice_id==='GEN_SEGMENTS'){
+   if(!Array.isArray(row.segments)||!row.segments.length||row.segments.length>8)return preface+'segments 必须包含 1–8 个子词段。';
+   for(let i=0;i<row.segments.length;i++){
+    const p=row.segments[i],prev=row.segments[i-1],next=row.segments[i+1];
+    if(!p||!Number.isInteger(p.start)||!Number.isInteger(p.end)||p.start<0||p.end>target.surface.length||p.start>=p.end)
+     return preface+'第 '+(i+1)+' 段的 start/end 不在目标原文范围内。';
+    if(p.surface!==target.surface.slice(p.start,p.end))
+     return preface+'第 '+(i+1)+' 段 surface 与原文偏移不一致，应为 '+target.surface.slice(p.start,p.end)+'。';
+    if(p.start<(prev?.end??0))
+     return preface+'第 '+(i+1)+' 段与上一个词段重叠。';
+    if(p.end-p.start===1&&!((prev?.type==='hanja'&&prev.end===p.start&&p.type==='hanja')||
+       (next?.type==='hanja'&&p.end===next.start&&p.type==='hanja')))
+     return preface+'第 '+(i+1)+' 段为孤立单音节；单音节汉字语素仅在同一连续复合词内允许。';
+    if(p.type==='hanja'&&typeof p.replacement==='string'&&Array.from(p.replacement).length!==Array.from(p.surface||'').length)
+     return preface+'第 '+(i+1)+' 段的汉字数量与韩文字音节数不一致。';
+   }
+   return preface+'词源字符、模式开关、高置信度、字段或子词段结构未通过校验。';
+  }
+  if(row.choice_id==='GEN_HANJA'||row.choice_id==='GEN_LOANWORD')
+   return preface+'生成的 replacement、confidence、evidence 或模式开关未通过本地校验。';
+  return preface+'不是该目标当前允许的词典选项，或已被词性过滤排除。';
+ }
+ return '本批的结果数量或候选校验不通过。';
+}
+
 export function prepareManualRequest(config,targets){
  const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join('');
  const wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
@@ -63,7 +100,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
     const response=parseAnswer(message.text);
     if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
     const result=validateChoices(current.wireTargets,response,{reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,allowModelLoanword:current.allowModelLoanword,allowModelSegmentation:current.allowModelSegmentation});
-    if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果不完整，或包含重复/其他批次的 target_id、无效 choice_id。请完整复制本批结果，保留 ID 原样。');
+    if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果未应用：'+(explainRejectedManualResult(current.wireTargets,response.results,{reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,allowModelLoanword:current.allowModelLoanword,allowModelSegmentation:current.allowModelSegmentation})||'校验失败')+'。其余已正确的答案无需重新生成，修正该条后重新提交本批 JSON。');
     const mapped={results:result.accepted.map(({target,option})=>({target_id:current.targets[current.wireTargets.indexOf(target)].target_id,choice_id:option.choice_id,...(option.generated?{replacement:option.replacement,confidence:option.confidence,evidence:option.evidence,...(option.segmentationGenerated?{segments:option.segments}:{})}:{})}))};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:result.accepted.length});current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
