@@ -1,9 +1,9 @@
-import {loadPyodide} from './runtime/pyodide/pyodide.mjs';
-import {KiwiBuilder,Match} from './runtime/kiwi/index.js';
+let loadPyodide,KiwiBuilder,Match;
 let initialization,python,kiwi,kiwiInitialization;
 async function initializeKiwi(){
  if(kiwiInitialization)return kiwiInitialization;
  kiwiInitialization=(async()=>{
+  if(!KiwiBuilder)({KiwiBuilder,Match}=await import('./runtime/kiwi/index.js'));
   const assets=await (await fetch(new URL('./runtime/assets.json',import.meta.url))).json();
   const builder=await KiwiBuilder.create(new URL('./runtime/kiwi/kiwi-wasm.wasm',import.meta.url).href);
   if(builder.version()!==assets.kiwi_version)throw Error(`Kiwi version mismatch: ${builder.version()}`);
@@ -14,6 +14,9 @@ async function initializeKiwi(){
 async function initialize(){
  if(initialization)return initialization;
  initialization=(async()=>{
+  // Defer importing the large runtime until a request arrives. This also
+  // reports dependency import failures via the normal worker reply channel.
+  if(!loadPyodide)({loadPyodide}=await import('./runtime/pyodide/pyodide.mjs'));
   globalThis.kiwiTokens=text=>{if(!kiwi)throw Error('Tokenizer not initialized');return JSON.stringify(kiwi.tokenize(text,Match.all));};
   python=await loadPyodide({indexURL:new URL('./runtime/pyodide/',import.meta.url).href});await python.loadPackage('sqlite3');
   const sources=await (await fetch(new URL('./runtime/python-sources.json',import.meta.url))).json();
