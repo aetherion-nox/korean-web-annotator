@@ -52,7 +52,7 @@
   if(!row||!['GEN_HANJA','GEN_LOANWORD'].includes(row.choice_id)||
     !allowed(row,['target_id','choice_id','replacement','confidence','evidence'])||
     (row.confidence!==undefined&&row.confidence!=='high')||
-    (row.evidence!==undefined&&(typeof row.evidence!=='string'||row.evidence.length>240)))
+    (row.evidence!==undefined&&(typeof row.evidence!=='string'||!row.evidence.trim()||row.evidence.length>240)))
     return fail('GENERATED_SCHEMA','生成词源的字段或字形不符合协议');
   const type=row.choice_id==='GEN_HANJA'?'hanja':'loanword',replacement=row.replacement;
   if(!modality(config,type))return fail('MODE_DISABLED','当前模式不允许生成此类型的词源');
@@ -95,7 +95,7 @@
     typeof row.target_id!=='string'||!allowed(row,['target_id','choice_id','segments','confidence','evidence'])||
     !Array.isArray(row.segments)||!row.segments.length||row.segments.length>8||
     (row.confidence!==undefined&&row.confidence!=='high')||
-    (row.evidence!==undefined&&(typeof row.evidence!=='string'||row.evidence.length>240)))
+    (row.evidence!==undefined&&(typeof row.evidence!=='string'||!row.evidence.trim()||row.evidence.length>240)))
     return fail('SEGMENT_SCHEMA','GEN_SEGMENTS 的字段或 1–8 个子词段不符合协议');
   if(!HANGUL.test(target.surface))return fail('SEGMENT_SOURCE','完整词段须为 1–24 个连续谚文字');
   const aligned=canonicalize(target,row.segments);
