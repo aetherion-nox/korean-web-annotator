@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const SOURCE=fs.readFileSync(new URL('../engine-page.js',import.meta.url),'utf8');
-function setup({failFirst=true}={}){
+function setup({failCount=1}={}){
  let listener,created=0,terminated=0,uploads=0,saved=0;
  const files=new Map([['upload',{name:'fixture.db',kind:'db',bytes:new Uint8Array([1,2,3,4]).buffer}]]);
  const storage=async(action,key,value)=>{
@@ -19,7 +19,7 @@ function setup({failFirst=true}={}){
   terminate(){terminated++;}
   postMessage(message){
    queueMicrotask(()=>{
-    if(failFirst&&this.number===1)this.onerror({message:'',filename:'chrome-extension://abc/browser-worker.js',lineno:7});
+    if(this.number<=failCount)this.onerror({message:'',filename:'chrome-extension://abc/browser-worker.js',lineno:7});
     else this.onmessage({data:{id:message.id,ok:true,result:{database:new Uint8Array([9]).buffer,ready:true}}});
    });
   }
@@ -37,10 +37,18 @@ test('dictionary import retries fatal worker startup only once, re-reading trans
  const h=setup();
  const result=await h.send({action:'import',upload:'upload'});
  assert.equal(result.ok,true);
- assert.deepEqual(h.stats(),{created:2,terminated:2,uploads:2,saved:1});
+ assert.deepEqual(h.stats(),{created:2,terminated:1,uploads:2,saved:1});
 });
-test('a failed retry reports actionable module location without storing invalid dictionary',async()=>{
- const h=setup({failFirst:false});
+test('two worker failures stop after one retry and preserve stored dictionary',async()=>{
+ const h=setup({failCount:2});
+ const result=await h.send({action:'import',upload:'upload'});
+ assert.equal(result.ok,false);
+ assert.match(result.error,/KRA_WORKER_FATAL/);
+ assert.match(result.error,/browser-worker\.js/);
+ assert.deepEqual(h.stats(),{created:2,terminated:2,uploads:2,saved:0});
+});
+test('successful worker import does not retry',async()=>{
+ const h=setup({failCount:0});
  const result=await h.send({action:'import',upload:'upload'});
  assert.equal(result.ok,true);
  assert.equal(h.stats().created,1);
