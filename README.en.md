@@ -47,6 +47,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 **Experimental origin proposals and model resegmentation:** Three independent switches (off by default) permit the model to propose Hanja, original foreign spellings, and corrected lexical boundaries even if Kiwi split or missed a word. Resegmentation requires model review plus at least one origin-proposal switch. Hanja must have exactly one character per Korean syllable; name protection remains. Batching follows the selected context budget, without an arbitrary 120/12 target cap. Review experimental results and API costs.
 
+**New-install defaults and single-syllable protection:** Optional model review, preloading, name protection, experimental Hanja/foreign-origin proposals, resegmentation and manual chat review start enabled; POS filtering and review-all start disabled. A new enabled-by-default guard prevents local conversion of single Hangul syllables, while allowing existing dictionary choices to be reviewed by a model. Without valid review, Hangul remains. Explicit saved preferences are preserved.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
