@@ -63,6 +63,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
+**v1.1.67 mixed-result recovery:** Unknown IDs no longer discard unrelated valid decisions in automatic or manual reviews. Duplicate IDs invalidate only their own target; accepted decisions remain saved. Repair-prompt JSON examples now use an actual outstanding target ID instead of a hard-coded t0. A mismatched batch_id still rejects the submission.
+
 ## 5. Troubleshooting
 
 - **Nothing happens:** Check that the dictionary was imported, reload the extension, and refresh the page.
