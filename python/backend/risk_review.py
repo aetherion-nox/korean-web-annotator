@@ -39,13 +39,16 @@ async def uncertain_compounds(text, tokens, lookup, blocked=(), *, include_unlis
         a=token.start
         end=a+token.length
         parts=[token]
-        for nxt in ordered[i+1:]:
+        j=i+1
+        while j<len(ordered):
+            nxt=ordered[j]
             if nxt.start!=end or not valid(nxt) or len(parts)>=12:
                 break
             if nxt.start+nxt.length-a>24:
                 break
             parts.append(nxt)
             end=nxt.start+nxt.length
+            j+=1
         surface=text[a:end]
         if len(parts)>=2 and len(surface)<=24 and not blocked_range(a,end):
             proposals.append((a,end,surface,tuple(p.form for p in parts)))
