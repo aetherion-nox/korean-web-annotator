@@ -2,6 +2,7 @@ import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './lo
 import {filterReviewTarget} from './review-pos.js';
 import {generatedChoices} from './model-origin.js';
 import {segmentationTargets} from './segmentation-rescue.js';
+import {mergeResegmentationTargets} from './review-merge.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
@@ -85,17 +86,18 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }else diagnostic({stage:'skipped',level:'info',message:enabled?'没有待审核候选，本次无需调用模型。':'模型审核开关关闭，仅使用本地词典规则。'});
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
  if(config?.allowModelSegmentation===true){
-  let added=0;
+  let added=0,removed=0;
   for(const item of work){
    if((message.restrictToSelection===true||selectionReview)&&!item.sentence.selected?.length)continue;
    const extra=segmentationTargets(item.sentence.text,item.analysis,
       message.restrictToSelection===true||selectionReview?item.sentence.selected:[]);
    if(!extra.length)continue;
-   item.analysis={...item.analysis,targets:[...item.analysis.targets,...extra]};
-   added+=extra.length;
+   const combined=mergeResegmentationTargets(item.analysis,extra);
+   item.analysis={...item.analysis,targets:combined.targets};
+   added+=combined.added;removed+=combined.removed;
   }
-  stats.pending+=added;
-  diagnostic({stage:'segmentation',level:'warning',message:'实验性模型重新分词：追加 '+added+' 个基于原文的审核词段。按当前 32K/128K/256K/512K/1M 档位自动拆分批次，不再按固定数量静默截断；仅高置信度且经原文位置校验的结果会应用。'});
+  stats.pending+=added-removed;
+  diagnostic({stage:'segmentation',level:'warning',message:'实验性模型重新分词：追加 '+added+' 个原文词段，合并 '+removed+' 个与之重叠的词典审核目标。按现有上下文预算拆分批次；每个原文范围只审核一次。'});
  }
 
  const context=message.context || sentences.map(s=>s.text).join('\n');

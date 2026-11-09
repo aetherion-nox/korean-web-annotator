@@ -713,8 +713,8 @@
               const part=row.segments[i];
               if(part.end-part.start!==1)continue;
               const previous=row.segments[i-1],next=row.segments[i+1];
-              if(part.type!=='hanja'||!((previous?.type==='hanja'&&previous.end===part.start)||
-                  (next?.type==='hanja'&&part.end===next.start))){valid=false;break;}
+              if(!((previous&&previous.end===part.start)||
+                  (next&&part.end===next.start))){valid=false;break;}
             }
           }
           if(valid)choice={choice_id:'GEN_SEGMENTS',annotations};

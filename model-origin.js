@@ -63,9 +63,11 @@ export function validateGeneratedSegmentsRow(target,row,config={}){
   const part=segments[i];
   if(part.end-part.start!==1)continue;
   const previous=segments[i-1],next=segments[i+1];
-  const attached=part.type==='hanja'&&(
-   (previous?.type==='hanja'&&previous.end===part.start)||
-   (next?.type==='hanja'&&part.end===next.start));
+  const attached=(
+   (previous&&previous.end===part.start)||
+   (next&&part.end===next.start));
+  // One-syllable components may be part of an independently reviewed
+  // continuous multi-origin compound (팀장 → team長), never a lone guess.
   if(!attached)return null;
  }
  let replacement=target.surface;
