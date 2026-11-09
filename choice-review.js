@@ -1,9 +1,10 @@
 import {filterReviewTarget,filterReviewTargets} from './review-pos.js';
+import {generatedChoices,validateGeneratedRow} from './model-origin.js';
 import {qwenRequestSettings} from './qwen-api.js';
 import {readModelContent,choicePreviewParser} from './model-stream.js';
 import {requestLogger} from './request-log.js';
 import './model-catalog.js';
-import {buildReviewPayload,REVIEW_INSTRUCTIONS} from './review-payload.js';
+import {buildReviewPayload,reviewInstructions} from './review-payload.js';
 export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
  const rows=Array.isArray(response?.results)?response.results:[];
@@ -12,7 +13,7 @@ export function validateChoices(targets,response,config={}) {
  const invalid=rows.some(r=>!r || !known.has(r.target_id));
  for(const target of targets){
   const matches=rows.filter(r=>r?.target_id===target.target_id);
-  const option=matches.length===1 && filterReviewTarget(target,config).options.find(o=>o.choice_id===matches[0].choice_id);
+  const option=matches.length===1 && (filterReviewTarget(target,config).options.find(o=>o.choice_id===matches[0].choice_id) || validateGeneratedRow(target,matches[0],config));
   if(!invalid && option) accepted.push({target,option}); else unresolved.push(target);
  }
  return {accepted,unresolved};
@@ -41,7 +42,7 @@ export function safeDetail(value,config={}){
  return text.replace(/Bearer\s+[^\s"'<>]+/gi,'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,3000);
 }
 export function modelTargets(targets,config={}){
- return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),...(t.dictionary_person_name===true?{dictionary_person_name:true}:{}),...(t.dictionary_name_homograph===true?{dictionary_name_homograph:true}:{}),...(t.suspected_person_name===true?{suspected_person_name:true}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(o.subject_category?{subject_category:o.subject_category}:{}),...(o.semantic_category?{semantic_category:o.semantic_category}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
+ return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),...(t.dictionary_person_name===true?{dictionary_person_name:true}:{}),...(t.dictionary_name_homograph===true?{dictionary_name_homograph:true}:{}),...(t.suspected_person_name===true?{suspected_person_name:true}:{}),...(generatedChoices(t,config).length?{generated_choices:generatedChoices(t,config)}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(o.subject_category?{subject_category:o.subject_category}:{}),...(o.semantic_category?{semantic_category:o.semantic_category}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
 }
 export async function reviewTargets(config,targets,signal){
  if(!config.enableModelReview || !targets.length)return {accepted:[],unresolved:targets,errors:[]};
@@ -75,7 +76,7 @@ async function requestChoices(config,targets,signal){
  const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets,config);
  config.onDiagnostic?.({stage:'request',level:'info',message:`共享请求：${payloadStats.targets} 个词，${payloadStats.sentences} 份句子，${payloadStats.candidates} 个候选；用户输入 ${payloadStats.legacyUserBytes} → ${payloadStats.userBytes} 字节。`});
  let body={model:config.model,messages:[
-  {role:'system',content:REVIEW_INSTRUCTIONS},
+  {role:'system',content:reviewInstructions(config)},
   {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
  if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
  const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
@@ -100,7 +101,7 @@ async function requestChoices(config,targets,signal){
   const response=await fetch(config.endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:requestSignal});
   status=response.status;responseHeaders=Object.fromEntries(['content-type','x-request-id','request-id','retry-after'].map(name=>[name,response.headers.get(name)]).filter(([,v])=>v));
   if(!response.ok){const detail=await response.text();onRaw(detail);const error=Error(`模型 API HTTP ${response.status}`);error.detail=detail;error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
-  const preview=config.onPreview?choicePreviewParser(targets,config.onPreview):()=>{};
+  const preview=config.onPreview?choicePreviewParser(targets,config.onPreview,config):()=>{};
   const content=await readModelContent(response,{protocol:responses?'responses':provider==='anthropic'?'anthropic':'chat',signal:requestSignal,onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
   let result;try{if(typeof content!=='string'||!content.trim())throw Error('empty');result=JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}
   catch{const error=Error('模型最终回复为空、非 JSON 或不符合候选 ID 协议');error.detail=content||raw;throw error;}

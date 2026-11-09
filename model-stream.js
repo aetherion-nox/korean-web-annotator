@@ -1,7 +1,8 @@
+import {validateGeneratedRow} from './model-origin.js';
 // Protocol-specific SSE envelopes share one byte/framing reader. Reasoning is
 // retained only in the opt-in log, never parsed as dictionary choices.
 function streamError(message,detail=''){const e=Error(message);e.detail=detail;return e;}
-export function choicePreviewParser(targets,onPreview){
+export function choicePreviewParser(targets,onPreview,config={}){
  const known=new Map(targets.map(t=>[t.target_id,t]));
  let text='',position=0,array=false,start=-1,depth=0,string=false,escape=false,invalid=false;
  const rows=[];
@@ -20,7 +21,7 @@ export function choicePreviewParser(targets,onPreview){
     if(row)rows.push(row);changed=true;
    }}else if(c===']'&&depth===0){position=text.length;break;}
   }
-  if(changed){const accepted=invalid?[]:rows.flatMap(row=>{const target=known.get(row.target_id),option=target?.options.find(o=>o.choice_id===row.choice_id);return option?[{target,option}]:[];});onPreview(accepted);}
+  if(changed){const accepted=invalid?[]:rows.flatMap(row=>{const target=known.get(row.target_id),option=target&&(target.options.find(o=>o.choice_id===row.choice_id)||validateGeneratedRow(target,row,config));return option?[{target,option}]:[];});onPreview(accepted);}
  };
 }
 export async function readModelContent(response,{protocol='chat',signal,onStarted=()=>{},onDelta=()=>{},onRaw=()=>{},onMetadata=()=>{}}={}){
