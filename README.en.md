@@ -59,6 +59,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 **v1.1.65 incremental repair:** A generated subword with a single unambiguous match within its original target can have inaccurate start/end corrected locally. Isolated one-syllable readings require matching dictionary evidence and actual Kiwi nominal/particle boundaries. Manual review preserves already validated decisions and produces a smaller repair prompt; respond with only failed target IDs and the same batch_id. Ungrounded foreign personal-name guesses remain blocked.
 
+**v1.1.66 unified validation and partial repair:** Model review and browser-offline recovery now share the same generated-origin validator. Invalid choices report individual target IDs and reasons, while valid decisions survive retries; submit only missing/failed IDs using the original batch_id. Identical source/replacement segments become safe no-ops, and a dictionary-attested single-syllable noun can follow a verified attributive modifier. Consecutive clickable navigation items retain logical word boundaries.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
