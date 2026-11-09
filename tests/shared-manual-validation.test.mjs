@@ -185,3 +185,28 @@ test('wrong batch_id still rejects the entire manual submission before saving an
  })}),true);
  assert.equal((await pending).results.length,1);
 });
+
+test('compact generated rows require no evidence or confidence while dictionary IDs stay authorized',async()=>{
+ const t=segmentation('origin','학교');
+ const answer={target_id:'t0',choice_id:'GEN_SEGMENTS',segments:[
+  {start:0,end:2,surface:'학교',type:'hanja',replacement:'學校'}]};
+ assert.ok(validateGeneratedSegmentsRow({...t,target_id:'t0'},answer,flags));
+ const checked=core.validateBindingRow(binding({...t,target_id:'t0'}),answer,modes);
+ assert.equal(checked.ok,true);
+ assert.deepEqual(checked.normalizedRow,answer);
+ assert.equal(Object.hasOwn(checked.normalizedRow,'confidence'),false);
+ assert.equal(Object.hasOwn(checked.normalizedRow,'evidence'),false);
+ const events=[],session=createManualReviewSession({operationId:'compact',post:e=>events.push(e)});
+ const pending=session.request({context:'학교',...flags},[t]);
+ const id=events[0].requestId;
+ assert.doesNotMatch(events[0].text,/confidence:high|confidence exactly high/);
+ assert.equal(session.submit({operationId:'compact',requestId:id,
+   text:JSON.stringify({batch_id:id,results:[answer]})}),true);
+ assert.deepEqual((await pending).results,[{...answer,target_id:'origin'}]);
+ const dictionary={target_id:'d',surface:'학교',start:0,end:2,context:'학교',
+  options:[keep('학교'),{choice_id:'c0',type:'hanja',replacement:'學校',
+   entry_id:13,definitions:['school']}]};
+ assert.equal(validateChoices([dictionary],{results:[{target_id:'d',choice_id:'c0'}]},flags).accepted.length,1);
+ assert.equal(validateChoices([dictionary],{results:[{target_id:'d',choice_id:'c9'}]},flags).accepted.length,0);
+ assert.equal(validateChoices([dictionary],{results:[{target_id:'d',choice_id:'c0',replacement:'學校'}]},flags).accepted.length,0);
+});
