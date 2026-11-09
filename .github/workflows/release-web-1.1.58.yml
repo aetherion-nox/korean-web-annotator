@@ -20,6 +20,7 @@ jobs:
           node --check browser-worker.js
           node --check model-origin.js
           node --check segmentation-rescue.js
+          node --check review-payload.js
           node --check annotation-pipeline.js
           node --check content.js
           node --test tests/model-segmentation.test.mjs tests/browser-worker-failure.test.mjs tests/model-origin.test.mjs tests/model-origin-settings.test.mjs tests/review-pos.test.mjs tests/name-homograph-payload.test.mjs tests/manual-continuation.test.mjs
