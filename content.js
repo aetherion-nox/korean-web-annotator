@@ -767,22 +767,26 @@
     const incoming=response?.results;
     if(!Array.isArray(incoming))throw Error('结果缺少 results 数组。');
     const bindings=new Map(backup.bindings.map(b=>[b.target_id,b]));
-    const seen=new Set();
-    const illegal=[];
+    const groupsById=new Map(),errors=[];
     for(const row of incoming){
       const id=row?.target_id;
-      if(!bindings.has(id))illegal.push('未知 target_id：'+String(id??'(缺失)'));
-      else if(seen.has(id))illegal.push('重复 target_id：'+id);
-      seen.add(id);
+      if(!bindings.has(id)){
+        errors.push({id:String(id??'(缺失)'),reason:'未知 target_id（不属于当前批次）'});
+        continue;
+      }
+      if(!groupsById.has(id))groupsById.set(id,[]);
+      groupsById.get(id).push(row);
     }
-    if(illegal.length)throw Error('本批未应用新结果：'+illegal.slice(0,8).join('；')+(illegal.length>8?'（另有 '+(illegal.length-8)+' 条）':'')+'。已保存的有效结果不受影响。');
     const acceptedRows=new Map(task.manualRecoveryAccepted||[]);
-    const errors=[];
-    for(const row of incoming){
-      const binding=bindings.get(row.target_id);
-      const verified=core.validateBindingRow(binding,row,task.modes);
-      if(verified.ok)acceptedRows.set(row.target_id,verified.normalizedRow);
-      else errors.push({id:row.target_id,reason:verified.message+' ['+verified.code+']'});
+    for(const [id,submitted] of groupsById){
+      if(submitted.length!==1){
+        errors.push({id,reason:'重复 target_id：'+id+'（本次未采纳）'});
+        continue;
+      }
+      if(acceptedRows.has(id))continue;
+      const verified=core.validateBindingRow(bindings.get(id),submitted[0],task.modes);
+      if(verified.ok)acceptedRows.set(id,verified.normalizedRow);
+      else errors.push({id,reason:verified.message+' ['+verified.code+']'});
     }
     // Recheck persisted answers against THIS batch's source spans and modes.
     const verifiedRows=new Map();
@@ -808,6 +812,9 @@
       const explanation='本批已保留 '+verifiedRows.size+'/'+bindings.size+' 条有效答案，尚有 '+missing.length
         +' 条：'+errorsForPrompt.slice(0,8).map(e=>e.id+'（'+e.reason+'）').join('；')
         +(missing.length>8?'；其余请查看纠错提示词':'')+'。请只提交待修复 ID，保持 batch_id 不变。';
+      try{const count=previewManualAccepted(task,[...verifiedRows.values()]);
+        if(count)status('已预览 '+count+' 个标注；仍有 '+missing.length+' 个目标待修复');
+      }catch(error){addDiagnostic({level:'warning',message:'有效结果预览失败：'+error.message});}
       addDiagnostic({level:'warning',message:explanation});
       throw Error(explanation);
     }
@@ -870,7 +877,13 @@
     if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
     if(event.type==='MANUAL_REVIEW_ERROR'){
       clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
-      if(Array.isArray(event.acceptedRows))task.manualRecoveryAccepted=new Map(event.acceptedRows.map(r=>[r.target_id,r]));
+      if(Array.isArray(event.acceptedRows)){
+        task.manualRecoveryAccepted=new Map(event.acceptedRows.map(r=>[r.target_id,r]));
+        try{
+          const count=previewManualAccepted(task,event.acceptedRows);
+          if(count)status('已预览 '+count+' 个标注；继续修复剩余目标');
+        }catch(error){addDiagnostic({level:'warning',message:'合法答案暂时无法预览：'+error.message});}
+      }
       if(typeof event.repairPrompt==='string'&&event.repairPrompt.length){
         panel.querySelector('.kra-manual-prompt').value=event.repairPrompt;
         panel.querySelector('.kra-manual-response').value='';
@@ -977,7 +990,7 @@
     const task = { operationId, port, entries, paragraphPlan, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges, operation:[], historyRecorded:false };
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
     task.paint=paint;
-    task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
+    task.reconcile=()=>{let rolledBack=false;for(const entry of entries.values())if(entry.hasPreview){rolledBack=true;entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive||rolledBack)paint();};
     const byId = new Map([...entries.values()].map(entry => [entry.id, entry]));
     currentTask = task;
     status('加载词典…');
