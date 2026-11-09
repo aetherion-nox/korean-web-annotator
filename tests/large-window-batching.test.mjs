@@ -24,11 +24,11 @@ test('512K manual review handles 418 targets as one batch without an arbitrary d
 });
 test('32K still splits when real prompt plus reply exceeds the selected context',()=>{
  const {context,item}=dataset(418);
- // Short KEEP-only targets legitimately fit in 32K. Add realistic, longer
- // dictionary definitions to exceed input capacity without altering count.
+ // Identical dictionary senses are pooled once, so artificially repeated long
+ // definitions still fit. Use distinct entry IDs and senses to exceed 32K.
  const heavy={...item,result:{unresolved:item.result.unresolved.map(t=>({...t,options:[
-  ...t.options,{choice_id:'c0',type:'hanja',replacement:'問津歌',entry_id:100,
-   definitions:['词典义项语境说明'.repeat(80)]}
+  ...t.options,{choice_id:'c0',type:'hanja',replacement:'問津歌',entry_id:100+Number(t.target_id.slice(1)),
+   definitions:['词典义项语境说明'.repeat(80)+' #'+t.target_id]}
  ]}))}};
  const batches=contextReviewBatches([heavy],context,{tier:'32k',manual:true});
  assert.equal(batches.flatMap(x=>x.rows).length,418);

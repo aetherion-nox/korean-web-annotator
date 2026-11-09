@@ -34,6 +34,7 @@ jobs:
           node --check batch-budget.js
           node --check options.js
           node --check api-profiles.js
+          node --check service-worker.js
           node --check engine-settings.js
           node --test tests/large-window-batching.test.mjs tests/chunk-review.test.mjs tests/real-page-boundaries.test.mjs tests/risk-review.test.mjs tests/single-hangul-guard.test.mjs tests/model-segmentation.test.mjs tests/manual-segmentation-batch.test.mjs tests/browser-worker-failure.test.mjs tests/model-origin.test.mjs tests/model-origin-settings.test.mjs tests/review-pos.test.mjs tests/name-homograph-payload.test.mjs tests/manual-continuation.test.mjs
           PYTHONPATH=python/browser-support python3 tests/test_real_page_boundaries.py
