@@ -37,6 +37,7 @@
         "https://*/*"
       ],
       "js": [
+        "review-validation-core.js",
         "content.js"
       ],
       "css": [
