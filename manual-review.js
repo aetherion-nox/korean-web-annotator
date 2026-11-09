@@ -39,7 +39,7 @@ function explainRejectedManualResult(targets,rows,config){
  for(const target of targets){
   if(!seen.has(target.target_id))return '缺少 target_id：'+target.target_id+'（'+target.surface+'）';
   const row=rows.find(r=>r.target_id===target.target_id);
-  if(validateChoices([target],{results:[row]},config).accepted.length)return null;
+  if(validateChoices([target],{results:[row]},config).accepted.length)continue;
   const preface='目标 '+target.target_id+'（'+target.surface+'）的 '+String(row.choice_id)+' 无效：';
   if(row.choice_id==='GEN_SEGMENTS'){
    if(!Array.isArray(row.segments)||!row.segments.length||row.segments.length>8)return preface+'segments 必须包含 1–8 个子词段。';
