@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {segmentationTargets,MAX_SEGMENTATION_TARGETS} from '../segmentation-rescue.js';
+import {segmentationTargets} from '../segmentation-rescue.js';
 import {generatedChoices,validateGeneratedSegmentsRow} from '../model-origin.js';
 import {validateChoices} from '../choice-review.js';
 import {buildReviewPayload,buildManualPrompt} from '../review-payload.js';
@@ -89,9 +89,25 @@ test('rescue is not activated when experimental flag is disabled',async()=>{
  {status:async()=>({engine_version:'test',dictionary_fingerprint:'fixture'}),analyze,enabled:true,modelConfig:async()=>{throw Error('must not call modelConfig')}});
  assert.equal(events.find(e=>e.type==='DONE').stats.pending,0);
 });
-test('rescues have a conservative bounded budget',()=>{
- assert.equal(MAX_SEGMENTATION_TARGETS,120);
- const text=Array.from({length:50},()=>'학교생활').join(' ');
+test('rescues no longer silently truncate at twelve per sentence or 120 per operation',()=>{
+ const text=Array.from({length:155},()=>'학교생활').join(' ');
  const t=segmentationTargets(text,{annotations:[],targets:[],stats:{}});
- assert.equal(t.length,12);
+ assert.equal(t.length,155);
+ assert.equal(t.at(-1).surface,'학교생활');
 });
+test('a one-syllable Hanja morpheme is valid inside a contiguous compound',()=>{
+ const full=target('최고인민검찰원');
+ const response={target_id:full.target_id,choice_id:'GEN_SEGMENTS',confidence:'high',
+  evidence:'最高人民檢察院 is the documented compound term',
+  segments:[
+   {start:0,end:2,surface:'최고',type:'hanja',replacement:'最高'},
+   {start:2,end:4,surface:'인민',type:'hanja',replacement:'人民'},
+   {start:4,end:6,surface:'검찰',type:'hanja',replacement:'檢察'},
+   {start:6,end:7,surface:'원',type:'hanja',replacement:'院'}
+  ]};
+ const selected=validateGeneratedSegmentsRow(full,response,config);
+ assert.ok(selected);assert.equal(selected.replacement,'最高人民檢察院');
+ const standalone={...response,segments:[{start:6,end:7,surface:'원',type:'hanja',replacement:'院'}]};
+ assert.equal(validateGeneratedSegmentsRow(full,standalone,config),null);
+});
+
