@@ -3,9 +3,9 @@
 const HANGUL_RUN=/(?<![가-힣])[가-힣]{2,24}(?![가-힣])/gu;
 const overlaps=(a,b)=>a.start<b.end&&b.start<a.end;
 export function segmentationTargets(text,analysis,selected=[]){
- // We cannot safely infer missing name coordinates from a count-only backend response.
- // Conservatively avoid entire sentences with protected names.
- if(Number(analysis?.stats?.protected_names||0)>0)return [];
+ // Protect only known names, not the entire paragraph in which a name occurs.
+ // Older engines with count-only protection retain the conservative fallback.
+ if(!Array.isArray(analysis?.protected_name_spans)&&Number(analysis?.stats?.protected_names||0)>0)return [];
  const existing=[...(analysis?.annotations||[]),...(analysis?.targets||[])].sort((a,b)=>a.start-b.start||a.end-b.end);
  let existingCursor=0;
  const grammatical=analysis?.suffix_spans||[];
@@ -25,12 +25,18 @@ export function segmentationTargets(text,analysis,selected=[]){
  for(const match of text.matchAll(HANGUL_RUN)){
   const start=match.index,end=start+match[0].length,span={start,end};
   if(allowed.length&&!allowed.some(r=>start>=r.start&&end<=r.end))continue;
-  if(protectedTargets.some(t=>overlaps(span,t)))continue;
+  if(protectedTargets.some(t=>overlaps(span,t))||
+    (analysis?.protected_name_spans||[]).some(t=>overlaps(span,t)))continue;
   while(existingCursor<existing.length&&existing[existingCursor].end<=start)existingCursor++;
   const overlapsExisting=[];
   for(let j=existingCursor;j<existing.length&&existing[j].start<end;j++){
    if(existing[j].end>start)overlapsExisting.push(existing[j]);
   }
+  const risky=(analysis?.boundary_risks||[]).some(t=>overlaps(span,t))||
+    (analysis?.targets||[]).some(t=>overlaps(span,t)&&(t.partial_word||t.boundary_unverified));
+  // Avoid reviewing every menu item and every ordinary inflected word. A
+  // concrete source-boundary warning must exist before raw resegmentation.
+  if(!risky)continue;
   if(overlapsExisting.some(x=>x.start===start&&x.end===end))continue;
   const whole=(analysis?.confirmed_whole_spans||[]).some(w=>w.start===start&&
     (w.end===end||(w.end<end&&suffixCovers(w.end,end))));
@@ -42,7 +48,7 @@ export function segmentationTargets(text,analysis,selected=[]){
     overlapsExisting[0].start===start&&overlapsExisting[0].end<end&&
     suffixCovers(overlapsExisting[0].end,end))continue;
   const covered=Array.from({length:end-start},(_,i)=>overlapsExisting.some(x=>x.start<=start+i&&x.end>start+i)).every(Boolean);
-  if(covered&&overlapsExisting.length<=1)continue;
+  if(covered&&overlapsExisting.length<=1&&!risky)continue;
   const options=[{choice_id:'KEEP',type:'keep',replacement:match[0],entry_id:null,definitions:[]}];
   targets.push({target_id:'seg'+start+'-'+end,start,end,surface:match[0],context:text,
     segmentation_review:true,options});

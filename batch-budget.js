@@ -1,6 +1,9 @@
 import {buildReviewPayload,buildManualPrompt,reviewInstructions} from './review-payload.js';
 import {generatedChoices} from './model-origin.js';
 
+// The total target count is never truncated; review requests are divided
+// into smaller semantic decision batches regardless of very large context tiers.
+export const MAX_REVIEW_DECISIONS=64;
 export const normalizeBatchContextTier=value=>['32k','128k','256k','512k','1m'].includes(value)?value:'32k';
 // This is a multilingual byte heuristic, not any provider's exact tokenizer.
 export const estimateTokenCount=text=>Math.ceil(new TextEncoder().encode(text||'').length/3);
@@ -43,7 +46,7 @@ export function contextReviewBatches(items,context='',{tier='128k',manual=false,
    const budget=describeBatchBudget(ownContext,group.map(r=>r.target),{tier,manual,reviewPosFilter,allowModelHanja,allowModelLoanword,allowModelSegmentation}),value={rows:group,items:[...new Set(group.map(r=>r.item))],context:ownContext,budget};memo.set(count,value);return value;
   };
   if(!fits(evaluate(1).budget))throw Error(`单个待选词及其完整上下文/释义超出 ${evaluate(1).budget.label} 输入或答案预算；请选更大档位或缩小文本范围。`);
-  const remaining=rows.length-start;let low=1,high=remaining;
+  const remaining=Math.min(MAX_REVIEW_DECISIONS,rows.length-start);let low=1,high=remaining;
   for(let count=2;count<=remaining;count=Math.min(count*2,remaining)){
    if(!fits(evaluate(count).budget)){high=count-1;break;}
    low=count;if(count===remaining)break;
@@ -51,7 +54,7 @@ export function contextReviewBatches(items,context='',{tier='128k',manual=false,
   while(low<high){const middle=Math.ceil((low+high)/2);if(fits(evaluate(middle).budget))low=middle;else high=middle-1;}
   const batch=evaluate(low);
   const next=low<remaining?evaluate(low+1).budget:null;
-  batch.budget.limitReason=next?(next.outputTokens>next.outputLimit?'output':'context'):'end';
+  batch.budget.limitReason=low===MAX_REVIEW_DECISIONS?'decision_count':next?(next.outputTokens>next.outputLimit?'output':'context'):'end';
   // Page-wide context is optional; every occurrence's actual sentence is mandatory.
   if(context&&context.length<=batch.budget.contextTokens*3){
    const full=describeBatchBudget(context,batch.rows.map(r=>r.target),{tier,manual,reviewPosFilter,allowModelHanja,allowModelLoanword,allowModelSegmentation});
