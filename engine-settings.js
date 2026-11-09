@@ -64,11 +64,11 @@ const experimentalOriginCopy={
 };
 for(const [locale,labels] of Object.entries(experimentalOriginCopy))Object.assign(copy[locale],labels);
 const modelSegmentationCopy={
- 'zh-CN':['实验：允许模型重新分词（默认关闭）','模型可以检查 Kiwi 切错或漏掉的原文词段，返回新的词边界及词源；不改变 Kiwi。本项需要同时启用模型审核，并至少开启一种实验词源补充（汉字词或外来语）。仅在原文完整对齐、高置信度、词源格式安全时应用；含已保护姓名的句子不补审。最多每次 120 个词段，每句 12 个；无效结果保留原文。'],
- 'zh-TW':['實驗：允許模型重新斷詞（預設關閉）','模型可檢查 Kiwi 切錯或遺漏的原文詞段並提出新的邊界，不改變 Kiwi。須同時開啟模型審核及至少一種實驗詞源補充；僅採用完整對齊、可信且安全的詞源。含受保護姓名的句子不補審，單次最多 120 個、每句 12 個。'],
- en:['Experimental: allow model resegmentation (off by default)','Model may find full lexical units in unhandled raw Korean spans even when Kiwi splits them incorrectly. Requires model review and at least one origin-generation toggle. Applies only high-confidence, exact-offset validated origins, excluding protected-name sentences. Capped at 120 spans per operation, 12 per sentence.'],
- ja:['実験：モデルによる再分かち書き（初期設定は無効）','Kiwi の誤分割や見落としを原文から再解析します。モデル審査と漢字語・外来語の生成許可のいずれかが必要です。原文位置と語源を検証し、人名保護を含む文は除外。1回120箇所、1文12箇所まで。'],
- ko:['실험: 모델이 다시 형태소 분리 (기본 꺼짐)','Kiwi가 잘못 분리하거나 놓친 한글 구간에서 모델이 전체 어휘 경계를 다시 제안합니다. 모델 검토 및 한자어/외래어 생성 허용 중 하나가 필요합니다. 원문 범위와 어원을 검증하며, 보호된 인명이 있는 문장은 제외합니다. 작업당 최대 120개, 문장당 12개.']
+ 'zh-CN':['实验：允许模型重新分词（默认关闭）','模型可以检查 Kiwi 切错或漏掉的原文词段，返回新的词边界及词源；不改变 Kiwi。本项需要同时启用模型审核，并至少开启一种实验词源补充（汉字词或外来语）。仅在原文完整对齐、高置信度、词源格式安全时应用；含已保护姓名的句子不补审。不限制固定词段数量，按所选上下文容量自动拆分批次；无效结果保留原文。'],
+ 'zh-TW':['實驗：允許模型重新斷詞（預設關閉）','模型可檢查 Kiwi 切錯或遺漏的原文詞段並提出新的邊界，不改變 Kiwi。須同時開啟模型審核及至少一種實驗詞源補充；僅採用完整對齊、可信且安全的詞源。含受保護姓名的句子不補審，依所選上下文容量自動分批，不會以固定詞段數量截斷。'],
+ en:['Experimental: allow model resegmentation (off by default)','Model may find full lexical units in unhandled raw Korean spans even when Kiwi splits them incorrectly. Requires model review and at least one origin-generation toggle. Applies only high-confidence, exact-offset validated origins, excluding protected-name sentences. Splits review work by the selected context budget rather than silently dropping spans at a fixed count.'],
+ ja:['実験：モデルによる再分かち書き（初期設定は無効）','Kiwi の誤分割や見落としを原文から再解析します。モデル審査と漢字語・外来語の生成許可のいずれかが必要です。原文位置と語源を検証し、人名保護を含む文は除外。固定件数で打ち切らず、選択したコンテキスト容量に応じて自動分割します。'],
+ ko:['실험: 모델이 다시 형태소 분리 (기본 꺼짐)','Kiwi가 잘못 분리하거나 놓친 한글 구간에서 모델이 전체 어휘 경계를 다시 제안합니다. 모델 검토 및 한자어/외래어 생성 허용 중 하나가 필요합니다. 원문 범위와 어원을 검증하며, 보호된 인명이 있는 문장은 제외합니다. 고정 개수로 조기 종료하지 않고 선택한 컨텍스트 예산에 맞게 자동 분할합니다.']
 };
 for(const [locale,labels] of Object.entries(modelSegmentationCopy))Object.assign(copy[locale],{allowModelSegmentation:labels[0],allowModelSegmentationHint:labels[1]});
 const t=key=>(copy[$('uiLocale').value]||copy.en)[key];
