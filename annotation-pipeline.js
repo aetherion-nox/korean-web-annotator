@@ -1,7 +1,7 @@
 import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './local-engine.js';
 import {filterReviewTarget} from './review-pos.js';
 import {generatedChoices} from './model-origin.js';
-import {segmentationTargets,MAX_SEGMENTATION_TARGETS} from './segmentation-rescue.js';
+import {segmentationTargets} from './segmentation-rescue.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
@@ -75,19 +75,17 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }else diagnostic({stage:'skipped',level:'info',message:enabled?'没有待审核候选，本次无需调用模型。':'模型审核开关关闭，仅使用本地词典规则。'});
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
  if(config?.allowModelSegmentation===true){
-  let remaining=MAX_SEGMENTATION_TARGETS,added=0;
+  let added=0;
   for(const item of work){
-   if(!remaining)break;
    if((message.restrictToSelection===true||selectionReview)&&!item.sentence.selected?.length)continue;
    const extra=segmentationTargets(item.sentence.text,item.analysis,
-      message.restrictToSelection===true||selectionReview?item.sentence.selected:[],
-      {max:Math.min(remaining,12)});
+      message.restrictToSelection===true||selectionReview?item.sentence.selected:[]);
    if(!extra.length)continue;
    item.analysis={...item.analysis,targets:[...item.analysis.targets,...extra]};
-   remaining-=extra.length;added+=extra.length;
+   added+=extra.length;
   }
   stats.pending+=added;
-  diagnostic({stage:'segmentation',level:'warning',message:'实验性模型重新分词：追加 '+added+' 个基于原文的审核词段'+(remaining===0?'（已达到单次上限）':'')+'。仅高置信度且经原文位置校验的结果会应用。'});
+  diagnostic({stage:'segmentation',level:'warning',message:'实验性模型重新分词：追加 '+added+' 个基于原文的审核词段。按当前 32K/128K/256K/512K/1M 档位自动拆分批次，不再按固定数量静默截断；仅高置信度且经原文位置校验的结果会应用。'});
  }
 
  const context=message.context || sentences.map(s=>s.text).join('\n');

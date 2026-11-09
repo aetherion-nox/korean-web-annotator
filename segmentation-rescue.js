@@ -1,11 +1,8 @@
-// Optional, bounded recovery for whole words Kiwi may have split incorrectly.
+// Opt-in recovery for whole words Kiwi may have split incorrectly.
 // Uses raw Hangul runs, not Kiwi spans. No LLM response can change source offsets.
 const HANGUL_RUN=/(?<![가-힣])[가-힣]{2,24}(?![가-힣])/gu;
-export const MAX_SEGMENTATION_TARGETS=120;
-const MAX_PER_SENTENCE=12;
 const overlaps=(a,b)=>a.start<b.end&&b.start<a.end;
-export function segmentationTargets(text,analysis,selected=[],{max=MAX_PER_SENTENCE}={}){
- if(!Number.isInteger(max)||max<=0)return [];
+export function segmentationTargets(text,analysis,selected=[]){
  // We cannot safely infer missing name coordinates from a count-only backend response.
  // Conservatively avoid entire sentences with protected names.
  if(Number(analysis?.stats?.protected_names||0)>0)return [];
@@ -26,7 +23,6 @@ export function segmentationTargets(text,analysis,selected=[],{max=MAX_PER_SENTE
   const options=[{choice_id:'KEEP',type:'keep',replacement:match[0],entry_id:null,definitions:[]}];
   targets.push({target_id:'seg'+start+'-'+end,start,end,surface:match[0],context:text,
     segmentation_review:true,options});
-  if(targets.length>=max)break;
  }
  return targets;
 }
