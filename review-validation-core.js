@@ -107,6 +107,13 @@
     entry_id:null,definitions:[]},{target_id:row.target_id,choice_id:'KEEP'});
   let replacement=target.surface;
   for(const part of [...parts].reverse())replacement=replacement.slice(0,part.start)+part.replacement+replacement.slice(part.end);
+  // If the model explicitly asserts "surface(漢字)" for the whole target,
+  // the asserted full etymology must agree with the proposed annotations.
+  // This detects self-contradictory *claims* without a dictionary whitelist.
+  const wholeAssertions=[...row.evidence.matchAll(/([가-힣]{2,24})\s*[（(]([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]+)[）)]/gu)]
+    .filter(m=>m[1]===target.surface).map(m=>m[2]);
+  if(wholeAssertions.length&&!wholeAssertions.includes(replacement))
+   return fail('EVIDENCE_CONTRADICTION','模型声称的完整汉字词源与实际转换片段不一致，请重审完整词');
   const value={choice_id:'GEN_SEGMENTS',type:'mixed',replacement,segments:parts,
     entry_id:null,definitions:[],generated:true,segmentationGenerated:true,
     confidence:'high',evidence:row.evidence.trim()};
