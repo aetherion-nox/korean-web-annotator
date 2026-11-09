@@ -46,7 +46,7 @@ export function validateGeneratedSegmentsRow(target,row,config={}){
  for(const part of row.segments){
   if(!part||typeof part!=='object'||Object.keys(part).some(k=>!['start','end','surface','type','replacement'].includes(k))||
     !Number.isInteger(part.start)||!Number.isInteger(part.end)||part.start<last||
-    part.end>target.surface.length||part.end<=part.start||part.end-part.start<2||
+    part.end>target.surface.length||part.end<=part.start||
     typeof part.surface!=='string'||target.surface.slice(part.start,part.end)!==part.surface||
     !['hanja','loanword'].includes(part.type))return null;
   const choice_id=part.type==='hanja'?GENERATED_HANJA:GENERATED_LOANWORD;
@@ -56,6 +56,17 @@ export function validateGeneratedSegmentsRow(target,row,config={}){
   if(!provisional)return null;
   segments.push({start:part.start,end:part.end,surface:part.surface,type:part.type,replacement:part.replacement});
   last=part.end;
+ }
+ // One-syllable Hanja morphemes are legal inside a contiguous compound
+ // (e.g. 檢察 + 院), but not as isolated proposals inside unrelated Korean text.
+ for(let i=0;i<segments.length;i++){
+  const part=segments[i];
+  if(part.end-part.start!==1)continue;
+  const previous=segments[i-1],next=segments[i+1];
+  const attached=part.type==='hanja'&&(
+   (previous?.type==='hanja'&&previous.end===part.start)||
+   (next?.type==='hanja'&&part.end===next.start));
+  if(!attached)return null;
  }
  let replacement=target.surface;
  for(const part of [...segments].reverse())replacement=replacement.slice(0,part.start)+part.replacement+replacement.slice(part.end);
