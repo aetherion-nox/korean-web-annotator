@@ -1,9 +1,18 @@
 import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './local-engine.js';
 import {filterReviewTarget} from './review-pos.js';
 import {generatedChoices} from './model-origin.js';
+import {segmentationTargets,MAX_SEGMENTATION_TARGETS} from './segmentation-rescue.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
+function annotationsFromAccepted(text,accepted){
+ const projected=a=>projectAnnotation(text,{...a.target,...a.option,start:a.target.start,end:a.target.end,surface:a.target.surface,context:a.target.context});
+ const segmented=accepted.filter(a=>a.option.segmentationGenerated===true).flatMap(projected);
+ const others=accepted.filter(a=>a.option.type!=='keep'&&!a.option.segmentationGenerated).flatMap(projected);
+ const clean=[];
+ for(const a of [...segmented].sort((a,b)=>a.start-b.start||a.end-b.end))if(!clean.some(x=>a.start<x.end&&x.start<a.end))clean.push(a);
+ return [...others.filter(a=>!clean.some(b=>a.start<b.end&&b.start<a.end)),...clean].sort((a,b)=>a.start-b.start||a.end-b.end);
+}
 export const CACHE_KEY='kraDictionaryReviewCacheV1Alignment3';
 export async function runSentencePipeline(message,post,{signal,analyze=analyzeLocal,status=engineStatus,modelConfig,enabled=false,cache=new Map(),persist=async()=>{}}={}){
  const sentences=message.sentences;
@@ -13,7 +22,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  enabled=enabled || reviewAll;
  if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>5000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
  const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
- const stats={local_determined:0,pending:0,model_resolved:0,model_generated_hanja:0,model_generated_loanword:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
+ const stats={local_determined:0,pending:0,model_resolved:0,model_generated_hanja:0,model_generated_loanword:0,model_resegmented:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
  const loading=progress=>emit('LOCAL_PROGRESS',progress);
@@ -60,18 +69,33 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  if(stats.protected_names)diagnostic({stage:'rules',level:'info',message:`已按完整名称范围保留 ${stats.protected_names} 处疑似姓名，未使用内部普通词义替换。`,detail:JSON.stringify({protected_names:stats.protected_names})});
  if(hasOriginalCounts)diagnostic({stage:'rules',level:'info',message:`原作者规则：自动转换 ${stats.upstream_converted}，歧义 ${stats.upstream_ambiguous}，未匹配 ${stats.upstream_no_match}；本地标注 ${stats.local_determined}，待审核 ${stats.pending}。`,detail:JSON.stringify({upstream_converted:stats.upstream_converted,upstream_ambiguous:stats.upstream_ambiguous,upstream_no_match:stats.upstream_no_match,upstream_kept:stats.upstream_kept,local_determined:stats.local_determined,pending:stats.pending,structural_rejections:stats.structural_rejections,rejected_options:stats.rejected_options,skipped_mixed:stats.skipped_mixed})});
  let config;
- if(enabled && work.some(w=>w.analysis.targets.length)){
+ if(enabled && (work.some(w=>w.analysis.targets.length)||message.experimentalSegmentation===true)){
   try{config=await modelConfig();if(!config)throw Error('没有可用模型配置');}
   catch(error){config=null;diagnostic({stage:'configuration',level:'error',message:`模型配置不可用：${error.message}`});}
  }else diagnostic({stage:'skipped',level:'info',message:enabled?'没有待审核候选，本次无需调用模型。':'模型审核开关关闭，仅使用本地词典规则。'});
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
+ if(config?.allowModelSegmentation===true){
+  let remaining=MAX_SEGMENTATION_TARGETS,added=0;
+  for(const item of work){
+   if(!remaining)break;
+   if((message.restrictToSelection===true||selectionReview)&&!item.sentence.selected?.length)continue;
+   const extra=segmentationTargets(item.sentence.text,item.analysis,
+      message.restrictToSelection===true||selectionReview?item.sentence.selected:[],
+      {max:Math.min(remaining,12)});
+   if(!extra.length)continue;
+   item.analysis={...item.analysis,targets:[...item.analysis.targets,...extra]};
+   remaining-=extra.length;added+=extra.length;
+  }
+  stats.pending+=added;
+  diagnostic({stage:'segmentation',level:'warning',message:'实验性模型重新分词：追加 '+added+' 个基于原文的审核词段'+(remaining===0?'（已达到单次上限）':'')+'。仅高置信度且经原文位置校验的结果会应用。'});
+ }
 
  const context=message.context || sentences.map(s=>s.text).join('\n');
  const progressive=message.progressiveAnnotation===true;
  const lastPublished=new Map();
  const publishModel=(item,preview=[],provisional=false)=>{
   const accepted=[...item.result.accepted,...preview];
-  const additions=accepted.filter(a=>a.option.type!=='keep').flatMap(a=>projectAnnotation(item.sentence.text,{...a.target,...a.option,start:a.target.start,end:a.target.end,surface:a.target.surface,context:a.target.context}));
+  const additions=annotationsFromAccepted(item.sentence.text,accepted);
   const signature=JSON.stringify([additions,accepted.map(a=>a.target.target_id),provisional]);
   if(lastPublished.get(item)===signature||(!accepted.length&&!lastPublished.has(item)))return;lastPublished.set(item,signature);
   emit('RESULTS',{source:'model',replaceModel:true,provisional,results:[{id:item.sentence.id,annotations:additions,reviewed:accepted.map(a=>({start:a.target.start,end:a.target.end,surface:a.target.surface}))}]});
@@ -83,7 +107,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify(['id-review-v18-experimental-origins',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,config.allowModelHanja===true,config.allowModelLoanword===true,!!config.disableThinking,config.reasoningEffort]);
+   const fingerprint=JSON.stringify(['id-review-v18-experimental-origins',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,config.allowModelHanja===true,config.allowModelLoanword===true,config.allowModelSegmentation===true,!!config.disableThinking,config.reasoningEffort]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
    const cached=!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
@@ -93,13 +117,13 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  reportProgress();
  const tier=normalizeBatchContextTier(config?.batchContextTier);
- const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword}):sentenceReviewBatches(pending,context);
+ const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword,allowModelSegmentation:config?.allowModelSegmentation}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword,allowModelSegmentation:config?.allowModelSegmentation}):sentenceReviewBatches(pending,context);
  const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
   const targets=batch.rows?batch.rows.map(({item,target},i)=>{const id=`b0t${i}`;owners.set(id,{item,target});return {...target,target_id:id};}):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
    const id=`b${i}t${j}`;owners.set(id,{item,target});return {...target,target_id:id};
   }));
-  const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,generatedChoices:generatedChoices(target,config),choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
+  const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,segmentationReview:target.segmentation_review===true,generatedChoices:generatedChoices(target,config),choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
   const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
   return {owners,targets,manualBindings,manualPrepared};
  });
@@ -115,15 +139,16 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    const answered=new Set(item.result.accepted.map(a=>a.target.target_id));
    item.result.unresolved=item.analysis.targets.filter(t=>!answered.has(t.target_id));
    const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,item.analysis.targets,batch.context]);
-   if(!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id,...(a.option.generated?{replacement:a.option.replacement,confidence:a.option.confidence,evidence:a.option.evidence}:{})}))});
+   if(!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id,...(a.option.generated?{replacement:a.option.replacement,confidence:a.option.confidence,evidence:a.option.evidence,...(a.option.segmentationGenerated?{segments:a.option.segments}:{})}:{})}))});
   }
   await persist(cache);
  }
  for(const {sentence,analysis,result} of work){
-  const additions=result.accepted.filter(a=>a.option.type!=='keep').flatMap(a=>projectAnnotation(sentence.text,{...a.target,...a.option,start:a.target.start,end:a.target.end,surface:a.target.surface,context:a.target.context}));
+  const additions=annotationsFromAccepted(sentence.text,result.accepted);
   stats.model_resolved+=result.accepted.filter(a=>a.option.type!=='keep').length;
-  stats.model_generated_hanja+=result.accepted.filter(a=>a.option.generated&&a.option.type==='hanja').length;
-  stats.model_generated_loanword+=result.accepted.filter(a=>a.option.generated&&a.option.type==='loanword').length;
+  stats.model_generated_hanja+=result.accepted.filter(a=>a.option.generated&&a.option.type==='hanja').length+result.accepted.filter(a=>a.option.segmentationGenerated).flatMap(a=>a.option.segments).filter(s=>s.type==='hanja').length;
+  stats.model_generated_loanword+=result.accepted.filter(a=>a.option.generated&&a.option.type==='loanword').length+result.accepted.filter(a=>a.option.segmentationGenerated).flatMap(a=>a.option.segments).filter(s=>s.type==='loanword').length;
+  stats.model_resegmented+=result.accepted.filter(a=>a.option.segmentationGenerated).length;
   stats.unresolved+=result.unresolved.length+result.accepted.filter(a=>a.option.type==='keep').length;
   if(enabled)emit('RESULTS',{source:'model',replaceModel:true,results:[{id:sentence.id,annotations:additions,reviewed:result.accepted.map(a=>({start:a.target.start,end:a.target.end,surface:a.target.surface}))}]});
  }

@@ -1,6 +1,6 @@
 // Optional, bounded recovery for whole words Kiwi may have split incorrectly.
 // Uses raw Hangul runs, not Kiwi spans. No LLM response can change source offsets.
-const HANGUL_RUN=/[가-힣]{2,24}/gu;
+const HANGUL_RUN=/(?<![가-힣])[가-힣]{2,24}(?![가-힣])/gu;
 export const MAX_SEGMENTATION_TARGETS=120;
 const MAX_PER_SENTENCE=12;
 const overlaps=(a,b)=>a.start<b.end&&b.start<a.end;
