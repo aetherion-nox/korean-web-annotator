@@ -44,7 +44,7 @@ class UnlistedLexicalRecovery(unittest.IsolatedAsyncioTestCase):
 
     async def test_unlisted_standalone_noun_without_dictionary_components(self):
         r=await self.analyze('사회정보위원회를',[
-            ('사회정보위원회','NNG',0),('를','JKO',8)
+            ('사회정보위원회','NNG',0),('를','JKO',7)
         ])
         self.assertTrue(any(x['surface']=='사회정보위원회' and x['reason']=='unlisted_nominal_headword'
                             for x in r['boundary_risks']),r)
@@ -67,7 +67,7 @@ class UnlistedLexicalRecovery(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(x['reason']=='unlisted_nominal_headword' for x in r['boundary_risks']),r)
 
     async def test_native_inflected_predicate_does_not_become_missing_noun(self):
-        r=await self.analyze('아름답게',[('아름답','VA',0),('게','EC',4)])
+        r=await self.analyze('아름답게',[('아름답','VA',0),('게','EC',3)])
         self.assertFalse(any(x['reason']=='unlisted_nominal_headword' for x in r['boundary_risks']),r)
 
     async def test_actual_person_protection_uses_source_spans(self):
