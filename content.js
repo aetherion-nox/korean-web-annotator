@@ -686,6 +686,31 @@
           choice={choice_id:row.choice_id,annotations:[{start:binding.start,end:binding.end,surface:source,replacement:value,type:hanja?'hanja':'loanword'}]};
         }
       }
+      if(!choice&&binding?.segmentationReview&&binding.generatedChoices?.includes('GEN_SEGMENTS')&&row?.choice_id==='GEN_SEGMENTS'){
+        const source=binding.surface;
+        const ok=row.confidence==='high'&&typeof row.evidence==='string'&&row.evidence.trim()&&row.evidence.length<=240&&
+          Object.keys(row).every(k=>['target_id','choice_id','segments','confidence','evidence'].includes(k))&&
+          Array.isArray(row.segments)&&row.segments.length>0&&row.segments.length<=8&&
+          typeof source==='string'&&/^[가-힣]{2,24}$/u.test(source);
+        if(ok){
+          let end=0,valid=true;const annotations=[];
+          for(const p of row.segments){
+            if(!p||typeof p!=='object'||Object.keys(p).some(k=>!['start','end','surface','type','replacement'].includes(k))||
+               !Number.isInteger(p.start)||!Number.isInteger(p.end)||p.start<end||p.end>source.length||p.end-p.start<2||
+               p.surface!==source.slice(p.start,p.end)||typeof p.replacement!=='string'||
+               p.replacement!==p.replacement.trim()||p.replacement!==p.replacement.normalize('NFC')||
+               !['hanja','loanword'].includes(p.type)){valid=false;break;}
+            const hanja=p.type==='hanja';
+            const safe=hanja?task.modes.hanja&&/^[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]+$/u.test(p.replacement)&&Array.from(p.replacement).length===p.end-p.start:
+              task.modes.loanword&&/^[\p{L}\p{M}\p{N} .,'’+\-/&]{1,100}$/u.test(p.replacement)&&!/[\p{Script=Hangul}\p{Script=Han}]/u.test(p.replacement)&&/[\p{L}]/u.test(p.replacement);
+            if(!safe){valid=false;break;}
+            annotations.push({start:binding.start+p.start,end:binding.start+p.end,surface:p.surface,
+              replacement:p.replacement,type:p.type});
+            end=p.end;
+          }
+          if(valid)choice={choice_id:'GEN_SEGMENTS',annotations};
+        }
+      }
       if(!binding||seen.has(row.target_id)||!choice)throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
       seen.add(row.target_id);accepted.push({binding,choice});
     }
@@ -694,7 +719,7 @@
       const entry=entries.get(b.sentenceId);
       if(!entry||!Number.isInteger(b.start)||!Number.isInteger(b.end)||b.start<0||b.end<=b.start||entry.text.slice(b.start,b.end)!==b.surface)throw Error('当前批次的原文位置已失效，未应用任何答案。');
       if(!groups.has(entry))groups.set(entry,{annotations:[],reviewed:[]});const group=groups.get(entry);
-      if(entry.selected.some(r=>b.start>=r.start&&b.end<=r.end))group.reviewed.push({start:b.start,end:b.end});
+      if(!binding.segmentationReview&&entry.selected.some(r=>b.start>=r.start&&b.end<=r.end))group.reviewed.push({start:b.start,end:b.end});
       for(const a of b.annotations){
         if(!Number.isInteger(a.start)||!Number.isInteger(a.end)||a.start<0||a.end<=a.start||entry.text.slice(a.start,a.end)!==a.surface||typeof a.replacement!=='string'||!['hanja','loanword'].includes(a.type))throw Error('恢复数据的标注位置无效，未应用任何答案。');
         if(task.modes[a.type==='hanja'?'hanja':'loanword']&&entry.selected.some(r=>a.start>=r.start&&a.end<=r.end)){group.annotations.push(a);group.reviewed.push({start:a.start,end:a.end});}
