@@ -57,6 +57,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 **v1.1.64 recovery for out-of-dictionary compounds:** With experimental model resegmentation and origin generation enabled, contiguous nominal compounds and unlisted nominal headwords may be reviewed even with no exact dictionary entry or component records. The model can combine verified component readings with high-confidence origins for missing parts. No country- or institution-specific word list is required. Confirmed personal names stay protected; all generated positions and origins are validated, and uncertain items remain in Korean.
 
+**v1.1.65 incremental repair:** A generated subword with a single unambiguous match within its original target can have inaccurate start/end corrected locally. Isolated one-syllable readings require matching dictionary evidence and actual Kiwi nominal/particle boundaries. Manual review preserves already validated decisions and produces a smaller repair prompt; respond with only failed target IDs and the same batch_id. Ungrounded foreign personal-name guesses remain blocked.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
