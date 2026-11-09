@@ -55,6 +55,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 **v1.1.63 large-context batching:** The arbitrary 64-decision cap is removed. 512K/1M tiers keep all targets in one batch when prompt, estimated JSON reply and safety margin fit. Configure API max output tokens per profile (default 16,384) and manual chat reply budget separately (default 65,536); real provider limits still apply.
 
+**v1.1.64 recovery for out-of-dictionary compounds:** With experimental model resegmentation and origin generation enabled, contiguous nominal compounds and unlisted nominal headwords may be reviewed even with no exact dictionary entry or component records. The model can combine verified component readings with high-confidence origins for missing parts. No country- or institution-specific word list is required. Confirmed personal names stay protected; all generated positions and origins are validated, and uncertain items remain in Korean.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
