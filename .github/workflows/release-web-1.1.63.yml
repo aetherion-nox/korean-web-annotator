@@ -18,6 +18,7 @@ jobs:
       - name: Test code
         run: |
           node --check engine-page.js
+          node --check batch-budget.js
           node --check browser-worker.js
           node --check model-origin.js
           node --check segmentation-rescue.js

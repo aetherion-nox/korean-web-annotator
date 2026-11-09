@@ -24,10 +24,16 @@ test('512K manual review handles 418 targets as one batch without an arbitrary d
 });
 test('32K still splits when real prompt plus reply exceeds the selected context',()=>{
  const {context,item}=dataset(418);
- const b=contextReviewBatches([item],context,{tier:'32k',manual:true});
- assert.equal(b.flatMap(x=>x.rows).length,418);
- assert.ok(b.length>1);
- assert.ok(b.every(x=>x.budget.totalTokens<=x.budget.contextTokens));
+ // Short KEEP-only targets legitimately fit in 32K. Add realistic, longer
+ // dictionary definitions to exceed input capacity without altering count.
+ const heavy={...item,result:{unresolved:item.result.unresolved.map(t=>({...t,options:[
+  ...t.options,{choice_id:'c0',type:'hanja',replacement:'問津歌',entry_id:100,
+   definitions:['词典义项语境说明'.repeat(80)]}
+ ]}))}};
+ const batches=contextReviewBatches([heavy],context,{tier:'32k',manual:true});
+ assert.equal(batches.flatMap(x=>x.rows).length,418);
+ assert.ok(batches.length>1);
+ assert.ok(batches.every(x=>x.budget.totalTokens<=x.budget.contextTokens));
 });
 test('large context and a small model output limit split only on estimated reply',()=>{
  const {context,item}=dataset(100,{segments:true});
