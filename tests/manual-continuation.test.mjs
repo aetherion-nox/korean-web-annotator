@@ -49,7 +49,8 @@ test('offline recovery preserves valid rows and reports only invalid choice IDs'
  const bad=JSON.stringify({batch_id:'batch1',results:[{target_id:'t0',choice_id:'c0'},{target_id:'t1',choice_id:'c99'}]});
  assert.throws(()=>context.applyManualRecovery(task,bad),/t1.*INVALID_CHOICE/);
  assert.equal(task.manualRecoveryAccepted.size,1);
- assert.equal(entry.annotations.length,0); // no partial DOM mutation
+ assert.equal(entry.annotations.length,1); // verified choices are provisionally visible
+ assert.equal(entry.hasPreview,true);
  assert.match(panel.querySelector('.kra-manual-prompt').value,/"target_id":"t1"/);
  assert.doesNotMatch(panel.querySelector('.kra-manual-prompt').value,/"target_id":"t0"/);
  assert.throws(()=>context.applyManualRecovery(task,JSON.stringify({batch_id:'wrong',results:[{target_id:'t1',choice_id:'c0'}]})),/batch_id/);
@@ -64,4 +65,35 @@ test('unknown and duplicated IDs are distinguished instead of conflated with inv
   {target_id:'t999',choice_id:'KEEP'}]})),/未知 target_id：t999/);
  assert.throws(()=>context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[
   {target_id:'t0',choice_id:'KEEP'},{target_id:'t0',choice_id:'c0'}]})),/重复 target_id：t0/);
+});
+
+test('a pending server batch previews accepted decisions without committing the batch',()=>{
+ const {context,task,entry,panel}=environment();
+ task.manualLocalOnly=false;
+ context.handleManualEvent(task,{type:'MANUAL_REVIEW_ERROR',requestId:'batch1',
+   error:'已保留 1/2 条答案，剩余待修复',
+   acceptedRows:[{target_id:'t0',choice_id:'c0'}],acceptedCount:1,repairPrompt:'repair only t1'});
+ assert.equal(entry.annotations[0].replacement,'可');
+ assert.equal(entry.hasPreview,true);
+ assert.equal(task.manualApplied,undefined);
+ assert.equal(panel.querySelector('.kra-manual-apply').disabled,false);
+ assert.equal(task.manualRecoveryAccepted.size,1);
+});
+test('offline mixed-invalid replies preserve valid choices while isolating duplicates',()=>{
+ const {context,task,entry}=environment();
+ const second={target_id:'t1',sentenceId:'s',start:1,end:2,surface:'나',
+   choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{start:1,end:2,surface:'나',replacement:'那',type:'hanja'}]}]};
+ task.manualBackup={...task.manualBackup,bindings:[task.manualBackup.bindings[0],second]};
+ assert.throws(()=>context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[
+  {target_id:'t0',choice_id:'c0'},
+  {target_id:'t1',choice_id:'KEEP'},
+  {target_id:'t1',choice_id:'c0'},
+  {target_id:'foreign',choice_id:'KEEP'}
+ ]})),/重复 target_id：t1/);
+ assert.equal(task.manualRecoveryAccepted.size,1);
+ assert.equal(entry.annotations.length,1);
+ assert.equal(entry.hasPreview,true);
+ context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{target_id:'t1',choice_id:'c0'}]}),{advance:false,paint:false});
+ assert.equal(entry.annotations.length,2);
+ assert.equal(entry.hasPreview,false);
 });
