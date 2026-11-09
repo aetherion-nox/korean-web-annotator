@@ -133,8 +133,8 @@ export function createManualReviewSession({operationId,post,signal}={}){
      const option=outcome.accepted[0].option;
      current.acceptedRows.set(id,{
       target_id:id,choice_id:option.choice_id,
-      ...(option.generated?{confidence:option.confidence,evidence:option.evidence,
-       ...(option.segmentationGenerated?{segments:option.segments}:{replacement:option.replacement})}:{})
+      ...(option.generated?(option.segmentationGenerated?
+       {segments:option.segments}:{replacement:option.replacement}):{})
      });
     }
     const remaining=current.wireTargets.filter(t=>!current.acceptedRows.has(t.target_id));

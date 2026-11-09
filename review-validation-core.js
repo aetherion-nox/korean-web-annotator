@@ -51,9 +51,9 @@
  function generatedSimple(target,row,config={}){
   if(!row||!['GEN_HANJA','GEN_LOANWORD'].includes(row.choice_id)||
     !allowed(row,['target_id','choice_id','replacement','confidence','evidence'])||
-    row.confidence!=='high'||typeof row.evidence!=='string'||
-    !row.evidence.trim()||row.evidence.length>240)
-    return fail('GENERATED_SCHEMA','生成词源的字段、置信度或证据不符合协议');
+    (row.confidence!==undefined&&row.confidence!=='high')||
+    (row.evidence!==undefined&&(typeof row.evidence!=='string'||row.evidence.length>240)))
+    return fail('GENERATED_SCHEMA','生成词源的字段或字形不符合协议');
   const type=row.choice_id==='GEN_HANJA'?'hanja':'loanword',replacement=row.replacement;
   if(!modality(config,type))return fail('MODE_DISABLED','当前模式不允许生成此类型的词源');
   if(!HANGUL.test(target?.surface)||typeof replacement!=='string'||
@@ -64,10 +64,9 @@
   if(type==='loanword'&&(!FOREIGN.test(replacement)||FORBIDDEN.test(replacement)||
     !/[\p{L}]/u.test(replacement)||replacement===target.surface))
     return fail('LOANWORD_ORIGIN','外来语 replacement 必须为合法的原语写法');
-  const value={choice_id:row.choice_id,type,replacement,entry_id:null,definitions:[],
-    generated:true,confidence:'high',evidence:row.evidence.trim()};
-  return pass(value,{target_id:row.target_id,choice_id:row.choice_id,replacement,
-    confidence:'high',evidence:row.evidence.trim()});
+  const value={choice_id:row.choice_id,type,replacement,entry_id:null,definitions:[],generated:true};
+  // Legacy metadata is accepted for compatibility, not required or trusted.
+  return pass(value,{target_id:row.target_id,choice_id:row.choice_id,replacement});
  }
  function explainOffsets(target,raw){
   const source=target?.surface||'';let cursor=0;
@@ -95,8 +94,9 @@
   if(!target?.segmentation_review||!row||row.choice_id!=='GEN_SEGMENTS'||
     typeof row.target_id!=='string'||!allowed(row,['target_id','choice_id','segments','confidence','evidence'])||
     !Array.isArray(row.segments)||!row.segments.length||row.segments.length>8||
-    row.confidence!=='high'||typeof row.evidence!=='string'||!row.evidence.trim()||row.evidence.length>240)
-    return fail('SEGMENT_SCHEMA','GEN_SEGMENTS 的字段、1–8 个片段、置信度或证据不符合协议');
+    (row.confidence!==undefined&&row.confidence!=='high')||
+    (row.evidence!==undefined&&(typeof row.evidence!=='string'||row.evidence.length>240)))
+    return fail('SEGMENT_SCHEMA','GEN_SEGMENTS 的字段或 1–8 个子词段不符合协议');
   if(!HANGUL.test(target.surface))return fail('SEGMENT_SOURCE','完整词段须为 1–24 个连续谚文字');
   const aligned=canonicalize(target,row.segments);
   if(!aligned)return fail('SEGMENT_OFFSETS',explainOffsets(target,row.segments));
@@ -109,7 +109,7 @@
    if(part.replacement===part.surface)continue;
    const simple=generatedSimple({surface:part.surface},{
     target_id:row.target_id,choice_id:part.type==='hanja'?'GEN_HANJA':'GEN_LOANWORD',
-    replacement:part.replacement,confidence:'high',evidence:row.evidence
+    replacement:part.replacement
    },config);
    if(!simple.ok)return fail(simple.code,'子词 '+part.surface+'：'+simple.message);
    parts.push(part);
@@ -124,7 +124,7 @@
   // If the model explicitly asserts "surface(漢字)" for the whole target,
   // the asserted full etymology must agree with the proposed annotations.
   // This detects self-contradictory *claims* without a dictionary whitelist.
-  const wholeAssertions=[...row.evidence.matchAll(/([가-힣]{2,24})\s*[（(]([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]+)[）)]/gu)]
+  const wholeAssertions=[...(row.evidence||'').matchAll(/([가-힣]{2,24})\s*[（(]([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]+)[）)]/gu)]
     .filter(m=>m[1]===target.surface).map(m=>m[2]);
   if(wholeAssertions.length&&!wholeAssertions.includes(replacement))
    return fail('EVIDENCE_CONTRADICTION','模型声称的完整汉字词源与实际转换片段不一致，请重审完整词');
@@ -137,10 +137,8 @@
     return fail('ISOLATED_SYLLABLE','单音节 '+part.surface+' 缺少独立名词边界或相符词典来源');
   }
   const value={choice_id:'GEN_SEGMENTS',type:'mixed',replacement,segments:parts,
-    entry_id:null,definitions:[],generated:true,segmentationGenerated:true,
-    confidence:'high',evidence:row.evidence.trim()};
-  return pass(value,{target_id:row.target_id,choice_id:'GEN_SEGMENTS',segments:parts,
-    confidence:'high',evidence:row.evidence.trim()});
+    entry_id:null,definitions:[],generated:true,segmentationGenerated:true};
+  return pass(value,{target_id:row.target_id,choice_id:'GEN_SEGMENTS',segments:parts});
  }
  function bindingRow(binding,row,modes={}){
   if(!binding||!row||typeof row!=='object'||row.target_id!==binding.target_id)
