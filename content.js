@@ -675,12 +675,13 @@
     if(!core?.validateBindingRow)throw Error('审核校验器未加载');
     const bindings=new Map(task.manualBackup.bindings.map(b=>[b.target_id,b]));
     const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry]));
-    const groups=new Map();
+    const groups=new Map();let convertible=0;
     for(const row of rows){
       const binding=bindings.get(row?.target_id);
       if(!binding)throw Error('未知预览目标：'+String(row?.target_id));
       const checked=core.validateBindingRow(binding,row,task.modes);
       if(!checked.ok)throw Error('预览结果未通过校验：'+row.target_id+' ['+checked.code+']');
+      if(checked.value.annotations.length)convertible++;
       const projected=task.paragraphPlan?task.paragraphPlan.projectBinding(binding,checked.value):
         [{...binding,annotations:checked.value.annotations}];
       for(const b of projected){
@@ -714,7 +715,10 @@
       entry.modelAnnotations=model;entry.modelReviewed=true;
       entry.annotations=annotations;entry.hasPreview=true;
     }
-    return task.paint();
+    const painted=task.paint();
+    const stale=[...task.entries.values()].filter(entry=>entry.invalidated).length;
+    addDiagnostic({level:'info',message:'手动审核预览：已验证 '+rows.length+' 个目标，其中 '+convertible+' 个目标含转换、'+(rows.length-convertible)+' 个保持原文；页面当前显示 '+painted+' 个标注。'+(stale?'另有 '+stale+' 处网页文本已变化，无法安全写入。':'')});
+    return painted;
   }
 
   // Reconstruct an exact, much smaller batch prompt from the *original*
