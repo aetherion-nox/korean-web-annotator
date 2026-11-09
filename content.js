@@ -771,7 +771,7 @@
     for(const row of incoming){
       const id=row?.target_id;
       if(!bindings.has(id)){
-        errors.push({id:String(id??'(缺失)'),reason:'未知 target_id（不属于当前批次）'});
+        errors.push({id:String(id??'(缺失)'),reason:'未知 target_id：'+String(id??'(缺失)')+'（不属于当前批次）'});
         continue;
       }
       if(!groupsById.has(id))groupsById.set(id,[]);
@@ -811,7 +811,9 @@
       }
       const explanation='本批已保留 '+verifiedRows.size+'/'+bindings.size+' 条有效答案，尚有 '+missing.length
         +' 条：'+errorsForPrompt.slice(0,8).map(e=>e.id+'（'+e.reason+'）').join('；')
-        +(missing.length>8?'；其余请查看纠错提示词':'')+'。请只提交待修复 ID，保持 batch_id 不变。';
+        +(missing.length>8?'；其余请查看纠错提示词':'')
+        +(errors.some(e=>!bindings.has(e.id))?'；其他错误：'+errors.filter(e=>!bindings.has(e.id)).slice(0,3).map(e=>e.reason).join('；'):'')
+        +'。请只提交待修复 ID，保持 batch_id 不变。';
       try{const count=previewManualAccepted(task,[...verifiedRows.values()]);
         if(count)status('已预览 '+count+' 个标注；仍有 '+missing.length+' 个目标待修复');
       }catch(error){addDiagnostic({level:'warning',message:'有效结果预览失败：'+error.message});}
