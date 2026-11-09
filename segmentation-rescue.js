@@ -62,6 +62,7 @@ export function segmentationTargets(text,analysis,selected=[]){
   }));
   targets.push({target_id:'seg'+start+'-'+end,start,end,surface:match[0],context:text,
     ...(morphology.length?{morphology}:{}),
+    ...(morphology.length===1&&morphology[0].tag.split('-')[0]==='NNP'&&morphology[0].start===0&&morphology[0].end===match[0].length?{name_risk:true}:{}),
     segmentation_review:true,options});
  }
  return targets;

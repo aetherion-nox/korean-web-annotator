@@ -83,6 +83,12 @@ export function validateGeneratedSegmentsRow(target,row,config={}){
     Object.keys(row).some(k=>!['target_id','choice_id','segments','confidence','evidence'].includes(k)))return null;
  const canonical=canonicalizeGeneratedSegments(target,row.segments);
  if(!canonical)return null;
+ // A standalone, unlisted NNP in foreign spelling may be a person's name.
+ // Phonetic similarity alone is not enough evidence of that name's origin.
+ if(target.name_risk===true&&canonical.some(p=>p.type==='loanword')&&
+    !canonical.every(p=>(target.component_candidates||[]).some(c=>
+      c.start===p.start&&c.end===p.end&&c.surface===p.surface&&
+      (c.options||[]).some(o=>o.entry_id!=null&&o.type===p.type&&o.replacement===p.replacement))))return null;
  let last=0;
  const segments=[];
  for(const part of canonical){

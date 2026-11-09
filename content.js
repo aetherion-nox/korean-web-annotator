@@ -733,6 +733,10 @@
           let end=0,valid=true;const annotations=[];
           const normalized=canonicalManualParts(source,row.segments);
           if(!normalized)valid=false;
+          if(binding.nameRisk===true&&normalized?.some(p=>p.type==='loanword')&&
+            !normalized.every(p=>(binding.componentCandidates||[]).some(c=>
+              c.start===p.start&&c.end===p.end&&c.surface===p.surface&&
+              (c.options||[]).some(o=>o.entry_id!=null&&o.type===p.type&&o.replacement===p.replacement))))valid=false;
           for(const p of normalized||[]){
             if(!p||typeof p!=='object'||Object.keys(p).some(k=>!['start','end','surface','type','replacement'].includes(k))||
                !Number.isInteger(p.start)||!Number.isInteger(p.end)||p.start<end||p.end>source.length||
