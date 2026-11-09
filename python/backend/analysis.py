@@ -143,6 +143,7 @@ class Engine:
             whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')]
             mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges,blocked_ranges=blocked_for_local,review_ranges=dictionary_names)
         annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
+        verified_whole=list(mixed.get('verified_whole',[]))
         candidate_risk_ranges=set()
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
@@ -158,6 +159,7 @@ class Engine:
                     and not (single_guard and len(s.original)==1 and '가'<=s.original<='힣')):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
+                verified_whole.append((s.start,s.end))
                 token=next((t for t in tokens if t.start==s.start and t.start+t.length==s.end),None)
                 selected=next((c for c in s.candidates if c.get('entry_id')==s.matched_entry_id),{})
                 if modes.get('hanja',True):annotations.append(dict(start=to_utf16(text,s.start),end=to_utf16(text,s.end),surface=s.original,type='hanja',replacement=restore_mixed_display(s.original,s.display_text,s.origin_raw,token=token,written_form=selected.get('written_form'))))
@@ -268,7 +270,12 @@ class Engine:
                 unique_risk_reviews=len(candidate_risk_ranges),**upstream_counts),
             boundary_risks=[dict(start=to_utf16(text,a),end=to_utf16(text,b),
                                  surface=word,reason=reason)
-                            for a,b,word,reason in boundary_risks])
+                            for a,b,word,reason in boundary_risks],
+            confirmed_whole_spans=[dict(start=to_utf16(text,a),end=to_utf16(text,b))
+                                  for a,b in verified_whole],
+            suffix_spans=[dict(start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length))
+                          for t in tokens if t.length>0 and
+                          (t.tag.startswith('J') or t.tag.split('-')[0] in {'EP','EF','EC','ETN','ETM'})])
 
 _default_engine=None
 async def analyze(text: str,modes: dict) -> dict:

@@ -8,6 +8,15 @@ export function segmentationTargets(text,analysis,selected=[]){
  if(Number(analysis?.stats?.protected_names||0)>0)return [];
  const existing=[...(analysis?.annotations||[]),...(analysis?.targets||[])].sort((a,b)=>a.start-b.start||a.end-b.end);
  let existingCursor=0;
+ const grammatical=analysis?.suffix_spans||[];
+ const suffixCovers=(start,end)=>{
+  let cursor=start;
+  for(const part of grammatical.filter(s=>s.end>cursor&&s.start<end).sort((a,b)=>a.start-b.start)){
+   if(part.start!==cursor||part.end>end)return false;
+   cursor=part.end;
+  }
+  return cursor===end;
+ };
  const protectedTargets=(analysis?.targets||[]).filter(t=>
    t.proper_noun===true||t.dictionary_person_name===true||
    t.dictionary_name_homograph===true||t.suspected_person_name===true);
@@ -23,6 +32,15 @@ export function segmentationTargets(text,analysis,selected=[]){
    if(existing[j].end>start)overlapsExisting.push(existing[j]);
   }
   if(overlapsExisting.some(x=>x.start===start&&x.end===end))continue;
+  const whole=(analysis?.confirmed_whole_spans||[]).some(w=>w.start===start&&
+    (w.end===end||(w.end<end&&suffixCovers(w.end,end))));
+  if(whole)continue;
+  // A unique exact dictionary choice followed only by an attested grammatical
+  // particle/ending is already one whole-word semantic task. Do not replace it
+  // with an unrelated free-generation segmentation task.
+  if(overlapsExisting.length===1&&overlapsExisting[0].options&&
+    overlapsExisting[0].start===start&&overlapsExisting[0].end<end&&
+    suffixCovers(overlapsExisting[0].end,end))continue;
   const covered=Array.from({length:end-start},(_,i)=>overlapsExisting.some(x=>x.start<=start+i&&x.end>start+i)).every(Boolean);
   if(covered&&overlapsExisting.length<=1)continue;
   const options=[{choice_id:'KEEP',type:'keep',replacement:match[0],entry_id:null,definitions:[]}];

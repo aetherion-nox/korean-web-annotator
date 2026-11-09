@@ -104,7 +104,7 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
     spans=candidate_spans(text,tokens)
     proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
     entries=await engine.lookup_entries([form for _,_,form in spans])
-    annotations=[];targets=[];ranges=[];skipped=0
+    annotations=[];targets=[];ranges=[];skipped=0;verified_whole=[]
     for start,end,word in spans:
         if overlaps_proper_noun(start,end,blocked_ranges):continue
         # Respect the original converter's longer whole-word match, including
@@ -159,10 +159,11 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
         certain=len(signatures)==1 and mapped==len(records) and all(r.get('part_of_speech')=='명사' for r in records)
         if (certain and not modes.get('reviewAll',False) and not overlaps_proper_noun(start,end,proper_ranges)
                 and not (modes.get('singleHangulLocalGuard',False) and len(word)==1)):
+            verified_whole.append((start,end))
             for p in options[0]['segments']:
                 annotations.append({**p,'start':to_utf16(text,start)+p['start'],'end':to_utf16(text,start)+p['end']})
         else:
             keep=dict(choice_id='KEEP',type='keep',replacement=word,entry_id=None,definitions=[])
             native=nonconversion_options(word,records,hanja=modes.get('hanja',True),loanword=modes.get('loanword',False))
             targets.append(dict(target_id=f'mixed{len(targets)}',start=to_utf16(text,start),end=to_utf16(text,end),surface=word,context=text,options=[keep]+native+options))
-    return dict(annotations=annotations,targets=targets,ranges=ranges,skipped_mixed=skipped)
+    return dict(annotations=annotations,targets=targets,ranges=ranges,skipped_mixed=skipped,verified_whole=verified_whole)
