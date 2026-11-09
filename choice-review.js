@@ -9,14 +9,13 @@ import {buildReviewPayload,reviewInstructions} from './review-payload.js';
 export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
  const rows=Array.isArray(response?.results)?response.results:[];
- const known=new Set(targets.map(t=>t.target_id));
- // Cross-task/unknown IDs invalidate the entire response.
- const invalid=rows.some(r=>!r || !known.has(r.target_id));
+ // Unknown IDs are never authorized, but must not poison legitimate
+ // decisions for other targets. Duplicates invalidate only their own ID.
  for(const target of targets){
   const matches=rows.filter(r=>r?.target_id===target.target_id);
   const candidate=matches.length===1 && (filterReviewTarget(target,config).options.find(o=>o.choice_id===matches[0].choice_id) || validateGeneratedRow(target,matches[0],config) || validateGeneratedSegmentsRow(target,matches[0],config));
   const option=safeReviewOption(target,candidate);
-  if(!invalid && option) accepted.push({target,option}); else unresolved.push(target);
+  if(option) accepted.push({target,option}); else unresolved.push(target);
  }
  return {accepted,unresolved};
 }
