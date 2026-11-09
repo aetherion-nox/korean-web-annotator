@@ -4,6 +4,7 @@ const newProfileButton = document.querySelector('#newProfileButton');
 const deleteProfileButton = document.querySelector('#deleteProfileButton');
 const endpointInput = document.querySelector('#endpoint');
 const modelInput = document.querySelector('#model');
+const maxOutputTokensInput = document.querySelector('#maxOutputTokens');
 const providerInput = document.querySelector('#provider');
 const modelSelect = document.querySelector('#modelSelect');
 const effortInput = document.querySelector('#reasoningEffort');
@@ -74,6 +75,14 @@ const MODEL_STRINGS = {
   en:{providerLabel:'Provider',modelChoice:'Model',effortLabel:'Reasoning effort',customModel:'Custom model',modelDocs:'Official documentation',reduceReasoning:'Disable thinking',requiredThinking:'Thinking is required. Supported efforts: ',toggleThinking:'This model supports disabling thinking.',unknownThinking:'Unknown model: use the server’s default thinking settings.'}
 };
 for(const [language,strings] of Object.entries(MODEL_STRINGS))Object.assign(STRINGS[language],strings);
+const OUTPUT_COPY={
+ 'zh-CN':{maxOutputTokensLabel:'API 最大输出 tokens（按模型能力设置）',maxOutputTokensHint:'默认为 16384。只有确认模型支持更长回复才调高；超过实际 API 输出限制可能导致请求失败。分批按预计 JSON 答案预留容量，不预留整个上限。',badOutputTokens:'API 最大输出 tokens 必须是 1024 到 1000000 之间的整数。'},
+ 'zh-TW':{maxOutputTokensLabel:'API 最大輸出 tokens（依模型能力設定）',maxOutputTokensHint:'預設 16384，確認模型支援更長回覆才調高；超過 API 實際限制可能失敗。分批僅保留預估 JSON 長度，不保留整個上限。',badOutputTokens:'API 最大輸出 tokens 必須是 1024 至 1000000 的整數。'},
+ en:{maxOutputTokensLabel:'API maximum output tokens (model-dependent)',maxOutputTokensHint:'Default 16384. Raise only when your model supports longer output; exceeding its actual limit may cause an API error. Batching reserves estimated reply size, not the entire maximum.',badOutputTokens:'API max output tokens must be an integer between 1024 and 1000000.'},
+ ja:{maxOutputTokensLabel:'API 最大出力トークン（モデルに合わせる）',maxOutputTokensHint:'初期値は16384です。対応モデルでのみ増やしてください。実際の制限を超えるとAPIエラーになることがあります。分割では上限全体でなく予測JSON長を確保します。',badOutputTokens:'API 最大出力は1024～1000000の整数で指定してください。'},
+ ko:{maxOutputTokensLabel:'API 최대 출력 토큰 (모델에 맞게 설정)',maxOutputTokensHint:'기본값 16384. 모델이 더 긴 출력을 지원할 때만 올리세요. 실제 한도를 초과하면 API 오류가 날 수 있습니다. 분할은 최대치 전체가 아니라 예상 JSON 길이를 예약합니다.',badOutputTokens:'API 최대 출력 토큰은 1024~1000000 사이의 정수여야 합니다.'}
+};
+for(const [locale,copy] of Object.entries(OUTPUT_COPY))Object.assign(STRINGS[locale],copy);
 
 const t = key => STRINGS[locale]?.[key] || STRINGS.en[key] || key;
 const {
@@ -158,6 +167,7 @@ function loadActiveProfileIntoForm() {
   endpointInput.value = profile.endpoint || '';
   modelInput.value = profile.model || '';
   disableThinkingInput.checked = profile.disableThinking ?? true;
+  maxOutputTokensInput.value = String(profile.maxOutputTokens ?? 16384);
   const provider=profile.provider||catalog?.inferProvider(profile.endpoint)||'custom';
   providerInput.replaceChildren(...(catalog?.providers||[{id:'custom',label:'Custom',models:[]}]).map(item=>new Option(item.label,item.id)));
   providerInput.value=Array.from(providerInput.options).some(option=>option.value===provider)?provider:'custom';
@@ -368,7 +378,10 @@ async function readFormForSave(requireUsableKey = false) {
       if (passphrase !== confirm) throw new Error(t('passMismatch'));
     }
   }
-  return { endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, originChanged };
+  const maxOutputTokens=Number(maxOutputTokensInput.value);
+  if(!Number.isSafeInteger(maxOutputTokens)||maxOutputTokens<1024||maxOutputTokens>1000000)
+   throw new Error(t('badOutputTokens'));
+  return { endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, maxOutputTokens, originChanged };
 }
 
 async function requestEndpointPermission(endpoint) {
@@ -391,6 +404,7 @@ async function saveConfig(config) {
     disableThinking: config.disableThinking,
     provider: config.provider,
     reasoningEffort: config.reasoningEffort,
+    maxOutputTokens: config.maxOutputTokens,
   }, activeProfileId, name);
 
   if(config.originChanged){delete sessionKeys[activeProfileId];next.localApiKey='';next.encryptedApiKey=null;}

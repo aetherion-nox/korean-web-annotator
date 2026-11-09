@@ -17,6 +17,7 @@
       model: String(source.model || ''),
       provider: String(source.provider || ''),
       reasoningEffort: String(source.reasoningEffort || ''),
+      maxOutputTokens: (Number.isSafeInteger(Number(source.maxOutputTokens)) && Number(source.maxOutputTokens) >= 1024 && Number(source.maxOutputTokens) <= 1000000) ? Number(source.maxOutputTokens) : 16384,
       keyStorageMode: normalizeStorageMode(source.keyStorageMode),
       minConfidence: Number.isFinite(Number(source.minConfidence)) ? Number(source.minConfidence) : 0.88,
       disableThinking: source.disableThinking ?? true,

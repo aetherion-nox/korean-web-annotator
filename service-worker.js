@@ -426,6 +426,7 @@ async function getApiConfig() {
     disableThinking,
     provider: profile.provider,
     reasoningEffort: profile.reasoningEffort,
+    maxOutputTokens: profile.maxOutputTokens,
     paragraphFastPath,
     keyStorageMode: profile.keyStorageMode || 'session',
     profileId: profile.id,
@@ -453,7 +454,7 @@ async function loadCache(){
 async function runModern(message,post,signal,manualSession){
  await loadCache();const config=await engineConfig();
  if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
- const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,reviewPosFilter:config.reviewPosFilter,allowModelHanja:config.allowModelHanja&&message.modes?.hanja===true,allowModelLoanword:config.allowModelLoanword&&message.modes?.loanword===true,allowModelSegmentation:config.allowModelSegmentation===true&&(config.allowModelHanja&&message.modes?.hanja===true||config.allowModelLoanword&&message.modes?.loanword===true)});
+ const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,manualOutputTokens:config.manualOutputTokens,reviewPosFilter:config.reviewPosFilter,allowModelHanja:config.allowModelHanja&&message.modes?.hanja===true,allowModelLoanword:config.allowModelLoanword&&message.modes?.loanword===true,allowModelSegmentation:config.allowModelSegmentation===true&&(config.allowModelHanja&&message.modes?.hanja===true||config.allowModelLoanword&&message.modes?.loanword===true)});
  return runSentencePipeline({...message,nameProtection:config.nameProtection,singleHangulLocalGuard:config.singleHangulLocalGuard,uniqueCandidateRiskReview:config.uniqueCandidateRiskReview,reviewAllCandidates:config.reviewAllCandidates,experimentalSegmentation:config.allowModelSegmentation===true&&(config.allowModelHanja&&message.modes?.hanja===true||config.allowModelLoanword&&message.modes?.loanword===true)},post,{signal,enabled:config.enableModelReview,modelConfig,cache,persist:async map=>chrome.storage.local.set({[CACHE_KEY]:Array.from(map)})});
 }
 function legacyPlan(message){

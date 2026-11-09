@@ -138,7 +138,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  reportProgress();
  const tier=normalizeBatchContextTier(config?.batchContextTier);
- const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword,allowModelSegmentation:config?.allowModelSegmentation}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword,allowModelSegmentation:config?.allowModelSegmentation}):sentenceReviewBatches(pending,context);
+ const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword,allowModelSegmentation:config?.allowModelSegmentation,maxOutputTokens:config?.maxOutputTokens,manualOutputTokens:config?.manualOutputTokens}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,allowModelHanja:config?.allowModelHanja,allowModelLoanword:config?.allowModelLoanword,allowModelSegmentation:config?.allowModelSegmentation}):sentenceReviewBatches(pending,context);
  const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
   const targets=batch.rows?batch.rows.map(({item,target},i)=>{const id=`b0t${i}`;owners.set(id,{item,target});return {...target,target_id:id};}):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
