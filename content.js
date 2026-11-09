@@ -669,7 +669,23 @@
     const rows=response?.results,bindings=new Map(backup.bindings.map(b=>[b.target_id,b])),seen=new Set(),accepted=[];
     if(!Array.isArray(rows)||rows.length!==bindings.size)throw Error('本批结果不完整，请使用当前批次的全部 target_id。');
     for(const row of rows){
-      const binding=bindings.get(row?.target_id),choice=binding?.choices.find(o=>o.choice_id===row?.choice_id);
+      const binding=bindings.get(row?.target_id);
+      let choice=binding?.choices.find(o=>o.choice_id===row?.choice_id);
+      if(!choice && binding?.generatedChoices?.includes(row?.choice_id)){
+        const hanja=row.choice_id==='GEN_HANJA',loanword=row.choice_id==='GEN_LOANWORD';
+        const value=row.replacement,source=binding.surface;
+        const validSource=typeof source==='string'&&/^[가-힣]{1,24}$/u.test(source);
+        const safeReply=row.confidence==='high'&&typeof row.evidence==='string'&&row.evidence.trim()&&row.evidence.length<=240&&
+          typeof value==='string'&&value===value.trim()&&value===value.normalize('NFC')&&
+          !Object.keys(row).some(key=>!['target_id','choice_id','replacement','confidence','evidence'].includes(key));
+        const cjk=/^[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]+$/u;
+        const foreign=/^[\p{L}\p{M}\p{N} .,'’+\-/&]{1,100}$/u;
+        const validHanja=hanja&&cjk.test(value)&&Array.from(value).length===Array.from(source||'').length;
+        const validLoanword=loanword&&foreign.test(value)&&!/[\p{Script=Hangul}\p{Script=Han}]/u.test(value)&&/[\p{L}]/u.test(value)&&value!==source;
+        if(validSource&&safeReply&&((validHanja&&task.modes.hanja)||(validLoanword&&task.modes.loanword))){
+          choice={choice_id:row.choice_id,annotations:[{start:binding.start,end:binding.end,surface:source,replacement:value,type:hanja?'hanja':'loanword'}]};
+        }
+      }
       if(!binding||seen.has(row.target_id)||!choice)throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
       seen.add(row.target_id);accepted.push({binding,choice});
     }

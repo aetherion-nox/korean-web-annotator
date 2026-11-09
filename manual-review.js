@@ -5,10 +5,10 @@ import {describeBatchBudget} from './batch-budget.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
 // Keep an oversized single dictionary entry intact rather than losing senses.
-export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000,reviewPosFilter=true}={}){
+export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000,reviewPosFilter=true,allowModelHanja=false,allowModelLoanword=false}={}){
  const groups=[];let rows=[];
  const ownContext=group=>[...new Set(group.map(r=>r.target.context))].join('\n');
- const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000',{reviewPosFilter});
+ const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000',{reviewPosFilter,allowModelHanja,allowModelLoanword});
  const size=group=>prompt(ownContext(group),group).length;
  for(const item of items)for(const target of item.result.unresolved){
   const row={item,target};
@@ -48,7 +48,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
    return new Promise((resolve,reject)=>{
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
-    pending={requestId,targets,wireTargets,reviewPosFilter:config.reviewPosFilter,resolve:response=>{clear();resolve(response);}};
+    pending={requestId,targets,wireTargets,reviewPosFilter:config.reviewPosFilter,allowModelHanja:config.allowModelHanja,allowModelLoanword:config.allowModelLoanword,resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
     try{notify('MANUAL_REVIEW_REQUEST',prepared);}catch(error){clear();reject(error);}
    });
@@ -62,9 +62,9 @@ export function createManualReviewSession({operationId,post,signal}={}){
    try{
     const response=parseAnswer(message.text);
     if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
-    const result=validateChoices(current.wireTargets,response,{reviewPosFilter:current.reviewPosFilter});
+    const result=validateChoices(current.wireTargets,response,{reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,allowModelLoanword:current.allowModelLoanword});
     if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果不完整，或包含重复/其他批次的 target_id、无效 choice_id。请完整复制本批结果，保留 ID 原样。');
-    const mapped={results:result.accepted.map(({target,option})=>({target_id:current.targets[current.wireTargets.indexOf(target)].target_id,choice_id:option.choice_id}))};
+    const mapped={results:result.accepted.map(({target,option})=>({target_id:current.targets[current.wireTargets.indexOf(target)].target_id,choice_id:option.choice_id,...(option.generated?{replacement:option.replacement,confidence:option.confidence,evidence:option.evidence}:{})}))};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:result.accepted.length});current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
   }
