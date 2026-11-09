@@ -84,7 +84,9 @@ export function createManualReviewSession({operationId,post,signal}={}){
    return new Promise((resolve,reject)=>{
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
-    pending={requestId,targets,wireTargets,reviewPosFilter:config.reviewPosFilter,allowModelHanja:config.allowModelHanja,allowModelLoanword:config.allowModelLoanword,allowModelSegmentation:config.allowModelSegmentation,resolve:response=>{clear();resolve(response);}};
+    pending={requestId,targets,wireTargets,config:{...config,manualPrepared:undefined,manualBindings:undefined},
+     acceptedRows:new Map(),
+     reviewPosFilter:config.reviewPosFilter,allowModelHanja:config.allowModelHanja,allowModelLoanword:config.allowModelLoanword,allowModelSegmentation:config.allowModelSegmentation,resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
     try{notify('MANUAL_REVIEW_REQUEST',prepared);}catch(error){clear();reject(error);}
    });
@@ -98,10 +100,50 @@ export function createManualReviewSession({operationId,post,signal}={}){
    try{
     const response=parseAnswer(message.text);
     if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
-    const result=validateChoices(current.wireTargets,response,{reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,allowModelLoanword:current.allowModelLoanword,allowModelSegmentation:current.allowModelSegmentation});
-    if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果未应用：'+(explainRejectedManualResult(current.wireTargets,response.results,{reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,allowModelLoanword:current.allowModelLoanword,allowModelSegmentation:current.allowModelSegmentation})||'校验失败')+'。其余已正确的答案无需重新生成，修正该条后重新提交本批 JSON。');
-    const mapped={results:result.accepted.map(({target,option})=>({target_id:current.targets[current.wireTargets.indexOf(target)].target_id,choice_id:option.choice_id,...(option.generated?{replacement:option.replacement,confidence:option.confidence,evidence:option.evidence,...(option.segmentationGenerated?{segments:option.segments}:{})}:{})}))};
-    notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:result.accepted.length});current.resolve(mapped);return true;
+    const validationConfig={reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,
+     allowModelLoanword:current.allowModelLoanword,allowModelSegmentation:current.allowModelSegmentation};
+    const known=new Map(current.wireTargets.map(t=>[t.target_id,t])),seen=new Set();
+    for(const row of response.results){
+     if(!row||!known.has(row.target_id))throw Error('包含不属于本批的 target_id：'+String(row?.target_id??'(缺失)'));
+     if(seen.has(row.target_id))throw Error('重复的 target_id：'+row.target_id);
+     seen.add(row.target_id);
+    }
+    const failures=[];
+    for(const row of response.results){
+     const target=known.get(row.target_id);
+     const outcome=validateChoices([target],{results:[row]},validationConfig);
+     if(outcome.accepted.length!==1){
+      failures.push(explainRejectedManualResult([target],[row],validationConfig));
+      continue;
+     }
+     const option=outcome.accepted[0].option;
+     current.acceptedRows.set(row.target_id,{
+      target_id:row.target_id,choice_id:option.choice_id,
+      ...(option.generated?{replacement:option.replacement,confidence:option.confidence,
+        evidence:option.evidence,...(option.segmentationGenerated?{segments:option.segments}:{})}:{})
+     });
+    }
+    const remaining=current.wireTargets.filter(t=>!current.acceptedRows.has(t.target_id));
+    if(remaining.length){
+     const ids=remaining.map(t=>t.target_id);
+     const repairPrompt='只修复以下 '+remaining.length+' 个未通过校验的 target_id。之前已通过的 '+current.acceptedRows.size+
+      ' 条答案已保存，无需重新生成。必须保留原 batch_id '+current.requestId+
+      '；results 只包含下列目标，严格检查 GEN_SEGMENTS 的 surface 与 UTF-16 start/end。\n\n'+
+      buildManualPrompt(current.config.context,remaining,current.requestId,current.config);
+     notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,
+      error:'已保存 '+current.acceptedRows.size+'/'+current.wireTargets.length+' 条有效答案；还有 '+remaining.length+
+       ' 条需修复：'+ids.slice(0,24).join('、')+(ids.length>24?'…':'')+'。'+(failures[0]||'')+
+       ' 可直接复制上方新的纠错提示词，下一次只提交这些 ID。',
+      invalidTargetIds:ids,acceptedCount:current.acceptedRows.size,
+      acceptedRows:[...current.acceptedRows.values()],repairPrompt});
+     return false;
+    }
+    const mapped={results:current.wireTargets.map((target,i)=>({
+     ...current.acceptedRows.get(target.target_id),target_id:current.targets[i].target_id
+    }))};
+    notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:current.wireTargets.length,
+     acceptedRows:[...current.acceptedRows.values()]});
+    current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
   }
  };
