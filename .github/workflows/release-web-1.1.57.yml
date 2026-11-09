@@ -16,6 +16,8 @@ jobs:
           persist-credentials: false
       - name: Test code
         run: |
+          node --check engine-page.js
+          node --check browser-worker.js
           node --test tests/browser-worker-failure.test.mjs tests/model-origin.test.mjs tests/model-origin-settings.test.mjs tests/review-pos.test.mjs tests/name-homograph-payload.test.mjs tests/manual-continuation.test.mjs
           PYTHONPATH=python/browser-support python3 tests/test_name_ambiguity.py
           PYTHONPATH=python/browser-support python3 tests/test_dictionary_names.py
