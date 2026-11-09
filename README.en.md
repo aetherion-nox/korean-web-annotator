@@ -49,6 +49,8 @@ Dictionary-based annotation does not require AI. To review ambiguous words, open
 
 **New-install defaults and single-syllable protection:** Optional model review, preloading, name protection, experimental Hanja/foreign-origin proposals, resegmentation and manual chat review start enabled; POS filtering and review-all start disabled. A new enabled-by-default guard prevents local conversion of single Hangul syllables, while allowing existing dictionary choices to be reviewed by a model. Without valid review, Hangul remains. Explicit saved preferences are preserved.
 
+**v1.1.61 risk review:** The enabled-by-default unique-candidate risk review defers weak-evidence short homophones and unlisted Kiwi-split compounds before local conversion. Verified complete mixed-origin headwords such as 팀장 → team長 may still be converted locally. Overlapping resegmentation and dictionary reviews are merged into one model task. Missing or invalid model answers leave Korean unchanged. This is a heuristic, not proof of semantic accuracy.
+
 When API review is enabled, relevant page text and dictionary candidates are sent to your configured provider. Consider privacy and API charges.
 
 ## 5. Troubleshooting
