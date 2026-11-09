@@ -39,7 +39,7 @@ test('unknown full compound gets one review using component dictionary evidence'
  assert.match(buildManualPrompt(text,merged.targets,'testbatch',config),/GEN_SEGMENTS/);
 });
 test('a missing component can be supplied while the known component is preserved',()=>{
- const t={target_id:'t0',surface:'구인대가',segmentation_review:true};
+ const t={target_id:'t0',surface:'구인대가',segmentation_review:true,options:[keep('구인대가')]};
  const row=generated('t0',[
   {start:0,end:1,surface:'구',type:'hanja',replacement:'區'},
   {start:1,end:3,surface:'인대',type:'hanja',replacement:'人大'}
@@ -50,7 +50,7 @@ test('a missing component can be supplied while the known component is preserved
  assert.equal(accepted.accepted[0].option.segments.length,2);
 });
 test('a full unlisted Sino-Korean compound can be recovered in one segment',()=>{
- const t={target_id:'t0',surface:'중공중앙',segmentation_review:true};
+ const t={target_id:'t0',surface:'중공중앙',segmentation_review:true,options:[keep('중공중앙')]};
  const row=generated('t0',[{start:0,end:4,surface:'중공중앙',type:'hanja',replacement:'中共中央'}]);
  const accepted=validateChoices([t],{results:[row]},config);
  assert.equal(accepted.unresolved.length,0);
@@ -69,7 +69,7 @@ test('isolated unlisted nominal word can be sent even without a dictionary optio
 });
 test('actual protected person spans remain excluded; POS-only name hints do not',()=>{
  const text='홍길동';
- const origin={annotations:[],targets:[target('n',0,3,text,{suspected_person_name:true,proper_noun:true})],
+ const origin={annotations:[],targets:[target('n',0,2,text.slice(0,2),{suspected_person_name:true,proper_noun:true})],
   boundary_risks:[risk(0,3,text,'unlisted_nominal_headword')],protected_name_spans:[],stats:{protected_names:0}};
  assert.equal(segmentationTargets(text,origin).length,1);
  const protectedAnalysis={...origin,protected_name_spans:[{start:0,end:3}],stats:{protected_names:1}};
