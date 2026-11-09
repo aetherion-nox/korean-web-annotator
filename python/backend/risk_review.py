@@ -9,51 +9,75 @@ import re
 from backend.proper_nouns import overlaps_proper_noun
 
 HANGUL = re.compile(r'^[가-힣]+$')
-TAGS = {'NNG', 'NNB', 'NR', 'XR', 'XPN', 'XSN'}
+TAGS = {'NNG', 'NNP', 'NNB', 'NR', 'XR', 'XPN', 'XSN'}
+UNLISTED_TAGS = {'NNG', 'NNP'}
 
-async def uncertain_compounds(text, tokens, lookup, blocked=()):
-    proposals = []
+async def uncertain_compounds(text, tokens, lookup, blocked=(), *, include_unlisted=False):
+    """Find uncertain nominal lexical boundaries without a vocabulary whitelist.
+
+    Unlisted nominal compounds are potentially lexical words even when Kiwi
+    splits them into two or more multi-syllable parts, or tags a part as NNP.
+    When experimental resegmentation is active, consider unlisted nominal
+    headwords as well. These are *review leads*, not inferred Hanja origins.
+    """
     forms = set()
-    index = 0
-    while index < len(tokens):
-        first = tokens[index]
-        tag = first.tag.split('-')[0]
-        if tag not in TAGS or first.length < 1 or first.start > 0 and '가' <= text[first.start-1] <= '힣':
-            index += 1
+    proposals = []
+    singles = []
+    ordered = sorted(tokens, key=lambda t: (t.start, -t.length))
+    def valid(t):
+        a,b=t.start,t.start+t.length
+        return (t.length>0 and 0<=a<b<=len(text) and text[a:b]==t.form
+                and HANGUL.fullmatch(t.form) and t.tag.split('-')[0] in TAGS)
+    def blocked_range(a,b):
+        return any(a<stop and start<b for start,stop in blocked)
+
+    # Only use actual source spans: Kiwi stems, inferred lemmas, or overlapping
+    # alternative tokenizations cannot establish word boundaries.
+    for i,token in enumerate(ordered):
+        if not valid(token) or (token.start>0 and '가'<=text[token.start-1]<='힣'):
             continue
-        parts = [first]
-        end = first.start + first.length
-        j = index + 1
-        while j < len(tokens) and len(parts) < 8:
-            token = tokens[j]
-            if token.tag.split('-')[0] not in TAGS or token.start != end or token.length < 1:
+        a=token.start
+        end=a+token.length
+        parts=[token]
+        for nxt in ordered[i+1:]:
+            if nxt.start!=end or not valid(nxt) or len(parts)>=12:
                 break
-            if text[token.start:token.start+token.length] != token.form:
+            if nxt.start+nxt.length-a>24:
                 break
-            parts.append(token)
-            end = token.start + token.length
-            j += 1
-        surface = text[first.start:end]
-        if (len(parts) >= 2 and 2 <= len(surface) <= 24 and HANGUL.fullmatch(surface)
-                and any(p.length == 1 for p in parts)
-                and not overlaps_proper_noun(first.start, end, blocked)
-                and not any(p.tag.split('-')[0] == 'NNP' for p in parts)):
-            proposals.append((first.start, end, surface, tuple(p.form for p in parts)))
+            parts.append(nxt)
+            end=nxt.start+nxt.length
+        surface=text[a:end]
+        if len(parts)>=2 and len(surface)<=24 and not blocked_range(a,end):
+            proposals.append((a,end,surface,tuple(p.form for p in parts)))
             forms.add(surface)
             forms.update(p.form for p in parts)
-        index = max(index + 1, j)
-    if not proposals:
+        if (include_unlisted and token.tag.split('-')[0] in UNLISTED_TAGS
+                and 2<=len(token.form)<=24 and not blocked_range(a,a+token.length)):
+            singles.append((a,a+token.length,token.form))
+            forms.add(token.form)
+    if not proposals and not singles:
         return []
-    entries = await lookup(sorted(forms))
-    risks = []
-    for start, end, surface, parts in proposals:
-        # Full native/converted headword is positive lexical-boundary evidence.
+    entries=await lookup(sorted(forms))
+    risks=[]
+    compound_ranges=[]
+    for a,b,surface,parts in proposals:
+        # Any real full headword, including a native one, is better lexical
+        # boundary evidence than a guessed concatenation of its subwords.
         if entries.get(surface):
             continue
-        if not any(entries.get(part) for part in parts):
-            continue
-        risks.append((start, end, surface, 'kiwi_split_no_full_headword'))
-    return risks
+        compound_ranges.append((a,b))
+        risks.append((a,b,surface,'kiwi_split_no_full_headword'))
+    if include_unlisted:
+        for a,b,surface in singles:
+            if entries.get(surface) or any(x<=a and b<=y for x,y in compound_ranges):
+                continue
+            risks.append((a,b,surface,'unlisted_nominal_headword'))
+    # Identical source offsets are one review obligation, regardless of how
+    # many tokens or evidence sources discovered the same possible word.
+    dedup={}
+    for row in risks:
+        dedup.setdefault((row[0],row[1]),row)
+    return list(sorted(dedup.values(),key=lambda row:(row[0],row[1])))
 
 def weak_unique_candidate(segment, tokens):
     """Risk, not proof of an error. Prefer words without contextual evidence.
