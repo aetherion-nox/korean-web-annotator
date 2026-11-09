@@ -659,113 +659,105 @@
     task.manualTimer=setTimeout(()=>{if(!task.finished&&currentTask===task&&task.manualBackup?.requestId===requestId)recoverManualConnection(task,'提交后 30 秒未收到后台确认，切换到页面备份。');},30000);
   }
 
-  function canonicalManualParts(source,raw){
-    if(!Array.isArray(raw))return null;
-    const normalized=[];let last=0;
-    for(const p of raw){
-      if(!p||typeof p!=='object'||Object.keys(p).some(k=>!['start','end','surface','type','replacement'].includes(k))||
-         !Number.isInteger(p.start)||!Number.isInteger(p.end)||p.end<=p.start||
-         typeof p.surface!=='string'||!/^[가-힣]+$/u.test(p.surface))return null;
-      let start=p.start,end=p.end;
-      if(start<0||end>source.length||source.slice(start,end)!==p.surface){
-        start=source.indexOf(p.surface);
-        if(start<0||source.indexOf(p.surface,start+1)!==-1)return null;
-        end=start+p.surface.length;
-      }
-      if(start<last||end>source.length)return null;
-      normalized.push({...p,start,end});last=end;
+  // Reconstruct an exact, much smaller batch prompt from the *original*
+  // shared dictionary pools, never from current rendered annotations.
+  function manualRepairPrompt(task,remaining,errors){
+    const batch=task.manualBackup?.requestId||task.manualRequest;
+    const instructions='本批已保存其他所有通过校验的目标。只回答下面列出的 target_id，不要重复前面的答案。'
+      +' batch_id 必须原样保持 '+batch+'。如果不确定请返回 KEEP。错误原因：\n'
+      +errors.map(e=>e.id+'：'+e.reason).join('\n')+'\n\n';
+    const original=task.manualOriginalPrompt||'';
+    const begin=original.indexOf('{"format":"shared-pools-v3"');
+    if(begin>=0){
+      try{
+        const old=JSON.parse(original.slice(begin));
+        const ids=new Set(remaining.map(b=>b.target_id));
+        const targets=(old.targets||[]).filter(t=>ids.has(t.target_id));
+        if(targets.length===remaining.length){
+          const candidateIds=new Set(targets.flatMap(t=>Object.values(t.options||{}))
+            .filter(value=>typeof value==='string'));
+          const sentencesIds=new Set(targets.map(t=>t.sentence_id));
+          const payload={...old,
+            sentences:(old.sentences||[]).filter(s=>sentencesIds.has(s.sentence_id)),
+            candidates:(old.candidates||[]).filter(c=>candidateIds.has(c.candidate_id)),
+            targets,batch_id:batch};
+          return instructions+original.slice(0,begin)+JSON.stringify(payload);
+        }
+      }catch(error){addDiagnostic({level:'warning',message:'无法缩减离线恢复提示词：'+error.message});}
     }
-    return normalized;
-  }
-  function groundedManualSyllable(binding,p){
-    const found=(binding.componentCandidates||[]).some(c=>c.start===p.start&&c.end===p.end&&c.surface===p.surface&&
-      (c.options||[]).some(o=>o.entry_id!=null&&o.type===p.type&&o.replacement===p.replacement&&
-       (!o.written_form||o.written_form.replace(/[-^ ]/gu,'')===p.surface)));
-    if(!found)return false;
-    const tokens=binding.morphology||[];
-    if(!tokens.some(t=>t.start===p.start&&t.end===p.end&&['NNG','NNB','NR'].includes(String(t.tag||'').split('-')[0])))return false;
-    if(!tokens.some(t=>t.start===p.end&&
-      (/^J/u.test(String(t.tag||''))||['EP','EF','EC','ETM','ETN'].includes(String(t.tag||'').split('-')[0]))))return false;
-    return p.start===0||tokens.some(t=>t.end===p.start&&['MM','NR','ETM'].includes(String(t.tag||'').split('-')[0]));
+    const targets=remaining.map(b=>({target_id:b.target_id,surface:b.surface,
+      morphology:b.morphology||[],component_candidates:b.componentCandidates||[],
+      choices:(b.choices||[]).map(o=>o.choice_id),generated_choices:b.generatedChoices||[]}));
+    return instructions+'请参照先前保存的原批提示词判断下列目标，回答时仅输出 JSON。\n'
+      +JSON.stringify({batch_id:batch,targets});
   }
 
   function applyManualRecovery(task,text,{advance=true,paint=true}={}){
     const backup=task.manualBackup;
-    if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
-    if(typeof text!=='string'||text.length>5*1024*1024)throw Error('请提供不超过 5 MiB 的完整 JSON 结果。');
-    let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
-    let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
-    if(response?.batch_id!==backup.requestId)throw Error('batch_id 缺失或不属于当前批次，未应用任何答案。');
-    const incoming=response?.results,bindings=new Map(backup.bindings.map(b=>[b.target_id,b])),seen=new Set(),accepted=[];
+    if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)
+      throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
+    if(typeof text!=='string'||text.length>5*1024*1024)
+      throw Error('请提供不超过 5 MiB 的本批 JSON 结果。');
+    const core=globalThis.KRA_REVIEW_VALIDATION_CORE;
+    if(!core?.validateBindingRow)throw Error('统一词源校验模块未加载。请刷新网页后重新标注，不要粘贴旧批次的结果。');
+    let source=text.trim();
+    const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
+    let response;
+    try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
+    if(response?.batch_id!==backup.requestId)
+      throw Error('batch_id 与当前批次不一致：需要 '+backup.requestId+'，收到 '+String(response?.batch_id??'(缺失)')+'。未覆盖已保存答案。');
+    const incoming=response?.results;
     if(!Array.isArray(incoming))throw Error('结果缺少 results 数组。');
-    const rowsById=new Map(task.manualRecoveryAccepted||[]);
+    const bindings=new Map(backup.bindings.map(b=>[b.target_id,b]));
+    const seen=new Set();
+    const illegal=[];
     for(const row of incoming){
-      if(!row||!bindings.has(row.target_id)||seen.has(row.target_id))throw Error('修复结果包含重复或其他批次的 target_id。');
-      seen.add(row.target_id);rowsById.set(row.target_id,row);
+      const id=row?.target_id;
+      if(!bindings.has(id))illegal.push('未知 target_id：'+String(id??'(缺失)'));
+      else if(seen.has(id))illegal.push('重复 target_id：'+id);
+      seen.add(id);
     }
-    if(rowsById.size!==bindings.size)throw Error('已保留的有效答案不足，仍缺少 '+(bindings.size-rowsById.size)+' 条；请导入完整 JSON 或修复后的答案。');
-    const rows=[...rowsById.values()];seen.clear();
-    for(const row of rows){
-      const binding=bindings.get(row?.target_id);
-      let choice=binding?.choices.find(o=>o.choice_id===row?.choice_id);
-      if(!choice && binding?.generatedChoices?.includes(row?.choice_id)){
-        const hanja=row.choice_id==='GEN_HANJA',loanword=row.choice_id==='GEN_LOANWORD';
-        const value=row.replacement,source=binding.surface;
-        const validSource=typeof source==='string'&&/^[가-힣]{1,24}$/u.test(source);
-        const safeReply=row.confidence==='high'&&typeof row.evidence==='string'&&row.evidence.trim()&&row.evidence.length<=240&&
-          typeof value==='string'&&value===value.trim()&&value===value.normalize('NFC')&&
-          !Object.keys(row).some(key=>!['target_id','choice_id','replacement','confidence','evidence'].includes(key));
-        const cjk=/^[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]+$/u;
-        const foreign=/^[\p{L}\p{M}\p{N} .,'’+\-/&]{1,100}$/u;
-        const validHanja=hanja&&cjk.test(value)&&Array.from(value).length===Array.from(source||'').length;
-        const validLoanword=loanword&&foreign.test(value)&&!/[\p{Script=Hangul}\p{Script=Han}]/u.test(value)&&/[\p{L}]/u.test(value)&&value!==source;
-        if(validSource&&safeReply&&((validHanja&&task.modes.hanja)||(validLoanword&&task.modes.loanword))){
-          choice={choice_id:row.choice_id,annotations:[{start:binding.start,end:binding.end,surface:source,replacement:value,type:hanja?'hanja':'loanword'}]};
-        }
+    if(illegal.length)throw Error('本批未应用新结果：'+illegal.slice(0,8).join('；')+(illegal.length>8?'（另有 '+(illegal.length-8)+' 条）':'')+'。已保存的有效结果不受影响。');
+    const acceptedRows=new Map(task.manualRecoveryAccepted||[]);
+    const errors=[];
+    for(const row of incoming){
+      const binding=bindings.get(row.target_id);
+      const verified=core.validateBindingRow(binding,row,task.modes);
+      if(verified.ok)acceptedRows.set(row.target_id,verified.normalizedRow);
+      else errors.push({id:row.target_id,reason:verified.message+' ['+verified.code+']'});
+    }
+    // Recheck persisted answers against THIS batch's source spans and modes.
+    const verifiedRows=new Map();
+    for(const [id,row] of acceptedRows){
+      const binding=bindings.get(id);
+      if(!binding)continue;
+      const checked=core.validateBindingRow(binding,row,task.modes);
+      if(checked.ok)verifiedRows.set(id,checked.normalizedRow);
+      else errors.push({id,reason:'已保存答案不再合法：'+checked.message});
+    }
+    task.manualRecoveryAccepted=verifiedRows;
+    const missing=[...bindings.values()].filter(b=>!verifiedRows.has(b.target_id));
+    if(missing.length){
+      const reasons=new Map(errors.map(e=>[e.id,e.reason]));
+      const errorsForPrompt=missing.map(b=>({id:b.target_id,reason:reasons.get(b.target_id)||'本次结果未包含此 ID'}));
+      const prompt=manualRepairPrompt(task,missing,errorsForPrompt);
+      const panel=document.querySelector('.kra-manual-review');
+      if(panel){
+        panel.querySelector('.kra-manual-prompt').value=prompt;
+        panel.querySelector('.kra-manual-summary').textContent+='\\n已保存 '+verifiedRows.size+'/'+bindings.size
+          +' 条通过校验的决定。剩余 '+missing.length+' 条待修复；新提示词仅包含待修复目标。';
       }
-      if(!choice&&binding?.segmentationReview&&binding.generatedChoices?.includes('GEN_SEGMENTS')&&row?.choice_id==='GEN_SEGMENTS'){
-        const source=binding.surface;
-        const ok=row.confidence==='high'&&typeof row.evidence==='string'&&row.evidence.trim()&&row.evidence.length<=240&&
-          Object.keys(row).every(k=>['target_id','choice_id','segments','confidence','evidence'].includes(k))&&
-          Array.isArray(row.segments)&&row.segments.length>0&&row.segments.length<=8&&
-          typeof source==='string'&&/^[가-힣]{2,24}$/u.test(source);
-        if(ok){
-          let end=0,valid=true;const annotations=[];
-          const normalized=canonicalManualParts(source,row.segments);
-          if(!normalized)valid=false;
-          if(binding.nameRisk===true&&normalized?.some(p=>p.type==='loanword')&&
-            !normalized.every(p=>(binding.componentCandidates||[]).some(c=>
-              c.start===p.start&&c.end===p.end&&c.surface===p.surface&&
-              (c.options||[]).some(o=>o.entry_id!=null&&o.type===p.type&&o.replacement===p.replacement))))valid=false;
-          for(const p of normalized||[]){
-            if(!p||typeof p!=='object'||Object.keys(p).some(k=>!['start','end','surface','type','replacement'].includes(k))||
-               !Number.isInteger(p.start)||!Number.isInteger(p.end)||p.start<end||p.end>source.length||
-               p.surface!==source.slice(p.start,p.end)||typeof p.replacement!=='string'||
-               p.replacement!==p.replacement.trim()||p.replacement!==p.replacement.normalize('NFC')||
-               !['hanja','loanword'].includes(p.type)){valid=false;break;}
-            const hanja=p.type==='hanja';
-            const safe=hanja?task.modes.hanja&&/^[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]+$/u.test(p.replacement)&&Array.from(p.replacement).length===p.end-p.start:
-              task.modes.loanword&&/^[\p{L}\p{M}\p{N} .,'’+\-/&]{1,100}$/u.test(p.replacement)&&!/[\p{Script=Hangul}\p{Script=Han}]/u.test(p.replacement)&&/[\p{L}]/u.test(p.replacement);
-            if(!safe){valid=false;break;}
-            annotations.push({start:binding.start+p.start,end:binding.start+p.end,surface:p.surface,
-              replacement:p.replacement,type:p.type});
-            end=p.end;
-          }
-          if(valid){
-            for(let i=0;i<normalized.length;i++){
-              const part=normalized[i];
-              if(part.end-part.start!==1)continue;
-              const previous=normalized[i-1],next=normalized[i+1];
-              if(!((previous&&previous.end===part.start)||
-                  (next&&part.end===next.start)||groundedManualSyllable(binding,part))){valid=false;break;}
-            }
-          }
-          if(valid)choice={choice_id:'GEN_SEGMENTS',annotations};
-        }
-      }
-      if(binding&&(binding.boundaryUnverified||binding.partialWord)&&choice&&choice.choice_id!=='GEN_SEGMENTS'&&choice.annotations?.length)choice={choice_id:'KEEP',annotations:[]};
-      if(!binding||seen.has(row.target_id)||!choice)throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
-      seen.add(row.target_id);accepted.push({binding,choice});
+      const explanation='本批已保留 '+verifiedRows.size+'/'+bindings.size+' 条有效答案，尚有 '+missing.length
+        +' 条：'+errorsForPrompt.slice(0,8).map(e=>e.id+'（'+e.reason+'）').join('；')
+        +(missing.length>8?'；其余请查看纠错提示词':'')+'。请只提交待修复 ID，保持 batch_id 不变。';
+      addDiagnostic({level:'warning',message:explanation});
+      throw Error(explanation);
+    }
+    const accepted=[];
+    for(const [id,binding] of bindings){
+      const checked=core.validateBindingRow(binding,verifiedRows.get(id),task.modes);
+      if(!checked.ok)throw Error('校验状态异常 '+id+'：'+checked.message);
+      accepted.push({binding,choice:checked.value});
     }
     const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry])),groups=new Map();
     for(const {binding,choice} of accepted)for(const b of (task.paragraphPlan?task.paragraphPlan.projectBinding(binding,choice):[{...binding,annotations:choice.annotations}])){
