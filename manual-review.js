@@ -107,23 +107,32 @@ export function createManualReviewSession({operationId,post,signal}={}){
     if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
     const validationConfig={reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,
      allowModelLoanword:current.allowModelLoanword,allowModelSegmentation:current.allowModelSegmentation};
-    const known=new Map(current.wireTargets.map(t=>[t.target_id,t])),seen=new Set();
+    const known=new Map(current.wireTargets.map(t=>[t.target_id,t]));
+    const grouped=new Map(),failures=[];
     for(const row of response.results){
-     if(!row||!known.has(row.target_id))throw Error('包含不属于本批的 target_id：'+String(row?.target_id??'(缺失)'));
-     if(seen.has(row.target_id))throw Error('重复的 target_id：'+row.target_id);
-     seen.add(row.target_id);
+     if(!row||!known.has(row.target_id)){
+      failures.push('跨批或未知 target_id：'+String(row?.target_id??'(缺失)'));
+      continue;
+     }
+     if(!grouped.has(row.target_id))grouped.set(row.target_id,[]);
+     grouped.get(row.target_id).push(row);
     }
-    const failures=[];
-    for(const row of response.results){
-     const target=known.get(row.target_id);
+    for(const [id,rows] of grouped){
+     if(rows.length!==1){
+      failures.push('重复 target_id：'+id+'（本次 '+rows.length+' 条，已忽略）');
+      continue;
+     }
+     // Never overwrite a decision accepted in an earlier submission.
+     if(current.acceptedRows.has(id))continue;
+     const row=rows[0],target=known.get(id);
      const outcome=validateChoices([target],{results:[row]},validationConfig);
      if(outcome.accepted.length!==1){
       failures.push(explainRejectedManualResult([target],[row],validationConfig));
       continue;
      }
      const option=outcome.accepted[0].option;
-     current.acceptedRows.set(row.target_id,{
-      target_id:row.target_id,choice_id:option.choice_id,
+     current.acceptedRows.set(id,{
+      target_id:id,choice_id:option.choice_id,
       ...(option.generated?{confidence:option.confidence,evidence:option.evidence,
        ...(option.segmentationGenerated?{segments:option.segments}:{replacement:option.replacement})}:{})
      });
