@@ -128,3 +128,60 @@ test('DOM link and list boundaries are inserted without changing text-node coord
  assert.equal(result.text,'구독\n안내\n지면');
  assert.equal(JSON.stringify(result.runs.map(r=>[r.start,r.end])),JSON.stringify([[0,2],[3,5],[6,8]]));
 });
+
+test('foreign or duplicate IDs never invalidate unrelated model decisions',()=>{
+ const targets=[segmentation('t0','학교'),segmentation('t1','안내'),segmentation('t2','지면')];
+ const response={results:[
+  {target_id:'t0',choice_id:'KEEP'},
+  {target_id:'t1',choice_id:'KEEP'},
+  {target_id:'t1',choice_id:'KEEP'},
+  {target_id:'another-batch',choice_id:'KEEP'},
+  {target_id:'t2',choice_id:'KEEP'}
+ ]};
+ const checked=validateChoices(targets,response,flags);
+ assert.deepEqual(checked.accepted.map(a=>a.target.target_id),['t0','t2']);
+ assert.deepEqual(checked.unresolved.map(t=>t.target_id),['t1']);
+});
+test('manual mixed-invalid batch saves its valid rows and repairs only remaining IDs',async()=>{
+ const targets=[segmentation('orig-a','학교'),segmentation('orig-b','안내'),segmentation('orig-c','지면')];
+ const events=[],session=createManualReviewSession({operationId:'mixed',post:event=>events.push(event)});
+ const pending=session.request({...flags,context:'학교 안내 지면'},targets);
+ const requestId=events[0].requestId;
+ const first={batch_id:requestId,results:[
+  {target_id:'t0',choice_id:'KEEP'},
+  {target_id:'t1',choice_id:'KEEP'},
+  {target_id:'t1',choice_id:'KEEP'},
+  {target_id:'t2',choice_id:'invalid_choice'},
+  {target_id:'other-batch',choice_id:'KEEP'}
+ ]};
+ assert.equal(session.submit({operationId:'mixed',requestId,text:JSON.stringify(first)}),false);
+ const err=events.at(-1);
+ assert.equal(err.acceptedCount,1);
+ assert.deepEqual(err.invalidTargetIds,['t1','t2']);
+ assert.equal(err.acceptedRows[0].target_id,'t0');
+ assert.match(err.error,/重复 target_id/);
+ assert.match(err.repairPrompt,/"target_id":"t1"/);
+ assert.doesNotMatch(err.repairPrompt,/"target_id":"t0"/);
+ const patch={batch_id:requestId,results:[
+  {target_id:'t1',choice_id:'KEEP'},
+  {target_id:'t2',choice_id:'KEEP'}
+ ]};
+ assert.equal(session.submit({operationId:'mixed',requestId,text:JSON.stringify(patch)}),true);
+ const finished=await pending;
+ assert.deepEqual(finished.results.map(r=>r.target_id),['orig-a','orig-b','orig-c']);
+ assert.deepEqual(finished.results.map(r=>r.choice_id),['KEEP','KEEP','KEEP']);
+});
+test('wrong batch_id still rejects the entire manual submission before saving any row',async()=>{
+ const target=segmentation('original','학교');
+ const events=[],session=createManualReviewSession({operationId:'strict-batch',post:event=>events.push(event)});
+ const pending=session.request({...flags,context:'학교'},[target]);
+ const requestId=events[0].requestId;
+ assert.equal(session.submit({operationId:'strict-batch',requestId,text:JSON.stringify({
+  batch_id:'wrong-batch',results:[{target_id:'t0',choice_id:'KEEP'}]
+ })}),false);
+ assert.match(events.at(-1).error,/batch_id/);
+ assert.equal(session.submit({operationId:'strict-batch',requestId,text:JSON.stringify({
+  batch_id:requestId,results:[{target_id:'t0',choice_id:'KEEP'}]
+ })}),true);
+ assert.equal((await pending).results.length,1);
+});
