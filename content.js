@@ -830,7 +830,10 @@
     }else{
       clearTimeout(task.manualTimer);
       if(Array.isArray(event.acceptedRows))task.manualRecoveryAccepted=new Map(event.acceptedRows.map(r=>[r.target_id,r]));
-      try{applyManualRecovery(task,JSON.stringify({batch_id:event.requestId,results:[...(task.manualRecoveryAccepted?.values()||[])]}),{advance:false,paint:false});}catch(error){addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message});}
+      const recoveryAnswer=Array.isArray(event.acceptedRows)?
+        JSON.stringify({batch_id:event.requestId,results:[...task.manualRecoveryAccepted.values()]}):
+        (task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value);
+      try{applyManualRecovery(task,recoveryAnswer,{advance:false,paint:false});}catch(error){addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message});}
       task.manualRequest=null;panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }

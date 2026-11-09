@@ -85,7 +85,9 @@ test('invalid offsets, invented fields and unsupported characters cannot bypass 
  assert.ok(validateGeneratedSegmentsRow(target,good,config));
  assert.equal(validateGeneratedSegmentsRow(target,{...good,confidence:'medium'},config),null);
  assert.equal(validateGeneratedSegmentsRow(target,{...good,extra:'yes'},config),null);
- assert.equal(validateGeneratedSegmentsRow(target,{...good,segments:[{...good.segments[0],start:1}]},config),null);
+ const corrected=validateGeneratedSegmentsRow(target,{...good,segments:[{...good.segments[0],start:1}]},config);
+ assert.ok(corrected); // unique source substring: numeric offset can be safely repaired
+ assert.equal(corrected.segments[0].start,0);
  assert.equal(validateGeneratedSegmentsRow(target,{...good,segments:[{...good.segments[0],replacement:'DistrictAssembly'}]},config),null);
  assert.equal(validateGeneratedSegmentsRow(target,{...good,segments:[{...good.segments[0],replacement:'區人大會'}]},config),null);
 });
