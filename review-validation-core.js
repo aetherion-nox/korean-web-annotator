@@ -69,6 +69,28 @@
   return pass(value,{target_id:row.target_id,choice_id:row.choice_id,replacement,
     confidence:'high',evidence:row.evidence.trim()});
  }
+ function explainOffsets(target,raw){
+  const source=target?.surface||'';let cursor=0;
+  for(let i=0;i<(raw||[]).length;i++){
+   const part=raw[i],index=i+1;
+   if(!allowed(part,['start','end','surface','type','replacement'])||
+      !Number.isInteger(part.start)||!Number.isInteger(part.end)||part.end<=part.start||
+      typeof part.surface!=='string'||!/^[가-힣]+$/u.test(part.surface))
+    return '第 '+index+' 段缺少合法 start/end/surface，或包含多余字段';
+   let start=part.start,end=part.end;
+   if(start<0||end>source.length||source.slice(start,end)!==part.surface){
+    start=source.indexOf(part.surface);
+    if(start<0)return '第 '+index+' 段的 surface 无法在本目标原文中找到';
+    if(source.indexOf(part.surface,start+1)!==-1)
+     return '第 '+index+' 段的 surface 在原文中重复出现，不能安全猜测位置';
+    end=start+part.surface.length;
+   }
+   if(start<cursor)return '第 '+index+' 段与前一段重叠或顺序错误';
+   if(end>source.length)return '第 '+index+' 段超出目标原文边界';
+   cursor=end;
+  }
+  return '片段与当前目标的原文位置不一致';
+ }
  function generatedSegments(target,row,config={}){
   if(!target?.segmentation_review||!row||row.choice_id!=='GEN_SEGMENTS'||
     typeof row.target_id!=='string'||!allowed(row,['target_id','choice_id','segments','confidence','evidence'])||
@@ -77,7 +99,7 @@
     return fail('SEGMENT_SCHEMA','GEN_SEGMENTS 的字段、1–8 个片段、置信度或证据不符合协议');
   if(!HANGUL.test(target.surface))return fail('SEGMENT_SOURCE','完整词段须为 1–24 个连续谚文字');
   const aligned=canonicalize(target,row.segments);
-  if(!aligned)return fail('SEGMENT_OFFSETS','子词的 surface 无法在原文中唯一定位，或有越界／重叠');
+  if(!aligned)return fail('SEGMENT_OFFSETS',explainOffsets(target,row.segments));
   const parts=[];
   for(const part of aligned){
    if(!['hanja','loanword'].includes(part.type)||typeof part.replacement!=='string')
@@ -95,14 +117,6 @@
   if(target.name_risk===true&&parts.some(p=>p.type==='loanword')&&
      !parts.every(p=>matchingOrigin(target,p)))
     return fail('NAME_RISK','疑似专名不能只根据音近生成未收录的外语词源');
-  for(let i=0;i<parts.length;i++){
-   const part=parts[i];
-   if(part.end-part.start!==1)continue;
-   const previous=parts[i-1],next=parts[i+1];
-   const attached=(previous&&previous.end===part.start)||(next&&part.end===next.start);
-   if(!attached&&!groundedSyllable(target,part))
-    return fail('ISOLATED_SYLLABLE','单音节 '+part.surface+' 缺少独立名词边界或相符词典来源');
-  }
   if(!parts.length)return pass({choice_id:'KEEP',type:'keep',replacement:target.surface,
     entry_id:null,definitions:[]},{target_id:row.target_id,choice_id:'KEEP'});
   let replacement=target.surface;
@@ -114,6 +128,14 @@
     .filter(m=>m[1]===target.surface).map(m=>m[2]);
   if(wholeAssertions.length&&!wholeAssertions.includes(replacement))
    return fail('EVIDENCE_CONTRADICTION','模型声称的完整汉字词源与实际转换片段不一致，请重审完整词');
+  for(let i=0;i<parts.length;i++){
+   const part=parts[i];
+   if(part.end-part.start!==1)continue;
+   const previous=parts[i-1],next=parts[i+1];
+   const attached=(previous&&previous.end===part.start)||(next&&part.end===next.start);
+   if(!attached&&!groundedSyllable(target,part))
+    return fail('ISOLATED_SYLLABLE','单音节 '+part.surface+' 缺少独立名词边界或相符词典来源');
+  }
   const value={choice_id:'GEN_SEGMENTS',type:'mixed',replacement,segments:parts,
     entry_id:null,definitions:[],generated:true,segmentationGenerated:true,
     confidence:'high',evidence:row.evidence.trim()};
