@@ -333,7 +333,7 @@ async function ensureContentScriptInFrame(tabId, frameId = 0) {
 
   const target = { tabId, frameIds: [frameId] };
   await chrome.scripting.insertCSS({ target, files: ['content.css'] });
-  await chrome.scripting.executeScript({ target, files: ['content.js'] });
+  await chrome.scripting.executeScript({ target, files: ['review-validation-core.js','content.js'] });
   const injected = await chrome.tabs.sendMessage(tabId, { type: 'KRA_PING' }, messageOptions);
   if (!injected?.ok || injected.version !== CONTENT_SCRIPT_VERSION) {
     throw new Error('内容脚本没有正确启动，请刷新当前网页后重试。');

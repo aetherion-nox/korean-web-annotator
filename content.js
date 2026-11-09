@@ -45,7 +45,15 @@
       if(node.matches(OWN_RUBY)){const value=node.dataset.kraOriginal||'';runs.push({node,start:text.length,end:text.length+value.length,owned:true});text+=value;return;}
       if(node.matches('script,style,noscript,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball'))return;
       if(node.matches('ruby')){text+=node.textContent;return;}
-      for(const child of node.childNodes)visit(child);
+      for(const child of node.childNodes){
+        // Independent clickable menu/list entries are lexical boundaries,
+        // even if the webpage omitted whitespace between their DOM nodes.
+        // Preserve full original node text and index positions; separators
+        // exist only in the paragraph analysis buffer.
+        if(child.nodeType===1&&child.matches('a,button,li,[role="link"],[role="button"]')&&
+           /[가-힣]$/u.test(text)&&/^[가-힣]/u.test(child.textContent||''))text+='\n';
+        visit(child);
+      }
     }
     if(element)visit(element);return {text,runs};
   }
@@ -744,7 +752,7 @@
       const panel=document.querySelector('.kra-manual-review');
       if(panel){
         panel.querySelector('.kra-manual-prompt').value=prompt;
-        panel.querySelector('.kra-manual-summary').textContent+='\\n已保存 '+verifiedRows.size+'/'+bindings.size
+        panel.querySelector('.kra-manual-summary').textContent+='\n已保存 '+verifiedRows.size+'/'+bindings.size
           +' 条通过校验的决定。剩余 '+missing.length+' 条待修复；新提示词仅包含待修复目标。';
       }
       const explanation='本批已保留 '+verifiedRows.size+'/'+bindings.size+' 条有效答案，尚有 '+missing.length

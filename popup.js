@@ -221,7 +221,7 @@ async function getActiveTab() { const [tab] = await chrome.tabs.query({active:tr
 async function ensureContentScript(tabId) {
   try { const existing = await chrome.tabs.sendMessage(tabId,{type:'KRA_PING'}); if (existing?.ok && existing.version===CONTENT_SCRIPT_VERSION) return; } catch {}
   await chrome.scripting.insertCSS({target:{tabId},files:['content.css']});
-  await chrome.scripting.executeScript({target:{tabId},files:['content.js']});
+  await chrome.scripting.executeScript({target:{tabId},files:['review-validation-core.js','content.js']});
   const injected = await chrome.tabs.sendMessage(tabId,{type:'KRA_PING'});
   if (!injected?.ok || injected.version!==CONTENT_SCRIPT_VERSION) throw new Error(t('scriptFailed'));
 }
