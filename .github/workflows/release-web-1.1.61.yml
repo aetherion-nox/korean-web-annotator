@@ -21,6 +21,7 @@ jobs:
           node --check model-origin.js
           node --check segmentation-rescue.js
           node --check review-merge.js
+          node --check local-engine.js
           node --check review-payload.js
           node --check annotation-pipeline.js
           node --check content.js

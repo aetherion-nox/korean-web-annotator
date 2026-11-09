@@ -20,3 +20,19 @@ test('explicitly disabling the guard leaves established local behavior unchanged
  const local=events.find(e=>e.type==='RESULTS'&&e.source==='local');
  assert.equal(local.results[0].annotations[0].replacement,'學');
 });
+
+test('complete verified mixed word keeps local one-syllable component annotations',async()=>{
+ const entries=[
+  {start:0,end:1,surface:'팀',replacement:'team',type:'loanword'},
+  {start:1,end:2,surface:'장',replacement:'長',type:'hanja'}
+ ];
+ const localAnalyze=async()=>({engine_version:'fixture',dictionary_fingerprint:'dict',
+   annotations:entries,targets:[],confirmed_whole_spans:[{start:0,end:2}],stats:{local_determined:2,pending:0,protected_names:0}});
+ const events=[];
+ await runSentencePipeline({operationId:'verified',sentences:[{id:'s',text:'팀장'}],
+  modes:{hanja:true,loanword:true},singleHangulLocalGuard:true},e=>events.push(e),
+  {analyze:localAnalyze,status,enabled:false});
+ const local=events.find(e=>e.type==='RESULTS'&&e.source==='local');
+ assert.equal(local.results[0].annotations.length,2);
+ assert.deepEqual(local.results[0].annotations.map(a=>a.replacement),['team','長']);
+});
