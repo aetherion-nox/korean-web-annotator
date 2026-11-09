@@ -126,5 +126,5 @@ test('DOM link and list boundaries are inserted without changing text-node coord
  const root=el('div',el('a',first),el('a',second),el('li',third));
  const result=sandbox.sourceOf(root);
  assert.equal(result.text,'구독\n안내\n지면');
- assert.deepEqual(result.runs.map(r=>[r.start,r.end]),[[0,2],[3,5],[6,8]]);
+ assert.equal(JSON.stringify(result.runs.map(r=>[r.start,r.end])),JSON.stringify([[0,2],[3,5],[6,8]]));
 });

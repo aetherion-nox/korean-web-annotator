@@ -120,7 +120,8 @@ test('402-row manual JSON saves canonicalized valid rows and requests only the u
  const output=await pending;
  assert.equal(output.results.length,402);
  assert.equal(output.results[262].segments[0].end,4);
- assert.equal(output.results[182].replacement,'한票를');
+ assert.equal(output.results[182].segments[0].replacement,'票');
+ assert.equal(Object.hasOwn(output.results[182],'replacement'),false);
  assert.equal(output.results[268].choice_id,'KEEP');
 });
 test('unknown IDs or duplicate patch rows never erase previously validated decisions',async()=>{

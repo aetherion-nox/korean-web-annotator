@@ -104,7 +104,8 @@ test('manual JSON and streaming replies use the same whole-word validation',asyn
  assert.equal(session.submit({operationId:'op',requestId:request.requestId,
    text:JSON.stringify({batch_id:request.requestId,results:[row]})}),true);
  const output=await waiting;
- assert.equal(output.results[0].replacement,'區人大');
+ assert.deepEqual(output.results[0].segments,[row.segments[0]]);
+ assert.equal(Object.hasOwn(output.results[0],'replacement'),false);
  assert.equal(output.results[0].segments[0].end,3);
 });
 test('pipeline can recover a dictionary-missing term and leaves particles unchanged',async()=>{
