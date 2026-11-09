@@ -26,22 +26,24 @@
 
     <section id="enginePanel">
       <h2 data-engine-i18n="title"></h2>
-      <label class="inline"><input id="enableModelReview" type="checkbox"><span data-engine-i18n="model"></span></label>
+      <label class="inline"><input id="enableModelReview" type="checkbox" checked><span data-engine-i18n="model"></span></label>
       <label class="inline"><input id="preloadEngineOnStartup" type="checkbox" checked aria-describedby="preloadEngineHint"><span data-engine-i18n="preloadEngineOnStartup">浏览器启动时预加载（默认开启）</span></label>
       <p id="preloadEngineHint" class="profile-note" data-engine-i18n="preloadEngineHint"></p>
       <label class="inline"><input id="nameProtection" type="checkbox" checked aria-describedby="nameProtectionHint"><span data-engine-i18n="nameProtection">姓名整段保护（默认开启）</span></label>
       <p id="nameProtectionHint" class="profile-note" data-engine-i18n="nameProtectionHint"></p>
-      <label class="inline"><input id="reviewPosFilter" type="checkbox" checked aria-describedby="reviewPosFilterHint"><span data-engine-i18n="reviewPosFilter">送审候选词性过滤（默认开启）</span></label>
+      <label class="inline"><input id="singleHangulLocalGuard" type="checkbox" checked aria-describedby="singleHangulLocalGuardHint"><span data-engine-i18n="singleHangulLocalGuard">单音节谚文词禁止本地标注（默认开启）</span></label>
+      <p id="singleHangulLocalGuardHint" class="profile-note" data-engine-i18n="singleHangulLocalGuardHint"></p>
+      <label class="inline"><input id="reviewPosFilter" type="checkbox" aria-describedby="reviewPosFilterHint"><span data-engine-i18n="reviewPosFilter">送审候选词性过滤（默认开启）</span></label>
       <p id="reviewPosFilterHint" class="profile-note" data-engine-i18n="reviewPosFilterHint"></p>
-      <label class="inline"><input id="allowModelHanja" type="checkbox" aria-describedby="allowModelHanjaHint"><span data-engine-i18n="allowModelHanja">实验：允许模型补充汉字词（默认关闭）</span></label>
+      <label class="inline"><input id="allowModelHanja" type="checkbox" checked aria-describedby="allowModelHanjaHint"><span data-engine-i18n="allowModelHanja">实验：允许模型补充汉字词（默认关闭）</span></label>
       <p id="allowModelHanjaHint" class="profile-note" data-engine-i18n="allowModelHanjaHint"></p>
-      <label class="inline"><input id="allowModelLoanword" type="checkbox" aria-describedby="allowModelLoanwordHint"><span data-engine-i18n="allowModelLoanword">实验：允许模型补充外来语原词（默认关闭）</span></label>
+      <label class="inline"><input id="allowModelLoanword" type="checkbox" checked aria-describedby="allowModelLoanwordHint"><span data-engine-i18n="allowModelLoanword">实验：允许模型补充外来语原词（默认关闭）</span></label>
       <p id="allowModelLoanwordHint" class="profile-note" data-engine-i18n="allowModelLoanwordHint"></p>
-      <label class="inline"><input id="allowModelSegmentation" type="checkbox" aria-describedby="allowModelSegmentationHint"><span data-engine-i18n="allowModelSegmentation">实验：允许模型重新分词（默认关闭）</span></label>
+      <label class="inline"><input id="allowModelSegmentation" type="checkbox" checked aria-describedby="allowModelSegmentationHint"><span data-engine-i18n="allowModelSegmentation">实验：允许模型重新分词（默认关闭）</span></label>
       <p id="allowModelSegmentationHint" class="profile-note" data-engine-i18n="allowModelSegmentationHint"></p>
       <label class="inline"><input id="reviewAllCandidates" type="checkbox" aria-describedby="reviewAllHint"><span data-engine-i18n="reviewAll">全部交给大模型审核（默认关闭）</span></label>
       <p id="reviewAllHint" class="profile-note" data-engine-i18n="reviewAllHint"></p>
-      <label class="inline"><input id="manualModelReview" type="checkbox" aria-describedby="manualReviewHint"><span data-engine-i18n="manual">手动聊天审核（复制提示词／粘贴结果）</span></label>
+      <label class="inline"><input id="manualModelReview" type="checkbox" checked aria-describedby="manualReviewHint"><span data-engine-i18n="manual">手动聊天审核（复制提示词／粘贴结果）</span></label>
       <p id="manualReviewHint" class="profile-note" data-engine-i18n="manualHint"></p>
       <label><span data-engine-i18n="batchLabel">每批上下文容量（API／手动）</span><select id="batchContextTier" aria-describedby="batchContextHint"><option value="32k" data-engine-i18n="batchCurrent">32K</option><option value="128k" data-engine-i18n="batch128k">128K</option><option value="256k" data-engine-i18n="batch256k">256K</option><option value="512k" data-engine-i18n="batch512k">512K</option><option value="1m" data-engine-i18n="batch1m">1M</option></select></label>
       <p id="batchContextHint" class="profile-note" data-engine-i18n="batchHint"></p>
