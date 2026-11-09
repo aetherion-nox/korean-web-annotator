@@ -13,8 +13,8 @@ export function mergeResegmentationTargets(analysis,proposed){
  for(const raw of proposed){
   if(accepted.some(t=>overlap(t,raw)))continue;
   const collisions=targets.filter(t=>overlap(t,raw));
-  if((protectedSpans?.some(t=>overlap(t,raw)))||
-     (!protectedSpans&&collisions.some(NAME))||
+  if(collisions.some(NAME)||
+     protectedSpans?.some(t=>overlap(t,raw))||
      collisions.some(t=>t.start<raw.start||t.end>raw.end))continue;
   const relevantRisks=(analysis.boundary_risks||[]).filter(t=>overlap(t,raw));
   const components=collisions.map(t=>({

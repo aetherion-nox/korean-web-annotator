@@ -8,6 +8,7 @@ export const GENERATED_LOANWORD='GEN_LOANWORD';
 export const GENERATED_SEGMENTS='GEN_SEGMENTS';
 export function generatedChoices(target,config={}){
  if(target?.segmentation_review===true){
+  if(target.protected_name===true||(target.dictionary_person_name===true&&target.dictionary_name_homograph!==true))return [];
   return config.allowModelSegmentation===true&&(config.allowModelHanja===true||config.allowModelLoanword===true)&&HANGUL.test(target.surface)?[GENERATED_SEGMENTS]:[];
  }
  if(!target||!HANGUL.test(target.surface)||target.partial_word===true||target.proper_noun===true||
