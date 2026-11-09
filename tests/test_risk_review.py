@@ -40,8 +40,10 @@ class RiskReview(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(r['stats']['boundary_suspicions'],1,r)
   self.assertEqual(r['boundary_risks'][0]['surface'],'팀장',r)
   old=await self.run_text('팀장이',[('팀','NNG',0),('장','NNG',1),('이','JKS',2)],risk=False)
-  self.assertFalse(old['boundary_risks'])
-  self.assertTrue(old['targets'] or old['annotations'])
+  # The explicit weak-unique heuristic may be off, but unconditional
+  # word-boundary protection still forbids unsafe partial-word conversion.
+  self.assertTrue(any(x['reason']=='unverified_word_boundary' for x in old['boundary_risks']),old)
+  self.assertFalse(old['annotations'],old)
 
  async def test_weak_unique_homograph_is_sent_for_semantic_review(self):
   self.add('이상','以上','명사','정해진 수량을 넘음.')

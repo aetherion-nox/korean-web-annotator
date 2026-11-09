@@ -23,6 +23,7 @@ jobs:
           node --check review-merge.js
           node --check review-boundary.js
           node --check model-stream.js
+          python3 -m py_compile python/backend/risk_review.py python/backend/analysis.py python/backend/loanwords.py
           node --check local-engine.js
           node --check review-payload.js
           node --check annotation-pipeline.js
