@@ -14,7 +14,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-name-homograph-1.1.55'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-single-hangul-guard-1.1.60'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -106,6 +106,7 @@ class Engine:
         if len(text)>20000:raise ValueError('Text exceeds 20,000 characters')
         await self.initialize()
         review_all=bool(modes.get('reviewAll',False))
+        single_guard=bool(modes.get('singleHangulLocalGuard',False))
         # The original converter owns tokenization, lookup forms, scoring,
         # whole-word precedence and certainty. Do not rescan skipped compounds
         # for general conversion. Exact mixed/cross-origin words have a
@@ -142,7 +143,8 @@ class Engine:
             if s.status not in ('converted','ambiguous'):continue
             if any(s.start<b and a<s.end for a,b in mixed['ranges']):continue
             if not valid(s.start,s.end,s.original):rejected+=1;continue
-            if s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges):
+            if (s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges)
+                    and not (single_guard and len(s.original)==1 and '가'<=s.original<='힣')):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
                 token=next((t for t in tokens if t.start==s.start and t.start+t.length==s.end),None)
@@ -203,7 +205,7 @@ class Engine:
             entries=await self.lookup_entries([t.form for t in tokens])
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
-            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_all,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
+            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_all,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names,protect_single_hangul=single_guard)
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.

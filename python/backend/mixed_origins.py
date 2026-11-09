@@ -157,7 +157,9 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
         if not options:continue
         # Every whole-entry reading must support the same complete written origin.
         certain=len(signatures)==1 and mapped==len(records) and all(r.get('part_of_speech')=='명사' for r in records)
-        if certain and not modes.get('reviewAll',False) and not overlaps_proper_noun(start,end,proper_ranges):
+        if (certain and not modes.get('reviewAll',False) and not overlaps_proper_noun(start,end,proper_ranges)
+                and not (modes.get('singleHangulLocalGuard',False)
+                         and any(len(p['surface'])==1 and HANGUL.fullmatch(p['surface']) for p in options[0]['segments']))):
             for p in options[0]['segments']:
                 annotations.append({**p,'start':to_utf16(text,start)+p['start'],'end':to_utf16(text,start)+p['end']})
         else:

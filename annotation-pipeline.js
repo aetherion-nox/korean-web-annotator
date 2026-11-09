@@ -21,7 +21,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const bypassCache=selectionReview || message.forceRegenerate;
  enabled=enabled || reviewAll;
  if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>5000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
- const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
+ const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false,singleHangulLocalGuard:message.singleHangulLocalGuard!==false};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
  const stats={local_determined:0,pending:0,model_resolved:0,model_generated_hanja:0,model_generated_loanword:0,model_resegmented:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
@@ -40,6 +40,15 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const localKey=JSON.stringify(['dictionary-v3-alignment',reviewAll,identity.engine_version,identity.dictionary_fingerprint,modes,sentence.text]);
   let analysis=!bypassCache&&cache.get(localKey);
   if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:modes,signal,progress));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
+  if(modes.singleHangulLocalGuard&&analysis.annotations.length){
+   const forbidden=a=>typeof a.surface==='string'&&/^[가-힣]$/u.test(a.surface);
+   const removed=analysis.annotations.filter(forbidden);
+   if(removed.length){
+    analysis={...analysis,annotations:analysis.annotations.filter(a=>!forbidden(a)),
+      stats:{...analysis.stats,local_determined:Math.max(0,Number(analysis.stats.local_determined||0)-removed.length)}};
+    diagnostic({stage:'single-hangul',level:'warning',message:'已阻止 '+removed.length+' 个单音节谚文词的本地直接标注；未校验的词保持韩文。'});
+   }
+  }
   if(reviewAll){
    if(analysis.annotations.length)throw Error('模型重审不允许使用本地直接标注结果。');
    if(selectionReview){

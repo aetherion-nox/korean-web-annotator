@@ -40,7 +40,7 @@ def nonconversion_options(surface, records, *, definitions_by_entry=None, **mode
             options.append(dict(choice_id=f'n{len(options)}',type='nonconversion',replacement=surface,entry_id=entry,definitions=[definition] if definition else []))
     return options
 
-def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True, review_ranges=()) -> dict:
+def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True, review_ranges=(), protect_single_hangul=False) -> dict:
     """Return UTF-16 annotations/targets; input token and occupied offsets are Python indices.
 
     Mixed origins belong to the validated whole-entry segmentation path.
@@ -65,7 +65,9 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         origins={r['origin_raw'] for r in loans}
         span=dict(start=to_utf16(text,start),end=to_utf16(text,end),surface=form)
         partial=any(t is not token and t.length>0 and (t.start+t.length==start or t.start==end) and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'} for t in tokens)
-        if not force_review and not partial and not overlaps_proper_noun(start,end,proper_ranges) and len(origins)==1 and len(loans)==len(records):
+        if (not force_review and not partial and not overlaps_proper_noun(start,end,proper_ranges)
+                and not (protect_single_hangul and len(form)==1 and '가'<=form<='힣')
+                and len(origins)==1 and len(loans)==len(records)):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
             options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)
