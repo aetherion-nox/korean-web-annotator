@@ -2,20 +2,25 @@
 // No two model tasks may own intersecting source spans. Preserve the original
 // sense definitions as evidence, but choose a single whole-word outcome.
 const overlap=(a,b)=>a.start<b.end&&b.start<a.end;
-const NAME=t=>t.proper_noun===true||t.dictionary_person_name===true||
- t.dictionary_name_homograph===true||t.suspected_person_name===true;
+// A Kiwi NNP or inferred-surname *hint* is not a confirmed personal name.
+// The backend sends authoritative protected_name_spans separately.
+const NAME=t=>t.dictionary_person_name===true&&t.dictionary_name_homograph!==true;
 export function mergeResegmentationTargets(analysis,proposed){
  const targets=[...(analysis.targets||[])];
+ const protectedSpans=Array.isArray(analysis.protected_name_spans)?analysis.protected_name_spans:null;
  const accepted=[];
  let removed=0;
  for(const raw of proposed){
   if(accepted.some(t=>overlap(t,raw)))continue;
   const collisions=targets.filter(t=>overlap(t,raw));
-  if(collisions.some(t=>NAME(t)||t.start<raw.start||t.end>raw.end))continue;
+  if((protectedSpans?.some(t=>overlap(t,raw)))||
+     (!protectedSpans&&collisions.some(NAME))||
+     collisions.some(t=>t.start<raw.start||t.end>raw.end))continue;
   const relevantRisks=(analysis.boundary_risks||[]).filter(t=>overlap(t,raw));
   const components=collisions.map(t=>({
    start:t.start-raw.start,end:t.end-raw.start,surface:t.surface,
    options:t.options.map(o=>({
+    choice_id:o.choice_id,entry_id:o.entry_id,
     type:o.type,replacement:o.replacement,definitions:o.definitions,
     ...(o.written_form?{written_form:o.written_form}:{}),
     ...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{})

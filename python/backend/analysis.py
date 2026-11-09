@@ -15,7 +15,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-boundary-safety-1.1.62'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-unlisted-compounds-1.1.64'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -132,9 +132,12 @@ class Engine:
         homograph_targets=[homograph_target(text,a,b,word,records,modes) for a,b,word,records in homograph_evidence]
         suspect_targets=[surname_ambiguity_target(text,a,b,word,records,modes) for a,b,word,records in surname_ambiguities]
         blocked_for_local=protected_names+conflicting_ranges+suspect_ranges
+        # Name hints and Kiwi NNP are not conclusive: only ranges protected
+        # by the actual name engine may suppress whole-word lexical review.
         boundary_risks=await uncertain_compounds(
-            text,tokens,self.lookup_entries,blocked=blocked_for_local
-        ) if risk_review and not review_all else []
+            text,tokens,self.lookup_entries,blocked=protected_names,
+            include_unlisted=bool(modes.get('allowModelSegmentation',False))
+        ) if risk_review or modes.get('allowModelSegmentation',False) else []
         blocked_for_local += [(a,b) for a,b,_,_ in boundary_risks]
         upstream_counts={f'upstream_{status}':sum(s.status==status for s in segments) for status in ('converted','ambiguous','no_match','kept')}
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)

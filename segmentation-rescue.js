@@ -17,9 +17,13 @@ export function segmentationTargets(text,analysis,selected=[]){
   }
   return cursor===end;
  };
- const protectedTargets=(analysis?.targets||[]).filter(t=>
-   t.proper_noun===true||t.dictionary_person_name===true||
-   t.dictionary_name_homograph===true||t.suspected_person_name===true);
+ // When source-specific name spans are available, they supersede noisy NNP
+ // or surname hints. Do not suppress an entire institutional compound merely
+ // because one subtoken was heuristically tagged as a proper noun.
+ const authoritativeNames=Array.isArray(analysis?.protected_name_spans);
+ const protectedTargets=authoritativeNames?[]:(analysis?.targets||[]).filter(t=>
+   t.dictionary_person_name===true||t.dictionary_name_homograph===true||
+   t.suspected_person_name===true);
  const allowed=Array.isArray(selected)?selected:[];
  const targets=[];
  for(const match of text.matchAll(HANGUL_RUN)){
