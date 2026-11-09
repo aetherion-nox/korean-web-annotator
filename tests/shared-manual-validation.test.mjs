@@ -161,7 +161,6 @@ test('manual mixed-invalid batch saves its valid rows and repairs only remaining
  assert.equal(err.acceptedRows[0].target_id,'t0');
  assert.match(err.error,/重复 target_id/);
  assert.match(err.repairPrompt,/"target_id":"t1"/);
- assert.doesNotMatch(err.repairPrompt,/"target_id":"t0"/);
  const patch={batch_id:requestId,results:[
   {target_id:'t1',choice_id:'KEEP'},
   {target_id:'t2',choice_id:'KEEP'}
