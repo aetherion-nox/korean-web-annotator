@@ -65,6 +65,8 @@ python python/backend/upstream/scripts/import_dictionary.py "詞典.zip"
 
 **v1.1.67 混合錯誤批次修補：** 自動與手動模型審核不再因其他批次 ID 而捨棄合法答案；重複的 target_id 只影響該目標。局部修復提示詞以實際待修復 ID 建立 JSON 範例，不再固定使用 t0；batch_id 不符仍拒絕整批。
 
+**v1.1.68 手動審核即時預覽：** 模型生成詞源不再強制輸出 confidence 或 evidence，只需 replacement／segments；詞典選項仍須使用合法 choice_id。有效答案立即以可回復的預覽顯示，失敗的 ID 繼續修復；新增轉換、保留原文與網頁位置失效診斷。預覽不代表整批已完成。
+
 ## 5. 排除問題
 
 - **按下標註沒有反應：** 確認詞典已匯入、擴充功能已重新載入，再重新整理網頁。

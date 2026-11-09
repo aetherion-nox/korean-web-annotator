@@ -65,6 +65,8 @@ When API review is enabled, relevant page text and dictionary candidates are sen
 
 **v1.1.67 mixed-result recovery:** Unknown IDs no longer discard unrelated valid decisions in automatic or manual reviews. Duplicate IDs invalidate only their own target; accepted decisions remain saved. Repair-prompt JSON examples now use an actual outstanding target ID instead of a hard-coded t0. A mismatched batch_id still rejects the submission.
 
+**v1.1.68 partial review preview and compact results:** Generated origins need replacement or segments, not mandatory confidence or evidence. Dictionary choices require an authorized choice_id and no model-invented replacement. Valid manual answers appear as reversible previews while remaining IDs are repaired. Diagnostics distinguish conversion from no-op decisions and report detached page text. Preview does not complete a batch.
+
 ## 5. Troubleshooting
 
 - **Nothing happens:** Check that the dictionary was imported, reload the extension, and refresh the page.
