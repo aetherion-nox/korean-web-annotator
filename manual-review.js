@@ -146,7 +146,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
       buildManualPrompt(current.config.context,remaining,current.requestId,current.config);
      notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,
       error:'已保存 '+current.acceptedRows.size+'/'+current.wireTargets.length+' 条有效答案；还有 '+remaining.length+
-       ' 条需修复：'+ids.slice(0,24).join('、')+(ids.length>24?'…':'')+'。'+(failures[0]||'')+
+       ' 条需修复：'+ids.slice(0,24).join('、')+(ids.length>24?'…':'')+'。'+failures.slice(0,3).join('；')+(failures.length>3?'；还有 '+(failures.length-3)+' 条错误':'')+
        ' 可直接复制上方新的纠错提示词，下一次只提交这些 ID。',
       invalidTargetIds:ids,acceptedCount:current.acceptedRows.size,
       acceptedRows:[...current.acceptedRows.values()],repairPrompt});
