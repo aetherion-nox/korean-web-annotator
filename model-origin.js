@@ -34,6 +34,45 @@ export function validateGeneratedRow(target,row,config={}){
 }
 
 
+
+// Repair mistaken offsets only when the literal subword has one possible
+// location in the target. Repeated unmatched substrings are ambiguous.
+export function canonicalizeGeneratedSegments(target,raw){
+ if(typeof target?.surface!=='string'||!Array.isArray(raw))return null;
+ const text=target.surface,out=[];let previous=0;
+ for(const part of raw){
+  if(!part||typeof part!=='object'||
+     Object.keys(part).some(k=>!['start','end','surface','type','replacement'].includes(k))||
+     !Number.isInteger(part.start)||!Number.isInteger(part.end)||part.end<=part.start||
+     typeof part.surface!=='string'||!/^[가-힣]+$/u.test(part.surface))return null;
+  let start=part.start,end=part.end;
+  if(start<0||end>text.length||text.slice(start,end)!==part.surface){
+   start=text.indexOf(part.surface);
+   if(start<0||text.indexOf(part.surface,start+1)!==-1)return null;
+   end=start+part.surface.length;
+  }
+  if(start<previous||end>text.length||start<0)return null;
+  out.push({...part,start,end});previous=end;
+ }
+ return out;
+}
+function groundedIsolatedSyllable(target,part){
+ const documented=(target.component_candidates||[]).some(c=>
+   c.start===part.start&&c.end===part.end&&c.surface===part.surface&&
+   (c.options||[]).some(o=>o.entry_id!=null&&
+    o.type===part.type&&o.replacement===part.replacement&&
+    (!o.written_form||o.written_form.replace(/[-^ ]/gu,'')===part.surface)));
+ if(!documented)return false;
+ const tokens=Array.isArray(target.morphology)?target.morphology:[];
+ const nominal=tokens.some(t=>t.start===part.start&&t.end===part.end&&
+  ['NNG','NNB','NR'].includes(String(t.tag||'').split('-')[0]));
+ const grammaticalSuffix=tokens.some(t=>t.start===part.end&&
+  (/^J/u.test(String(t.tag||''))||['EP','EF','EC','ETM','ETN'].includes(String(t.tag||'').split('-')[0])));
+ if(!nominal||!grammaticalSuffix)return false;
+ return part.start===0||tokens.some(t=>t.end===part.start&&
+  ['MM','NR','ETM'].includes(String(t.tag||'').split('-')[0]));
+}
+
 // The LLM may segment the *original* Hangul source span independently of Kiwi.
 // This is never a replacement instruction: every proposed offset is checked.
 export function validateGeneratedSegmentsRow(target,row,config={}){
@@ -42,9 +81,11 @@ export function validateGeneratedSegmentsRow(target,row,config={}){
     row.segments.length<1||row.segments.length>8||row.confidence!=='high'||
     typeof row.evidence!=='string'||!row.evidence.trim()||row.evidence.length>240||
     Object.keys(row).some(k=>!['target_id','choice_id','segments','confidence','evidence'].includes(k)))return null;
+ const canonical=canonicalizeGeneratedSegments(target,row.segments);
+ if(!canonical)return null;
  let last=0;
  const segments=[];
- for(const part of row.segments){
+ for(const part of canonical){
   if(!part||typeof part!=='object'||Object.keys(part).some(k=>!['start','end','surface','type','replacement'].includes(k))||
     !Number.isInteger(part.start)||!Number.isInteger(part.end)||part.start<last||
     part.end>target.surface.length||part.end<=part.start||
@@ -69,7 +110,7 @@ export function validateGeneratedSegmentsRow(target,row,config={}){
    (next&&part.end===next.start));
   // One-syllable components may be part of an independently reviewed
   // continuous multi-origin compound (팀장 → team長), never a lone guess.
-  if(!attached)return null;
+  if(!attached&&!groundedIsolatedSyllable(target,part))return null;
  }
  let replacement=target.surface;
  for(const part of [...segments].reverse())replacement=replacement.slice(0,part.start)+part.replacement+replacement.slice(part.end);

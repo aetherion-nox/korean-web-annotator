@@ -55,7 +55,13 @@ export function segmentationTargets(text,analysis,selected=[]){
   const covered=Array.from({length:end-start},(_,i)=>overlapsExisting.some(x=>x.start<=start+i&&x.end>start+i)).every(Boolean);
   if(covered&&overlapsExisting.length<=1&&!risky)continue;
   const options=[{choice_id:'KEEP',type:'keep',replacement:match[0],entry_id:null,definitions:[]}];
+  const morphology=(analysis?.token_morphology||[]).filter(t=>
+   t.start>=start&&t.end<=end&&t.start<t.end&&
+   text.slice(t.start,t.end)===t.form).map(t=>({
+   form:t.form,tag:t.tag,start:t.start-start,end:t.end-start
+  }));
   targets.push({target_id:'seg'+start+'-'+end,start,end,surface:match[0],context:text,
+    ...(morphology.length?{morphology}:{}),
     segmentation_review:true,options});
  }
  return targets;

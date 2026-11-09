@@ -15,7 +15,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-unlisted-compounds-1.1.64'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-grounded-segments-1.1.65'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -313,6 +313,8 @@ class Engine:
                                   for a,b in protected_names],
             confirmed_whole_spans=[dict(start=to_utf16(text,a),end=to_utf16(text,b))
                                   for a,b in verified_whole],
+            token_morphology=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length))
+                              for t in tokens if t.length>0 and text[t.start:t.start+t.length]==t.form],
             suffix_spans=[dict(start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length))
                           for t in tokens if t.length>0 and
                           (t.tag.startswith('J') or t.tag.split('-')[0] in {'EP','EF','EC','ETN','ETM'})])
