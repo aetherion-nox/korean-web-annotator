@@ -667,6 +667,56 @@
     task.manualTimer=setTimeout(()=>{if(!task.finished&&currentTask===task&&task.manualBackup?.requestId===requestId)recoverManualConnection(task,'提交后 30 秒未收到后台确认，切换到页面备份。');},30000);
   }
 
+  // Accepted rows may be painted provisionally; they are not committed or
+  // marked as a finished batch until all target IDs pass verification.
+  function previewManualAccepted(task,rows){
+    if(!Array.isArray(rows)||!rows.length||!task.manualBackup?.bindings?.length)return 0;
+    const core=globalThis.KRA_REVIEW_VALIDATION_CORE;
+    if(!core?.validateBindingRow)throw Error('审核校验器未加载');
+    const bindings=new Map(task.manualBackup.bindings.map(b=>[b.target_id,b]));
+    const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry]));
+    const groups=new Map();
+    for(const row of rows){
+      const binding=bindings.get(row?.target_id);
+      if(!binding)throw Error('未知预览目标：'+String(row?.target_id));
+      const checked=core.validateBindingRow(binding,row,task.modes);
+      if(!checked.ok)throw Error('预览结果未通过校验：'+row.target_id+' ['+checked.code+']');
+      const projected=task.paragraphPlan?task.paragraphPlan.projectBinding(binding,checked.value):
+        [{...binding,annotations:checked.value.annotations}];
+      for(const b of projected){
+        const entry=entries.get(b.sentenceId);
+        if(!entry||!Number.isInteger(b.start)||!Number.isInteger(b.end)||b.start<0||
+          b.end<=b.start||entry.text.slice(b.start,b.end)!==b.surface)
+          throw Error('预览原文位置已变化：'+row.target_id);
+        if(!groups.has(entry))groups.set(entry,{annotations:[],reviewed:[]});
+        const group=groups.get(entry);
+        if(!binding.segmentationReview&&entry.selected.some(r=>b.start>=r.start&&b.end<=r.end))
+          group.reviewed.push({start:b.start,end:b.end});
+        for(const a of b.annotations){
+          if(!Number.isInteger(a.start)||!Number.isInteger(a.end)||a.start<0||
+            a.end<=a.start||entry.text.slice(a.start,a.end)!==a.surface||
+            typeof a.replacement!=='string'||!['hanja','loanword'].includes(a.type))
+            throw Error('预览片段位置或字形错误：'+row.target_id);
+          if(task.modes[a.type==='hanja'?'hanja':'loanword']&&entry.selected.some(r=>a.start>=r.start&&a.end<=r.end)){
+            group.annotations.push(a);group.reviewed.push({start:a.start,end:a.end});
+          }
+        }
+      }
+    }
+    // Validate the entire preview before changing a single entry.
+    const prepared=[...groups].map(([entry,group])=>{
+      const base=entry.committedModelAnnotations||[];
+      const model=[...base.filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...group.annotations];
+      const annotations=[...(entry.localAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...model];
+      return {entry,model,annotations};
+    });
+    for(const {entry,model,annotations} of prepared){
+      entry.modelAnnotations=model;entry.modelReviewed=true;
+      entry.annotations=annotations;entry.hasPreview=true;
+    }
+    return task.paint();
+  }
+
   // Reconstruct an exact, much smaller batch prompt from the *original*
   // shared dictionary pools, never from current rendered annotations.
   function manualRepairPrompt(task,remaining,errors){
