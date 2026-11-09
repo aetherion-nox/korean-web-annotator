@@ -696,7 +696,7 @@
           let end=0,valid=true;const annotations=[];
           for(const p of row.segments){
             if(!p||typeof p!=='object'||Object.keys(p).some(k=>!['start','end','surface','type','replacement'].includes(k))||
-               !Number.isInteger(p.start)||!Number.isInteger(p.end)||p.start<end||p.end>source.length||p.end-p.start<2||
+               !Number.isInteger(p.start)||!Number.isInteger(p.end)||p.start<end||p.end>source.length||
                p.surface!==source.slice(p.start,p.end)||typeof p.replacement!=='string'||
                p.replacement!==p.replacement.trim()||p.replacement!==p.replacement.normalize('NFC')||
                !['hanja','loanword'].includes(p.type)){valid=false;break;}
@@ -707,6 +707,15 @@
             annotations.push({start:binding.start+p.start,end:binding.start+p.end,surface:p.surface,
               replacement:p.replacement,type:p.type});
             end=p.end;
+          }
+          if(valid){
+            for(let i=0;i<row.segments.length;i++){
+              const part=row.segments[i];
+              if(part.end-part.start!==1)continue;
+              const previous=row.segments[i-1],next=row.segments[i+1];
+              if(part.type!=='hanja'||!((previous?.type==='hanja'&&previous.end===part.start)||
+                  (next?.type==='hanja'&&part.end===next.start))){valid=false;break;}
+            }
           }
           if(valid)choice={choice_id:'GEN_SEGMENTS',annotations};
         }
