@@ -6,6 +6,7 @@ from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, surname_name_evidence, dictionary_name_evidence
 from backend.name_homographs import homograph_target, surname_ambiguity_target
+from backend.risk_review import uncertain_compounds, weak_unique_candidate
 from backend.loanwords import is_nonconversion_origin, nonconversion_options
 ensure_environment()
 from app.services.converter import ConverterService
@@ -14,7 +15,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-single-hangul-guard-1.1.60'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-risk-review-1.1.61'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 HANJA = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -107,6 +108,7 @@ class Engine:
         await self.initialize()
         review_all=bool(modes.get('reviewAll',False))
         single_guard=bool(modes.get('singleHangulLocalGuard',False))
+        risk_review=bool(modes.get('uniqueCandidateRiskReview',False))
         # The original converter owns tokenization, lookup forms, scoring,
         # whole-word precedence and certainty. Do not rescan skipped compounds
         # for general conversion. Exact mixed/cross-origin words have a
@@ -130,6 +132,10 @@ class Engine:
         homograph_targets=[homograph_target(text,a,b,word,records,modes) for a,b,word,records in homograph_evidence]
         suspect_targets=[surname_ambiguity_target(text,a,b,word,records,modes) for a,b,word,records in surname_ambiguities]
         blocked_for_local=protected_names+conflicting_ranges+suspect_ranges
+        boundary_risks=await uncertain_compounds(
+            text,tokens,self.lookup_entries,blocked=blocked_for_local
+        ) if risk_review and not review_all else []
+        blocked_for_local += [(a,b) for a,b,_,_ in boundary_risks]
         upstream_counts={f'upstream_{status}':sum(s.status==status for s in segments) for status in ('converted','ambiguous','no_match','kept')}
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
         if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):
@@ -137,13 +143,18 @@ class Engine:
             whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')]
             mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges,blocked_ranges=blocked_for_local,review_ranges=dictionary_names)
         annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
+        candidate_risk_ranges=set()
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
             if overlaps_proper_noun(s.start,s.end,blocked_for_local):continue
             if s.status not in ('converted','ambiguous'):continue
             if any(s.start<b and a<s.end for a,b in mixed['ranges']):continue
             if not valid(s.start,s.end,s.original):rejected+=1;continue
+            unique_risk=(risk_review and not review_all and
+                         weak_unique_candidate(s,tokens))
+            if unique_risk:candidate_risk_ranges.add((s.start,s.end))
             if (s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges)
+                    and not unique_risk
                     and not (single_guard and len(s.original)==1 and '가'<=s.original<='힣')):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
@@ -233,6 +244,11 @@ class Engine:
                         native.append({**option,'choice_id':f'n{len(native)}','definitions':[definition]})
                 else:conversions.append({**option,'choice_id':f'c{len(conversions)}','definitions':definitions})
             target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
+        for target in targets:
+            if (target['start'],target['end']) in {
+                (to_utf16(text,a),to_utf16(text,b)) for a,b in candidate_risk_ranges
+            }:
+                target['review_reasons']=['weak_unique_dictionary_candidate']
         # Encode each token boundary once, not once per review target.
         # This retains the existing surrogate/astral offset conversion exactly.
         token_morphology=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens]
@@ -247,7 +263,12 @@ class Engine:
             target['partial_word']=a in nominal_ends or b in nominal_starts
             if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
             if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
-        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
+        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],
+                boundary_suspicions=len(boundary_risks),
+                unique_risk_reviews=len(candidate_risk_ranges),**upstream_counts),
+            boundary_risks=[dict(start=to_utf16(text,a),end=to_utf16(text,b),
+                                 surface=word,reason=reason)
+                            for a,b,word,reason in boundary_risks])
 
 _default_engine=None
 async def analyze(text: str,modes: dict) -> dict:
