@@ -720,6 +720,7 @@
           if(valid)choice={choice_id:'GEN_SEGMENTS',annotations};
         }
       }
+      if(binding&&(binding.boundaryUnverified||binding.partialWord)&&choice&&choice.choice_id!=='GEN_SEGMENTS'&&choice.annotations?.length)choice={choice_id:'KEEP',annotations:[]};
       if(!binding||seen.has(row.target_id)||!choice)throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
       seen.add(row.target_id);accepted.push({binding,choice});
     }

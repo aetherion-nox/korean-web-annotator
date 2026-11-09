@@ -3,6 +3,7 @@ import {filterReviewTarget} from './review-pos.js';
 import {generatedChoices} from './model-origin.js';
 import {segmentationTargets} from './segmentation-rescue.js';
 import {mergeResegmentationTargets} from './review-merge.js';
+import {localBoundaryUnsafe} from './review-boundary.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
@@ -41,6 +42,14 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const localKey=JSON.stringify(['dictionary-v3-alignment',reviewAll,identity.engine_version,identity.dictionary_fingerprint,modes,sentence.text]);
   let analysis=!bypassCache&&cache.get(localKey);
   if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:modes,signal,progress));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
+  if(analysis.annotations.length){
+   const unsafe=analysis.annotations.filter(a=>localBoundaryUnsafe(sentence.text,a,analysis));
+   if(unsafe.length){
+    analysis={...analysis,annotations:analysis.annotations.filter(a=>!unsafe.includes(a)),
+     stats:{...analysis.stats,local_determined:Math.max(0,Number(analysis.stats.local_determined||0)-unsafe.length)}};
+    diagnostic({stage:'boundary',level:'warning',message:'已拦截 '+unsafe.length+' 个未确认完整词边界的本地标注；原文保留待审核。'});
+   }
+  }
   if(modes.singleHangulLocalGuard&&analysis.annotations.length){
    const whole=analysis.confirmed_whole_spans||[];
    const forbidden=a=>typeof a.surface==='string'&&/^[가-힣]$/u.test(a.surface)&&
@@ -135,7 +144,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const targets=batch.rows?batch.rows.map(({item,target},i)=>{const id=`b0t${i}`;owners.set(id,{item,target});return {...target,target_id:id};}):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
    const id=`b${i}t${j}`;owners.set(id,{item,target});return {...target,target_id:id};
   }));
-  const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,segmentationReview:target.segmentation_review===true,generatedChoices:generatedChoices(target,config),choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
+  const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,segmentationReview:target.segmentation_review===true,boundaryUnverified:target.boundary_unverified===true,partialWord:target.partial_word===true,generatedChoices:generatedChoices(target,config),choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
   const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
   return {owners,targets,manualBindings,manualPrepared};
  });
