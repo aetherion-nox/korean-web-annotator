@@ -14,7 +14,7 @@ const proposal=(choice='GEN_SEGMENTS',parts=[{start:0,end:4,surface:'학교생�
  target_id:'seg0-5',choice_id:choice,segments:parts,confidence:'high',evidence:'Known Korean Sino-Korean lexical origin in context'
 });
 test('raw phrase can be segmented without a Kiwi candidate',()=>{
- const raw='학교생활을',t=segmentationTargets(raw,{annotations:[],targets:[],stats:{}});
+ const raw='학교생활을',t=segmentationTargets(raw,{annotations:[],targets:[],boundary_risks:[{start:0,end:4,reason:'unverified_word_boundary'}],stats:{}});
  assert.equal(t.length,1);assert.equal(t[0].surface,raw);
  assert.equal(generatedChoices(t[0],{}).length,0);
  assert.deepEqual(generatedChoices(t[0],config),['GEN_SEGMENTS']);
@@ -67,7 +67,7 @@ test('independent rescue can override a partially converted local span',async()=
  const context='학교생활을',events=[],seen=[];
  const status=async()=>({engine_version:'test',dictionary_fingerprint:'fixture'});
  const analyze=async()=>({engine_version:'test',dictionary_fingerprint:'fixture',annotations:[{start:0,end:2,surface:'학교',replacement:'學校',type:'hanja'}],
-    targets:[],stats:{local_determined:1,pending:0,protected_names:0,upstream_converted:0}});
+    boundary_risks:[{start:0,end:4,reason:'unverified_word_boundary'}],targets:[],stats:{local_determined:1,pending:0,protected_names:0,upstream_converted:0}});
  const modelConfig=async()=>({...config,endpoint:'https://fixture.test',model:'fixture',
  request:async(_config,targets)=>{
    seen.push(targets.map(t=>t.surface));
@@ -91,7 +91,8 @@ test('rescue is not activated when experimental flag is disabled',async()=>{
 });
 test('rescues no longer silently truncate at twelve per sentence or 120 per operation',()=>{
  const text=Array.from({length:155},()=>'학교생활').join(' ');
- const t=segmentationTargets(text,{annotations:[],targets:[],stats:{}});
+ const risks=[...text.matchAll(/학교생활/g)].map(m=>({start:m.index,end:m.index+4,reason:'unverified_word_boundary'}));
+ const t=segmentationTargets(text,{annotations:[],targets:[],boundary_risks:risks,stats:{}});
  assert.equal(t.length,155);
  assert.equal(t.at(-1).surface,'학교생활');
 });
