@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {localBoundaryUnsafe} from '../review-boundary.js';
 import {segmentationTargets} from '../segmentation-rescue.js';
 import {validateChoices,modelTargets} from '../choice-review.js';
-import {contextReviewBatches,MAX_REVIEW_DECISIONS} from '../batch-budget.js';
+import {contextReviewBatches} from '../batch-budget.js';
 const KEEP={choice_id:'KEEP',type:'keep',replacement:'',entry_id:null,definitions:[]};
 function target(text,start,end,{partial_word=false,boundary_unverified=false}={}){
  const surface=text.slice(start,end);
@@ -47,13 +47,19 @@ test('only evidence-bearing ranges are reviewed; names elsewhere do not disable 
  assert.deepEqual(list.map(t=>t.surface),['문진가두']);
  assert.deepEqual(segmentationTargets('정치일반',{annotations:[],targets:[],stats:{}}),[]);
 });
-test('a long page is divided into <=64 decision batches without dropping a target',()=>{
+test('a 512K manual batch accommodates all 418 review targets when input/output fit',()=>{
  const context='문진가두',targets=Array.from({length:418},(_,i)=>{
   const surface='문진가두';return {...target(surface,0,5),target_id:'x'+i,segmentation_review:true};
  });
  const item={sentence:{id:'s',text:context},result:{unresolved:targets}};
- const batches=contextReviewBatches([item],context,{tier:'1m',manual:true});
- assert.equal(batches.flatMap(b=>b.rows).length,418);
- assert.ok(batches.length>=7);
- assert.ok(batches.every(b=>b.rows.length<=MAX_REVIEW_DECISIONS));
+ for(const tier of ['512k','1m']){
+  const batches=contextReviewBatches([item],context,{tier,manual:true});
+  assert.equal(batches.length,1,tier);
+  assert.equal(batches[0].rows.length,418);
+  assert.equal(batches[0].budget.limitReason,'end');
+  assert.ok(batches[0].budget.totalTokens<=batches[0].budget.contextTokens);
+ }
+ const api=contextReviewBatches([item],context,{tier:'512k',manual:false,maxOutputTokens:131072});
+ assert.equal(api.length,1);
+ assert.equal(api[0].rows.length,418);
 });
