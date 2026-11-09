@@ -11,7 +11,7 @@ export function reviewInstructions(config={}){
 export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,config);
  if(batchId!==undefined)payload.batch_id=batchId;
- const batchInstruction=batchId===undefined?'':'\n本批结果必须包含外层 batch_id，原样复制输入中的 batch_id。返回格式：'+JSON.stringify({batch_id:'照抄输入的 batch_id',results:[{target_id:'t0',choice_id:'KEEP'}]})+'。每个目标都必须返回，不能省略。';
+ const batchInstruction=batchId===undefined?'':'\n本批结果必须包含外层 batch_id，原样复制输入中的 batch_id。返回格式：'+JSON.stringify({batch_id:'照抄输入的 batch_id',results:[{target_id:targets[0]?.target_id||'t0',choice_id:'KEEP'}]})+'。每个目标都必须返回，不能省略。';
  return reviewInstructions(config)+batchInstruction+'\n\n请先检查全部词典义项。只返回完整 JSON，不要解释；保留每个 target_id 原样。通常只能选择 options 的键（KEEP、n0、c0 等）。仅当该 target 明确列出 generated_choices 且所有已有义项不符、词源确凿时，才按实验规则返回对应 GEN_*；GEN_HANJA/GEN_LOANWORD 附带 replacement、confidence:high、evidence，GEN_SEGMENTS 必须有 segments 数组（各段 start/end 相对于目标 surface）、confidence:high、evidence。原文分词仅供参考。\n'+JSON.stringify(payload);
 }
 function canonical(value){
