@@ -74,41 +74,64 @@ for(const [locale,labels] of Object.entries(modelSegmentationCopy))Object.assign
 const singleHangulGuardCopy={
  "en": {
   "singleHangulLocalGuard": "Never locally annotate single-syllable Hangul words (on by default)",
-  "singleHangulLocalGuardHint": "Prevent local Hanja/loanword conversion of an individual Hangul syllable. Keep dictionary candidates for API/manual model review where available; without a valid review result, retain Korean. Also guards one-syllable converted parts of mixed origins. Applies to the next annotation."
+  "singleHangulLocalGuardHint": "Prevent local Hanja/loanword conversion of an individual Hangul syllable. Keep dictionary candidates for API/manual model review where available; without a valid review result, retain Korean. Only guards independent single-syllable words; complete mixed-origin dictionary headwords with unique reliable alignment may still be locally annotated. Applies to the next annotation."
  },
  "zh-CN": {
   "singleHangulLocalGuard": "单音节谚文词禁止本地标注（默认开启）",
-  "singleHangulLocalGuardHint": "禁止本地直接把单个韩文字音节转换为汉字或外来语原词；已有词典候选仍可交给 API 或手动模型审核。模型未返回有效答案时保留韩文；混种词中独立单音节转换部分同样需审核。下次标注生效。"
+  "singleHangulLocalGuardHint": "禁止本地直接把单个韩文字音节转换为汉字或外来语原词；已有词典候选仍可交给 API 或手动模型审核。模型未返回有效答案时保留韩文；词典收录且可靠对齐的完整混种词不因内部单音节转换部分而被误伤。下次标注生效。"
  },
  "zh-TW": {
   "singleHangulLocalGuard": "單音節諺文詞禁止本機標註（預設開啟）",
-  "singleHangulLocalGuardHint": "禁止本機直接將單個韓文字音節轉換成漢字或外語原詞；已有詞典候選仍可交由 API／手動模型審核。無有效答案時保留韓文，混種詞中的單音節轉換片段同樣先審核。下次標註生效。"
+  "singleHangulLocalGuardHint": "禁止本機直接將單個韓文字音節轉換成漢字或外語原詞；已有詞典候選仍可交由 API／手動模型審核。無有效答案時保留韓文，有完整詞條且可靠對齊的混種詞不因內部單音節片段而被攔截。下次標註生效。"
  },
  "ja": {
   "singleHangulLocalGuard": "韓国語１音節語のローカル変換禁止（初期設定は有効）",
-  "singleHangulLocalGuardHint": "韓国語１音節を漢字または外来語の原綴りへローカルで自動変換しません。辞書候補があればAPI／手動モデル審査に回し、有効な回答がなければ元のハングルを保持します。混種語内の１音節部分も審査対象です。"
+  "singleHangulLocalGuardHint": "韓国語１音節を漢字または外来語の原綴りへローカルで自動変換しません。辞書候補があればAPI／手動モデル審査に回し、有効な回答がなければ元のハングルを保持します。辞書にある混種語の完全な語源が確実なら内部の１音節部分は除外します。"
  },
  "ko": {
   "singleHangulLocalGuard": "한글 한 음절 단어 로컬 주석 금지 (기본 켜짐)",
-  "singleHangulLocalGuardHint": "한글 한 음절을 로컬에서 바로 한자나 외래어 원어 표기로 바꾸지 않습니다. 사전 후보가 있으면 API 또는 수동 모델 검토로 넘기고, 유효한 검토 결과가 없으면 원문을 유지합니다. 혼종어 내 한 음절 변환 부분도 검토합니다."
+  "singleHangulLocalGuardHint": "한글 한 음절을 로컬에서 바로 한자나 외래어 원어 표기로 바꾸지 않습니다. 사전 후보가 있으면 API 또는 수동 모델 검토로 넘기고, 유효한 검토 결과가 없으면 원문을 유지합니다. 사전에 등록된 완전한 혼종어가 정확히 정렬되면 내부 한 음절은 차단하지 않습니다."
  }
 };
 for(const [locale,labels] of Object.entries(singleHangulGuardCopy))Object.assign(copy[locale],labels);
+const candidateRiskCopy={
+ "zh-CN": {
+  "uniqueCandidateRiskReview": "唯一候选风险复核（默认开启）",
+  "uniqueCandidateRiskReviewHint": "对缺少上下文搭配证据的短词唯一候选、以及 Kiwi 拆开的无完整词条复合词，先暂缓局部自动转换并交给模型。完整词典词源可靠的混种词不因内部单字被误伤。不能保证发现所有未收录同音词。"
+ },
+ "zh-TW": {
+  "uniqueCandidateRiskReview": "唯一候選風險複核（預設開啟）",
+  "uniqueCandidateRiskReviewHint": "對缺乏搭配證據的短詞唯一候選與 Kiwi 誤拆、無完整詞條的複合詞，先暫緩本機轉換再送模型審核。可靠完整混種詞可照常處理；無法發現所有漏收同音詞。"
+ },
+ "en": {
+  "uniqueCandidateRiskReview": "Review risky sole dictionary choices (on by default)",
+  "uniqueCandidateRiskReviewHint": "Defer weak-evidence short homographs and unknown compounds split by Kiwi before local conversion. Whole-entry aligned mixed words remain eligible for local annotation. This cannot detect every missing homograph; extra model review may increase costs."
+ },
+ "ja": {
+  "uniqueCandidateRiskReview": "唯一候補のリスク再審査（初期設定は有効）",
+  "uniqueCandidateRiskReviewHint": "文脈上の証拠が弱い短語や、Kiwi が分割した未収録複合語を自動変換前に保留し、モデルで審査します。原形が確認できる混種語は通常どおり処理します。すべての同音異義語の見落としを検出できるわけではありません。"
+ },
+ "ko": {
+  "uniqueCandidateRiskReview": "유일한 후보 위험 재검토 (기본 켜짐)",
+  "uniqueCandidateRiskReviewHint": "문맥 근거가 약한 짧은 동음어와 Kiwi가 잘못 분리한 미수록 복합어는 로컬 변환을 보류하고 모델로 검토합니다. 사전의 온전한 혼종어는 계속 로컬에서 처리합니다. 사전에 빠진 모든 동음어를 감지할 수는 없습니다."
+ }
+};
+for(const [locale,labels] of Object.entries(candidateRiskCopy))Object.assign(copy[locale],labels);
 const t=key=>(copy[$('uiLocale').value]||copy.en)[key];
 function translate(){for(const el of document.querySelectorAll('[data-engine-i18n]'))el.textContent=t(el.dataset.engineI18n);}
 async function save(changed){
  if(['reviewAllCandidates','manualModelReview','allowModelHanja','allowModelLoanword','allowModelSegmentation'].includes(changed)&&$(changed).checked)$('enableModelReview').checked=true;
  if(changed==='enableModelReview'&&!$('enableModelReview').checked){$('reviewAllCandidates').checked=false;$('manualModelReview').checked=false;}
- await chrome.storage.local.set({preloadEngineOnStartup:$('preloadEngineOnStartup').checked,allowModelHanja:$('allowModelHanja').checked,allowModelLoanword:$('allowModelLoanword').checked,allowModelSegmentation:$('allowModelSegmentation').checked,singleHangulLocalGuard:$('singleHangulLocalGuard').checked,reviewPosFilter:$('reviewPosFilter').checked,nameProtection:$('nameProtection').checked,enableModelReview:$('enableModelReview').checked,reviewAllCandidates:$('reviewAllCandidates').checked,manualModelReview:$('manualModelReview').checked,batchContextTier:normalizeBatchContextTier($('batchContextTier').value)});status.textContent=t('saved');
+ await chrome.storage.local.set({preloadEngineOnStartup:$('preloadEngineOnStartup').checked,allowModelHanja:$('allowModelHanja').checked,allowModelLoanword:$('allowModelLoanword').checked,allowModelSegmentation:$('allowModelSegmentation').checked,singleHangulLocalGuard:$('singleHangulLocalGuard').checked,uniqueCandidateRiskReview:$('uniqueCandidateRiskReview').checked,reviewPosFilter:$('reviewPosFilter').checked,nameProtection:$('nameProtection').checked,enableModelReview:$('enableModelReview').checked,reviewAllCandidates:$('reviewAllCandidates').checked,manualModelReview:$('manualModelReview').checked,batchContextTier:normalizeBatchContextTier($('batchContextTier').value)});status.textContent=t('saved');
 }
 const dictionaryLabels={en:['Dictionary imported','Dictionary not imported'],'zh-CN':['词典已导入','词典未导入，请选择 ZIP 或 DB 文件。'],'zh-TW':['詞典已匯入','詞典未匯入，請選擇 ZIP 或 DB 檔案。'],ja:['辞書を取り込み済み','辞書は未取り込みです。JSON ZIP を選択してください。'],ko:['사전 가져오기 완료','사전이 없습니다. JSON ZIP을 가져오세요.']};
 let importedDictionary=false;
 function show(result){importedDictionary=result.imported;status.textContent=(dictionaryLabels[$('uiLocale').value]||dictionaryLabels.en)[importedDictionary?0:1];}
 async function refreshDictionaryStatus(){show(await readDictionaryInfo());}
 function busy(value){$('dictionaryProgress').hidden=!value;for(const id of ['importDictionary','clearDictionary','dictionaryFile'])$(id).disabled=value;}
-for(const key of ['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection','reviewPosFilter','allowModelHanja','allowModelLoanword','allowModelSegmentation','singleHangulLocalGuard','preloadEngineOnStartup'])$(key).addEventListener('change',()=>save(key).catch(e=>status.textContent=e.message));
+for(const key of ['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection','reviewPosFilter','allowModelHanja','allowModelLoanword','allowModelSegmentation','singleHangulLocalGuard','uniqueCandidateRiskReview','preloadEngineOnStartup'])$(key).addEventListener('change',()=>save(key).catch(e=>status.textContent=e.message));
 $('importDictionary').addEventListener('click',async()=>{const file=$('dictionaryFile').files?.[0];if(!file){status.textContent=t('missing');return;}busy(true);status.textContent=t('busy');try{await importBrowserDictionary(file);await refreshDictionaryStatus();chrome.runtime.sendMessage({type:'KRA_PRELOAD_ENGINE'}).catch(()=>{});}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('clearDictionary').addEventListener('click',async()=>{busy(true);try{await clearBrowserDictionary();await refreshDictionaryStatus();}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('uiLocale').addEventListener('change',()=>{translate();show({imported:importedDictionary});});
-chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection','reviewPosFilter','allowModelHanja','allowModelLoanword','allowModelSegmentation','singleHangulLocalGuard','preloadEngineOnStartup','uiSettings']).then(async s=>{$('preloadEngineOnStartup').checked=s.preloadEngineOnStartup!==false;$('reviewPosFilter').checked=s.reviewPosFilter===true;$('allowModelHanja').checked=s.allowModelHanja!==false;$('allowModelLoanword').checked=s.allowModelLoanword!==false;$('allowModelSegmentation').checked=s.allowModelSegmentation!==false;$('singleHangulLocalGuard').checked=s.singleHangulLocalGuard!==false;$('nameProtection').checked=s.nameProtection!==false;$('reviewAllCandidates').checked=s.reviewAllCandidates===true;$('manualModelReview').checked=s.manualModelReview!==false;$('batchContextTier').value=normalizeBatchContextTier(s.batchContextTier);$('enableModelReview').checked=s.enableModelReview!==false||s.reviewAllCandidates===true||s.manualModelReview!==false;const defaults={enableModelReview:true,preloadEngineOnStartup:true,nameProtection:true,reviewPosFilter:false,allowModelHanja:true,allowModelLoanword:true,allowModelSegmentation:true,singleHangulLocalGuard:true,reviewAllCandidates:false,manualModelReview:true};
+chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','batchContextTier','nameProtection','reviewPosFilter','allowModelHanja','allowModelLoanword','allowModelSegmentation','singleHangulLocalGuard','uniqueCandidateRiskReview','preloadEngineOnStartup','uiSettings']).then(async s=>{$('preloadEngineOnStartup').checked=s.preloadEngineOnStartup!==false;$('reviewPosFilter').checked=s.reviewPosFilter===true;$('allowModelHanja').checked=s.allowModelHanja!==false;$('allowModelLoanword').checked=s.allowModelLoanword!==false;$('allowModelSegmentation').checked=s.allowModelSegmentation!==false;$('singleHangulLocalGuard').checked=s.singleHangulLocalGuard!==false;$('uniqueCandidateRiskReview').checked=s.uniqueCandidateRiskReview!==false;$('nameProtection').checked=s.nameProtection!==false;$('reviewAllCandidates').checked=s.reviewAllCandidates===true;$('manualModelReview').checked=s.manualModelReview!==false;$('batchContextTier').value=normalizeBatchContextTier(s.batchContextTier);$('enableModelReview').checked=s.enableModelReview!==false||s.reviewAllCandidates===true||s.manualModelReview!==false;const defaults={enableModelReview:true,preloadEngineOnStartup:true,nameProtection:true,reviewPosFilter:false,allowModelHanja:true,allowModelLoanword:true,allowModelSegmentation:true,singleHangulLocalGuard:true,uniqueCandidateRiskReview:true,reviewAllCandidates:false,manualModelReview:true};
 const missing=Object.fromEntries(Object.entries(defaults).filter(([key])=>s[key]===undefined));if(Object.keys(missing).length)await chrome.storage.local.set(missing);if(s.uiSettings?.uiLocale)$('uiLocale').value=s.uiSettings.uiLocale;translate();await refreshDictionaryStatus();}).catch(e=>status.textContent=e.message);translate();
