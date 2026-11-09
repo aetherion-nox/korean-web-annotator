@@ -1,6 +1,7 @@
 import {buildManualPrompt} from './review-payload.js';
 export {buildManualPrompt} from './review-payload.js';
 import {validateChoices} from './choice-review.js';
+import {diagnoseGeneratedRow} from './model-origin.js';
 import {describeBatchBudget} from './batch-budget.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
@@ -42,6 +43,8 @@ function explainRejectedManualResult(targets,rows,config){
   if(validateChoices([target],{results:[row]},config).accepted.length)continue;
   const preface='目标 '+target.target_id+'（'+target.surface+'）的 '+String(row.choice_id)+' 无效：';
   if(row.choice_id==='GEN_SEGMENTS'){
+   const reason=diagnoseGeneratedRow(target,row,config);
+   if(!reason.ok)return preface+reason.message+'（'+reason.code+'）';
    if(!Array.isArray(row.segments)||!row.segments.length||row.segments.length>8)return preface+'segments 必须包含 1–8 个子词段。';
    for(let i=0;i<row.segments.length;i++){
     const p=row.segments[i],prev=row.segments[i-1],next=row.segments[i+1];
@@ -58,8 +61,10 @@ function explainRejectedManualResult(targets,rows,config){
    }
    return preface+'词源字符、模式开关、高置信度、字段或子词段结构未通过校验。';
   }
-  if(row.choice_id==='GEN_HANJA'||row.choice_id==='GEN_LOANWORD')
-   return preface+'生成的 replacement、confidence、evidence 或模式开关未通过本地校验。';
+  if(row.choice_id==='GEN_HANJA'||row.choice_id==='GEN_LOANWORD'){
+   const reason=diagnoseGeneratedRow(target,row,config);
+   return preface+(reason.ok?'目标的其他限制未通过校验':reason.message+'（'+reason.code+'）');
+  }
   return preface+'不是该目标当前允许的词典选项，或已被词性过滤排除。';
  }
  return '本批的结果数量或候选校验不通过。';
@@ -119,8 +124,8 @@ export function createManualReviewSession({operationId,post,signal}={}){
      const option=outcome.accepted[0].option;
      current.acceptedRows.set(row.target_id,{
       target_id:row.target_id,choice_id:option.choice_id,
-      ...(option.generated?{replacement:option.replacement,confidence:option.confidence,
-        evidence:option.evidence,...(option.segmentationGenerated?{segments:option.segments}:{})}:{})
+      ...(option.generated?{confidence:option.confidence,evidence:option.evidence,
+       ...(option.segmentationGenerated?{segments:option.segments}:{replacement:option.replacement})}:{})
      });
     }
     const remaining=current.wireTargets.filter(t=>!current.acceptedRows.has(t.target_id));
