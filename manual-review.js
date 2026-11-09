@@ -51,9 +51,8 @@ function explainRejectedManualResult(targets,rows,config){
      return preface+'第 '+(i+1)+' 段 surface 与原文偏移不一致，应为 '+target.surface.slice(p.start,p.end)+'。';
     if(p.start<(prev?.end??0))
      return preface+'第 '+(i+1)+' 段与上一个词段重叠。';
-    if(p.end-p.start===1&&!((prev?.type==='hanja'&&prev.end===p.start&&p.type==='hanja')||
-       (next?.type==='hanja'&&p.end===next.start&&p.type==='hanja')))
-     return preface+'第 '+(i+1)+' 段为孤立单音节；单音节汉字语素仅在同一连续复合词内允许。';
+    if(p.end-p.start===1&&!((prev&&prev.end===p.start)||(next&&p.end===next.start)))
+     return preface+'第 '+(i+1)+' 段为孤立单音节；单音节片段仅允许位于一个连续的复合词内部。';
     if(p.type==='hanja'&&typeof p.replacement==='string'&&Array.from(p.replacement).length!==Array.from(p.surface||'').length)
      return preface+'第 '+(i+1)+' 段的汉字数量与韩文字音节数不一致。';
    }

@@ -41,12 +41,12 @@ class SingleHangulGuard(unittest.IsolatedAsyncioTestCase):
   self.assertTrue(any(o.get('replacement')=='pain' for t in on['targets'] for o in t['options']),on)
   self.assertTrue(any(a['replacement']=='pain' for a in off['annotations']),off)
 
- async def test_mixed_entry_single_hanja_component_requires_review(self):
+ async def test_complete_mixed_entry_with_internal_single_hanja_is_not_blocked(self):
   self.add('김게임','金game','명사','가상의 혼종어.')
   on=await self.analyze('김게임',[('김게임','NNG',0)],True,hanja=True,loanword=True)
   off=await self.analyze('김게임',[('김게임','NNG',0)],False,hanja=True,loanword=True)
-  self.assertFalse(on['annotations'],on)
-  self.assertTrue(any('金' in str(o.get('replacement')) for t in on['targets'] for o in t['options']),on)
-  self.assertTrue(any(a['surface']=='김' for a in off['annotations']),off)
+  self.assertTrue(any(a['surface']=='김' and a['replacement']=='金' for a in on['annotations']),on)
+  self.assertTrue(any(a['surface']=='게임' and a['replacement']=='game' for a in on['annotations']),on)
+  self.assertEqual(on['annotations'],off['annotations'],(on,off))
 
 if __name__=='__main__':unittest.main(verbosity=2)

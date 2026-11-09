@@ -42,7 +42,9 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   let analysis=!bypassCache&&cache.get(localKey);
   if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:modes,signal,progress));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
   if(modes.singleHangulLocalGuard&&analysis.annotations.length){
-   const forbidden=a=>typeof a.surface==='string'&&/^[가-힣]$/u.test(a.surface);
+   const whole=analysis.confirmed_whole_spans||[];
+   const forbidden=a=>typeof a.surface==='string'&&/^[가-힣]$/u.test(a.surface)&&
+    !whole.some(span=>span.end-span.start>1&&span.start<=a.start&&a.end<=span.end);
    const removed=analysis.annotations.filter(forbidden);
    if(removed.length){
     analysis={...analysis,annotations:analysis.annotations.filter(a=>!forbidden(a)),
