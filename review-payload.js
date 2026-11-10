@@ -10,7 +10,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
  const example=isProposal?{batch_id:'照抄输入的 batch_id',results:[{target_id:'t0',proposal:null}]}:{batch_id:'照抄输入的 batch_id',results:[{target_id:'t0',choice_id:'KEEP'}]};
  const batchInstruction=batchId===undefined?'':'\n本批结果必须包含外层 batch_id，原样复制输入中的 batch_id。返回格式：'+JSON.stringify(example)+'。每个目标都必须返回，不能省略。';
  const instructions=isProposal?EXPERIMENTAL_PROPOSAL_INSTRUCTIONS:REVIEW_INSTRUCTIONS+(config.experimentalPhase==='choose'?'\n'+EXPERIMENTAL_CHOICE_INSTRUCTIONS:'');
- const task=isProposal?'请逐个判断是否真的缺少可靠词源候选；不能确认时 proposal 必须为 null。只输出完整 JSON，不要更改分词、起止位置或 target_id。':'请根据以下上下文与词典候选逐词选择。只返回完整 JSON，不要解释，不要生成替换文本；保留每个 target_id 原样，choice_id 只能选该词 options 的键（例如 KEEP、n0、c0、x0）。';
+ const task=isProposal?'请逐个判断是否真的缺少可靠词源候选；不能确认时 proposal 必须为 null。只输出完整 JSON，不要更改分词、起止位置或 target_id。':'请根据以下上下文与词典候选逐词选择。只返回完整 JSON，不要解释，不要生成替换文本；保留每个 target_id 原样，choice_id 只能选该词 options 的键（例如 KEEP、n0、c0'+(config.experimentalPhase==='choose'?'、x0':'')+'）。';
  return instructions+batchInstruction+'\n\n'+task+'\n'+JSON.stringify(payload);
 }
 function canonical(value){
