@@ -39,6 +39,10 @@ export function literalOriginOption(target,choiceId,config={}){
  else if(LOANWORD.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId)&&config.experimentalLoanword===true)type='loanword';
  else return null;
  const aligned=type==='hanja'?splitAlignedHanja(target.surface,choiceId):null;
+ // Existing dictionary spellings must be selected by their supplied c/n key.
+ // A literal spelling must not bypass sense/POS competition or make an
+ // already-known etymology look like independent model evidence.
+ if(target.options.some(o=>o.type===type&&o.replacement===(aligned?.replacement||choiceId)))return null;
  const option={choice_id:choiceId,type,
   replacement:aligned?.replacement||choiceId,entry_id:'experimental:'+type,
   definitions:['实验性模型词源：未经词典核实'],written_form:target.surface,
