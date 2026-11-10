@@ -3,7 +3,7 @@ import {runSentencePipeline} from '../annotation-pipeline.js';
 const root=new URL('../',import.meta.url);
 async function page(saved=true){
  let listener;const calls=[],events=[];const identity={ready:true,engine_version:'engine',dictionary_fingerprint:'dict'};
- class Worker{postMessage(data){calls.push(data.request);queueMicrotask(()=>this.onmessage({data:{id:data.id,progress:{stage:'tokenizer'}}}));queueMicrotask(()=>this.onmessage({data:{id:data.id,ok:true,result:{...identity}}}));}terminate(){}}
+ class Worker{postMessage(data){calls.push(data.request);queueMicrotask(()=>this.onmessage({data:{id:data.id,progress:{stage:'tokenizer'}}}));queueMicrotask(()=>this.onmessage({data:{id:data.id,ok:true,result:{...identity,...(data.request.action==='import-db'?{database:new ArrayBuffer(4)}:{})}}}));}terminate(){}}
  let src=await fs.readFile(new URL('engine-page.js',root),'utf8');src=src.replace(/^import .*;\n/gm,'').replaceAll('import.meta.url',JSON.stringify(root.href));
  const context={Worker,URL,Map,Promise,Error,Boolean,String,storage:async(action,key)=>action==='get'?(key==='dictionary'?(saved?new ArrayBuffer(4):null):{kind:'db',name:'replacement.db',bytes:new ArrayBuffer(4)}):undefined,copyPlainText(){},createKiwiManager:()=>({status:async()=>({identity:'built-in'}),tokenize:async()=>null}),chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f},sendMessage:async e=>{events.push(e);}}}};
  vm.runInNewContext(src,context);
