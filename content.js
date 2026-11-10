@@ -726,7 +726,7 @@
   function manualRepairPrompt(task,remaining,errors){
     const batch=task.manualBackup?.requestId||task.manualRequest;
     const instructions='本批已保存其他所有通过校验的目标。只回答下面列出的 target_id，不要重复前面的答案。'
-      +' batch_id 必须原样保持 '+batch+'。如果不确定请返回 KEEP。错误原因：\n'
+      +' batch_id 必须原样保持 '+batch+'。如果不确定请返回 KEEP。对于 ISOLATED_SYLLABLE 或 HANJA_ALIGNMENT，请重新判断整个词干与助词/词尾，完整汉字词干优先返回一条覆盖整个词干的 GEN_SEGMENTS；不要只补孤立音节，也不能为了凑字数编造字形。错误原因：\n'
       +errors.map(e=>e.id+'：'+e.reason).join('\n')+'\n\n';
     const original=task.manualOriginalPrompt||'';
     const begin=original.indexOf('{"format":"shared-pools-v3"');
