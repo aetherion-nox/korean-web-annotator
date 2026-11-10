@@ -69,6 +69,8 @@ When API review is enabled, relevant page text and dictionary candidates are sen
 
 **v1.1.69 single-candidate semantic risk:** A high lexical/POS score is not proof that a dictionary definition fits its sentence. Short, two-syllable words with exactly one dictionary candidate and no verified collocation/unit evidence are deferred to semantic review. The model can generate a missing etymology only when the experimental feature is enabled; otherwise KEEP preserves the source. Multi-entry and collocation-backed words retain their fast local path.
 
+**v1.1.70 whole-lexeme-first recovery:** Generated segments prefer one complete Hanja lexical stem where justified, respecting native roots and Korean particles. Isolated single-syllable origins remain rejected, but both API retries and manual repair prompts now include the failed target's concrete validation feedback. The model must re-evaluate the whole word; the verifier never guesses missing characters. Output estimates no longer reserve removed confidence/evidence fields.
+
 ## 5. Troubleshooting
 
 - **Nothing happens:** Check that the dictionary was imported, reload the extension, and refresh the page.
