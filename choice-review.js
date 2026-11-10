@@ -86,6 +86,7 @@ export async function reviewTargets(config,targets,signal){
    if(config.smartSegmentation===true){
     const repair=validateSegmentationRepairs(wire,response,config);
     config.onRepairs?.(repair.accepted);
+    config.onRepairRejected?.(repair.rejected.length);
     if(repair.accepted.length||repair.rejected.length)
      notify({stage:'segmentation',level:repair.rejected.length?'warning':'info',
       message:`本批分词修复：采纳 ${repair.accepted.length} 项，安全拒绝 ${repair.rejected.length} 项。`,
