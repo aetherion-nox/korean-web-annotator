@@ -28,7 +28,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const currentSentence=completedSentences+1;
   const progress=detail=>loading({...detail,currentSentence,sentenceCharacters:sentence.text.length});
   progress({stage:'analysis'});
-  const localKey=JSON.stringify(['dictionary-v3-alignment',reviewAll,identity.engine_version,identity.dictionary_fingerprint,modes,sentence.text,...(reviewLocalConversions?['review-local-conversions-v1']:[])]);
+  const localKey=JSON.stringify(['dictionary-v4-biography-filter',reviewAll,identity.engine_version,identity.dictionary_fingerprint,modes,sentence.text,...(reviewLocalConversions?['review-local-conversions-v1']:[])]);
   let analysis=!bypassCache&&cache.get(localKey);
   if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:reviewLocalConversions?{...modes,reviewLocalConversions:true}:modes,signal,progress));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
   if(reviewAll){
