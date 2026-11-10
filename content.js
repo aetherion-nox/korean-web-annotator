@@ -562,6 +562,43 @@
     return [...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
   }
 
+  // Observe connected nodes, not the last number computed before a
+  // dynamic website changed/replaced the text. Keep the true page-wide total
+  // separate from what this single operation actually inserted.
+  function liveAnnotationCount(entry){
+    let count=0;
+    for(const node of entry.renderRecord?.inserted||[]){
+      if(!node?.isConnected)continue;
+      if(node.nodeType===1&&node.matches?.(OWN_RUBY))count++;
+      count+=node.querySelectorAll?.(OWN_RUBY)?.length||0;
+    }
+    return count;
+  }
+  function annotationOperationAudit(task,upstream={}){
+    const entries=[...task.entries.values()];
+    const expectedSpans=entries.reduce((n,e)=>n+(e.annotations?.length||0),0);
+    const actualOperationSpans=entries.reduce((n,e)=>n+liveAnnotationCount(e),0);
+    const invalidatedEntries=entries.filter(e=>e.invalidated).length;
+    const invalidatedWithAnnotations=entries.filter(e=>e.invalidated&&e.annotations?.length).length;
+    const missingFromCurrentDom=Math.max(0,expectedSpans-actualOperationSpans);
+    const projection=task.paragraphPlan?.projectionAudit?.()||{};
+    return {reviewAccepted:upstream.model_review_accepted||0,
+      reviewConversions:upstream.model_review_conversion||0,
+      reviewKeep:upstream.model_review_keep||0,
+      reviewNonconversion:upstream.model_review_nonconversion||0,
+      modelProjectedSourceSpans:projection.modelSourceSpans||0,
+      modelCrossNodeDropped:projection.modelCrossNodeDropped||0,
+      modelUnownedSpans:projection.modelUnownedSpans||0,
+      expectedDomAnnotationSpans:expectedSpans,actualOperationSpans,
+      actualPageSpans:document.querySelectorAll(OWN_RUBY).length,
+      missingFromCurrentDom,invalidatedEntries,invalidatedWithAnnotations,
+      filteredInvalidSpan:task.audit?.invalidSpan||0,
+      filteredDisabledMode:task.audit?.disabledMode||0,
+      filteredOutsideSelection:task.audit?.outsideSelection||0,
+      segmentationFallbackRecovered:upstream.segmentation_fallback_recovered||0,
+      segmentationFallbackUnsafe:upstream.segmentation_fallback_unsafe||0};
+  }
+
   function contextState() {
     const ranges=captureSelection();return {ok:true,hasAnnotations:Boolean(document.querySelector(OWN_RUBY)),hasSelection:Boolean(ranges),selectionUnannotated:Boolean(ranges&&collectTextNodes(ranges).size)};
   }
@@ -993,7 +1030,7 @@
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
-    const task = { operationId, port, entries, paragraphPlan, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges, operation:[], historyRecorded:false };
+    const task = { operationId, port, entries, paragraphPlan, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges, operation:[], historyRecorded:false, audit:{invalidSpan:0,disabledMode:0,outsideSelection:0} };
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
     task.paint=paint;
     task.reconcile=()=>{let rolledBack=false;for(const entry of entries.values())if(entry.hasPreview){rolledBack=true;entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive||rolledBack)paint();};
@@ -1035,7 +1072,9 @@
         changedEntries.set(entry.node,entry);
         const incoming=[];
         for (const annotation of item.annotations || []) {
-          if (!Number.isInteger(annotation.start) || !Number.isInteger(annotation.end) || annotation.start < 0 || annotation.end <= annotation.start || annotation.end > entry.text.length || entry.text.slice(annotation.start, annotation.end) !== annotation.surface || typeof annotation.replacement !== 'string' || !annotation.replacement || !['hanja', 'loanword'].includes(annotation.type) || !modes[annotation.type === 'hanja' ? 'hanja' : 'loanword'] || !entry.selected.some(r=>annotation.start>=r.start&&annotation.end<=r.end)) continue;
+          if (!Number.isInteger(annotation.start) || !Number.isInteger(annotation.end) || annotation.start < 0 || annotation.end <= annotation.start || annotation.end > entry.text.length || entry.text.slice(annotation.start, annotation.end) !== annotation.surface || typeof annotation.replacement !== 'string' || !annotation.replacement || !['hanja', 'loanword'].includes(annotation.type)) {task.audit.invalidSpan++;continue;}
+          if(!modes[annotation.type === 'hanja' ? 'hanja' : 'loanword']){task.audit.disabledMode++;continue;}
+          if(!entry.selected.some(r=>annotation.start>=r.start&&annotation.end<=r.end)){task.audit.outsideSelection++;continue;}
           incoming.push(annotation);
         }
         if(result.source==='model'){
@@ -1054,6 +1093,14 @@
         return;
       }
       const count = paint();
+      const audit=annotationOperationAudit(task,result.stats||{});
+      globalThis.__KRA_PIPELINE_STATUS__={...globalThis.__KRA_PIPELINE_STATUS__,audit};
+      addDiagnostic({stage:'annotation-dom-audit',level:audit.missingFromCurrentDom||audit.invalidatedWithAnnotations||audit.modelCrossNodeDropped?'warning':'info',
+        message:'网页写入核对：本次实际保留 '+audit.actualOperationSpans+' 个标注（整页现有 '+audit.actualPageSpans+' 个）；模型转换决定 '+audit.reviewConversions+'，KEEP '+audit.reviewKeep+'，非转换 '+audit.reviewNonconversion+'。'+
+          (audit.missingFromCurrentDom?'当前任务有 '+audit.missingFromCurrentDom+' 个预期片段未在 DOM 中显示。':'')+
+          (audit.modelCrossNodeDropped?'另有 '+audit.modelCrossNodeDropped+' 个外来语片段跨 DOM 节点无法安全拆开。':'')+
+          (audit.invalidatedWithAnnotations?'有 '+audit.invalidatedWithAnnotations+' 处页面文本已变化或被替换。':''),
+        detail:JSON.stringify(audit)});
       for(const entry of entries.values())seenSources.add(entry.text);
       status(`完成：${count} 个标注`, 100);
       finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`,true);
