@@ -33,7 +33,7 @@ export function prepareManualRequest(config,targets){
  const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join('');
  const wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
  const bindings=config.manualBindings?.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};});
- return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword}),limitReason:config.batchBudget?.limitReason}};
+ return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
 }
 
 export function createManualReviewSession({operationId,post,signal}={}){
@@ -64,12 +64,11 @@ export function createManualReviewSession({operationId,post,signal}={}){
     if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
     const experimental=current.experimentalHanja||current.experimentalLoanword;
     const choicesConfig={reviewPosFilter:current.reviewPosFilter,experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword};
-    if(experimental&&!Array.isArray(response.experimental_options))throw Error('实验模式需要 experimental_options 数组（没有补充时填写 []）。');
+    if(Object.prototype.hasOwnProperty.call(response,'experimental_options'))throw Error('新版协议只需要 results；请重新复制当前批次提示词，不要 experimental_options。');
     const result=experimental?validateExperimentalChoices(current.wireTargets,response,choicesConfig):validateChoices(current.wireTargets,response,choicesConfig);
     if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果不完整，或包含重复/其他批次的 target_id、无效 choice_id 或未通过校验的实验性选项。请完整复制本批结果，保留 ID 原样。');
     const ids=new Map(current.wireTargets.map((t,i)=>[t.target_id,current.targets[i].target_id]));
-    const mapped={...(experimental?{experimental_options:response.experimental_options.map(row=>({...row,target_id:ids.get(row.target_id)}))}:{}),
-      results:result.accepted.map(({target,option})=>({target_id:ids.get(target.target_id),choice_id:option.choice_id}))};
+    const mapped={results:result.accepted.map(({target,option})=>({target_id:ids.get(target.target_id),choice_id:option.choice_id}))};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:result.accepted.length});current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
   }
