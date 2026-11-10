@@ -82,7 +82,7 @@
           "surface": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 90
+            "maxLength": 300
           },
           "choice_id": {
             "type": "string",
@@ -138,6 +138,25 @@
               "properties": {
                 "choice_id": {
                   "const": "KEEP"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "choice_id": {
+                  "not": {
+                    "const": "KEEP"
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "surface": {
+                  "maxLength": 90,
+                  "pattern": "^[가-힣]+(?: [가-힣]+){0,3}$"
                 }
               }
             }
