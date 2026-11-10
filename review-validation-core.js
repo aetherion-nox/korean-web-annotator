@@ -134,7 +134,7 @@
    const previous=parts[i-1],next=parts[i+1];
    const attached=(previous&&previous.end===part.start)||(next&&part.end===next.start);
    if(!attached&&!groundedSyllable(target,part))
-    return fail('ISOLATED_SYLLABLE','单音节 '+part.surface+' 缺少独立名词边界或相符词典来源');
+    return fail('ISOLATED_SYLLABLE','目标「'+target.surface+'」仅转换了孤立音节「'+part.surface+'」，缺少独立名词边界或相符词典来源；请重新判断完整词干与助词/词尾，确定为完整汉字词后再提交整词转换，不得凭空补字');
   }
   const value={choice_id:'GEN_SEGMENTS',type:'mixed',replacement,segments:parts,
     entry_id:null,definitions:[],generated:true,segmentationGenerated:true};
