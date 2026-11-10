@@ -23,6 +23,7 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         self.assertIn('안-중근',headword_aliases('안중근'))
         self.assertIn('이산화^탄소',headword_aliases('이산화 탄소'))
         self.assertIn('이산화^탄소',headword_aliases('이산화탄소'))
+        self.assertIn('주^연료^차단^장치',headword_aliases('주 연료 차단 장치'))
         self.assertNotIn('안중근',headword_aliases('안녕하세요!'))
         self.assertLessEqual(len(headword_aliases('이산화 탄소')),96)
         self.assertEqual(headword_aliases('학교, 탄소'),('학교, 탄소',))
@@ -71,6 +72,18 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(candidate['segments']),2)
         self.assertEqual([(p['surface'],p['replacement']) for p in candidate['segments']],
                          [('이산화','二酸化'),('탄소','炭素')])
+
+    async def test_four_word_phrase_preserves_every_whitespace_boundary(self):
+        entry=self.add('주^연료^차단^장치','主燃料遮斷裝置','명사','연료를 차단하는 장치.')
+        source='주 연료 차단 장치'
+        t=self.tokenizer_for([('주','NNG',0),('연료','NNG',2),('차단','NNG',5),('장치','NNG',8)])
+        from app.services.dictionary import DictionaryService
+        dictionary=DictionaryService(str(self.path))
+        self.assertTrue(any(r['id']==entry for r in (await dictionary.batch_lookup_entries([source]))[source]))
+        result=await Engine(self.path,tokenizer=t).analyze(source,
+            dict(hanja=True,loanword=False,nameProtection=False,filterDictionaryPeople=True))
+        self.assertEqual([(a['surface'],a['replacement']) for a in result['annotations']],
+            [('주','主'),('연료','燃料'),('차단','遮斷'),('장치','裝置')],result)
 
     async def test_aliases_do_not_resurrect_a_translation_or_cross_punctuation(self):
         self.add('이산화^탄소','二酸化炭素','명사','chemical name')
