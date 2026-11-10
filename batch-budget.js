@@ -23,12 +23,14 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  const experimental=experimentalHanja===true||experimentalLoanword===true;
  const config={reviewPosFilter,experimentalHanja,experimentalLoanword};
  const input=manual?buildManualPrompt(context,wire,batchId,config):REVIEW_INSTRUCTIONS+(experimental?'\n'+EXPERIMENTAL_REVIEW_INSTRUCTIONS:'')+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
- // One optional proposal per ELIGIBLE target. The validator will never
- // accept an experimental proposal for proper nouns, name homographs, partial
- // words or other forbidden targets. Do not reserve fictional answers for them.
- const experimentalRows=experimental?wire.filter(canProposeExperimentalOption).map(t=>({target_id:t.target_id,choice_id:'x0',type:experimentalHanja?'hanja':'loanword',
-  replacement:experimentalHanja?'漢字詞':'loanword',definition:'a precise matching sense of this Korean word in context'})):[];
- const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),...(experimental?{experimental_options:experimentalRows}:{}),results:wire.map(t=>({target_id:t.target_id,choice_id:experimental?'x0':t.options.reduce((longest,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(longest).length?o.choice_id:longest,'')}))});
+ // Model returns only results[].choice_id. Allow a plausible literal Hanja
+ // spelling in that SAME field for eligible experimental targets. No separate
+ // experimental_options list and no invented 100-byte proposal per target.
+ const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),results:wire.map(t=>{
+  const longest=t.options.reduce((answer,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(answer).length?o.choice_id:answer,'KEEP');
+  const proposed=experimental&&canProposeExperimentalOption(t)?'漢'.repeat(Math.min(24,Math.max(8,[...t.surface].length*2))):'';
+  return {target_id:t.target_id,choice_id:JSON.stringify(proposed).length>JSON.stringify(longest).length?proposed:longest};
+ })});
  const contextTokens=limits[tier],inputTokens=estimateTokenCount(input)+(manual?0:64),outputTokens=Math.ceil(estimateTokenCount(reply)*1.1)+32;
  const safetyTokens=contextTokens?Math.ceil(contextTokens*.08)+1024:0,outputLimit=normalizeOutputTokenLimit(manual?manualOutputTokenLimit:apiOutputTokenLimit,manual);
  const reservedOutputTokens=manual?outputTokens:Math.max(outputTokens,outputLimit),totalTokens=inputTokens+reservedOutputTokens+safetyTokens;
