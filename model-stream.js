@@ -1,8 +1,8 @@
-import {expandExperimentalOptions} from './experimental-options.js';
+import {literalOriginOption} from './experimental-options.js';
 // Protocol-specific SSE envelopes share one byte/framing reader. Reasoning is
 // retained only in the opt-in log, never parsed as dictionary choices.
 function streamError(message,detail=''){const e=Error(message);e.detail=detail;return e;}
-export function choicePreviewParser(targets,onPreview){
+export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null){
  const known=new Map(targets.map(t=>[t.target_id,t]));
  let text='',position=0,array=false,start=-1,depth=0,string=false,escape=false,invalid=false;
  const rows=[];
@@ -21,40 +21,13 @@ export function choicePreviewParser(targets,onPreview){
     if(row)rows.push(row);changed=true;
    }}else if(c===']'&&depth===0){position=text.length;break;}
   }
-  if(changed){const accepted=invalid?[]:rows.flatMap(row=>{const target=known.get(row.target_id),option=target?.options.find(o=>o.choice_id===row.choice_id);return option?[{target,option}]:[];});onPreview(accepted);}
+  if(changed){const accepted=invalid?[]:rows.flatMap(row=>{const target=known.get(row.target_id),option=target?.options.find(o=>o.choice_id===row.choice_id)||resolveExtra(target,row.choice_id);return option?[{target,option}]:[];});onPreview(accepted);}
  };
 }
-// In unified experimental replies, the complete proposal array arrives first.
-// Validate it locally BEFORE previewing any result referencing its x0/x1 keys.
-// The ordinary streaming parser can then display completed decisions as usual.
+// A literal etymology uses the same results[] streaming path as an existing
+// choice_id. Validate each *complete* row locally before provisional display.
 export function experimentalChoicePreviewParser(targets,config,onPreview){
- let buffered='',parser=null,abandoned=false;
- return chunk=>{
-  if(abandoned)return;
-  if(parser){parser(chunk);return;}
-  buffered+=chunk;
-  if(buffered.length>2_000_000){abandoned=true;return;}
-  const opening=/^\s*(?:```(?:json)?\s*)?\{\s*"experimental_options"\s*:\s*\[/i.exec(buffered);
-  if(!opening)return;
-  let depth=0,inString=false,escaped=false,close=-1;
-  for(let i=opening[0].length-1;i<buffered.length;i++){
-   const ch=buffered[i];
-   if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;continue;}
-   if(ch==='"'){inString=true;continue;}
-   if(ch==='[')depth++;
-   if(ch===']'&&--depth===0){close=i;break;}
-  }
-  if(close<0)return;
-  let rows;try{rows=JSON.parse(buffered.slice(opening[0].length-1,close+1));}catch{abandoned=true;return;}
-  const parsed=expandExperimentalOptions(targets,{experimental_options:rows},config);
-  if(parsed.fatal){abandoned=true;return;}
-  const after=buffered.slice(close+1);
-  const header=/^\s*,\s*"results"\s*:\s*\[/.exec(after);
-  if(!header)return;
-  parser=choicePreviewParser(parsed.targets,onPreview);
-  parser('{"results":['+after.slice(header[0].length));
-  buffered='';
- };
+ return choicePreviewParser(targets,onPreview,(target,id)=>literalOriginOption(target,id,config));
 }
 
 export async function readModelContent(response,{protocol='chat',signal,onStarted=()=>{},onDelta=()=>{},onRaw=()=>{},onMetadata=()=>{}}={}){
