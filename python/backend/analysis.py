@@ -229,13 +229,17 @@ class Engine:
         # Complete every candidate, including sibling origins owned by mixed words.
         option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
         option_metadata=await self.dictionary.get_metadata_for_entries(option_definitions) if self.dictionary is not None else {}
+        filtered_person_only=set()
         for target in targets:
             native=[];conversions=[];seen=set()
+            removed_person_sense=False
             for option in target['options']:
                 if option['type']=='keep':continue
                 option={**option,**option_metadata.get(option['entry_id'],{})}
-                if filter_dictionary_people and is_dictionary_person(option):continue
                 definitions=option_definitions.get(option['entry_id'],option['definitions'])
+                if filter_dictionary_people and is_dictionary_person({**option,'definitions':definitions}):
+                    removed_person_sense=True
+                    continue
                 if option['type']=='nonconversion':
                     for definition in definitions:
                         key=(option['entry_id'],definition)
@@ -244,6 +248,12 @@ class Engine:
                         native.append({**option,'choice_id':f'n{len(native)}','definitions':[definition]})
                 else:conversions.append({**option,'choice_id':f'c{len(conversions)}','definitions':definitions})
             target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
+            if removed_person_sense and not native and not conversions:
+                filtered_person_only.add(id(target))
+        # Do not send person-only remnants (KEEP with no lexical sense) to the
+        # model, which could otherwise invent an experimental origin for a name.
+        if filtered_person_only:
+            targets=[target for target in targets if id(target) not in filtered_person_only]
         # Encode each token boundary once, not once per review target.
         # This retains the existing surrogate/astral offset conversion exactly.
         token_morphology=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens]
