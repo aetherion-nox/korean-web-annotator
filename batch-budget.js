@@ -1,5 +1,5 @@
-import {buildReviewPayload,buildManualPrompt,REVIEW_INSTRUCTIONS} from './review-payload.js';
-import {EXPERIMENTAL_REVIEW_INSTRUCTIONS,canProposeExperimentalOption} from './experimental-options.js';
+import {buildReviewPayload,buildManualPrompt,buildReviewInstructions} from './review-payload.js';
+import {canProposeExperimentalOption} from './experimental-options.js';
 
 export const normalizeBatchContextTier=value=>['32k','128k','256k','512k','1m'].includes(value)?value:'32k';
 // Editable planning/request limits, not a claim about a provider's real capacity.
@@ -22,7 +22,7 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  const wire=wireIds?targets:targets.map((t,i)=>({...t,target_id:manual?'t'+i:'b0t'+i}));
  const experimental=experimentalHanja===true||experimentalLoanword===true;
  const config={reviewPosFilter,experimentalHanja,experimentalLoanword};
- const input=manual?buildManualPrompt(context,wire,batchId,config):REVIEW_INSTRUCTIONS+(experimental?'\n'+EXPERIMENTAL_REVIEW_INSTRUCTIONS:'')+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
+ const input=manual?buildManualPrompt(context,wire,batchId,config):buildReviewInstructions(config)+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
  // Model returns only results[].choice_id. Allow a plausible literal Hanja
  // spelling in that SAME field for eligible experimental targets. No separate
  // experimental_options list and no invented 100-byte proposal per target.
