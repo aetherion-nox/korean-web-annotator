@@ -4,106 +4,142 @@ import {runSentencePipeline} from '../annotation-pipeline.js';
 import {createManualReviewSession} from '../manual-review.js';
 import {reviewTargets} from '../choice-review.js';
 import {experimentalChoicePreviewParser} from '../model-stream.js';
-import {describeBatchBudget} from '../batch-budget.js';
+import {describeBatchBudget,normalizeOutputTokenLimit,contextReviewBatches} from '../batch-budget.js';
 
-const identity={engine_version:'unified-exp',dictionary_fingerprint:'dict-1'};
+const identity={engine_version:'direct-origin',dictionary_fingerprint:'dict-1'};
 const sentence='원잠 게임';
 const target0={target_id:'local-0',start:0,end:2,surface:'원잠',context:sentence,options:[
  {choice_id:'KEEP',type:'keep',entry_id:null,replacement:'원잠',definitions:[]},
- {choice_id:'c0',type:'hanja',entry_id:1,replacement:'元箴',definitions:['unrelated']} ]};
+ {choice_id:'c0',type:'hanja',entry_id:1,replacement:'元箴',definitions:['unrelated']}]};
 const target1={target_id:'local-1',start:3,end:5,surface:'게임',context:sentence,options:[
  {choice_id:'KEEP',type:'keep',entry_id:null,replacement:'게임',definitions:[]},
- {choice_id:'n0',type:'nonconversion',entry_id:2,replacement:'게임',definitions:['another sense']} ]};
-const proposed=(target_id)=>({target_id,choice_id:'x0',type:'hanja',replacement:'原潛',definition:'a nuclear-powered submarine'});
+ {choice_id:'n0',type:'nonconversion',entry_id:2,replacement:'게임',definitions:['native sense']}]};
 const data=(targets=[])=>({...identity,annotations:[],targets,stats:{pending:targets.length}});
-const answer=(targets)=>({experimental_options:[proposed(targets[0].target_id)],results:targets.map((t,i)=>({target_id:t.target_id,choice_id:i===0?'x0':'n0'}))});
+const answer=targets=>({results:targets.map((t,i)=>({target_id:t.target_id,choice_id:i===0?'原潛':'n0'}))});
 
-test('pipeline uses one request to consider newly proposed and original options together',async()=>{
+test('pipeline uses one request for literal-origin and ordinary keys together',async()=>{
  const calls=[],events=[];
- const stats=await runSentencePipeline({operationId:'one-reply',sentences:[{id:'s0',text:sentence}],modes:{hanja:true,loanword:true}},e=>events.push(e),{
+ const stats=await runSentencePipeline({operationId:'direct',sentences:[{id:'s0',text:sentence}],modes:{hanja:true,loanword:true}},e=>events.push(e),{
   status:async()=>identity,analyze:async()=>data([target0,target1]),enabled:true,cache:new Map(),
-  modelConfig:async()=>({model:'fixture',endpoint:'fixture://model',experimentalHanja:true,request:async(_config,targets)=>{calls.push(targets);return answer(targets);}})
+  modelConfig:async()=>({model:'fixture',endpoint:'fixture://model',experimentalHanja:true,
+   request:async(config,targets)=>{calls.push({config,targets});return answer(targets);}})
  });
- assert.equal(calls.length,1,'no KEEP-triggered second/third request');
+ assert.equal(calls.length,1);
  assert.equal(stats.model_resolved,1);
  const final=events.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1).results[0].annotations;
  assert.equal(final.length,1);assert.equal(final[0].replacement,'原潛');
- assert.equal(events.filter(e=>e.type==='DIAGNOSTIC').some(e=>e.diagnostic.stage==='experimental'),true);
+ assert.equal(events.some(e=>e.type==='DIAGNOSTIC'&&e.diagnostic.stage==='experimental'),true);
 });
 
-test('manual one-batch response maps target IDs and proposed x0 back to original targets',async()=>{
- const events=[];
- const session=createManualReviewSession({operationId:'manual',post:e=>events.push(e)});
- const pending=session.request({context:sentence,experimentalHanja:true,experimentalLoanword:false,reviewPosFilter:false},[target0,target1]);
+test('manual review remaps raw choice_id to local target ID with no proposal array',async()=>{
+ const events=[];const session=createManualReviewSession({operationId:'manual',post:e=>events.push(e)});
+ const pending=session.request({context:sentence,experimentalHanja:true,reviewPosFilter:false,manualOutputTokenLimit:131072},[target0,target1]);
  const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
- assert.ok(request.text.includes('experimental_options'));
  assert.ok(request.text.includes('experimental_modes'));
- const result={batch_id:request.requestId,experimental_options:[proposed('t0')],results:[
-  {target_id:'t0',choice_id:'x0'},{target_id:'t1',choice_id:'n0'}]};
- assert.equal(session.submit({operationId:'manual',requestId:request.requestId,text:JSON.stringify(result)}),true);
+ assert.equal(JSON.parse(request.text.split('\n').at(-1)).batch_id,request.requestId);
+ assert.equal(request.budget.outputLimit,131072);
+ const response={batch_id:request.requestId,results:[
+  {target_id:'t0',choice_id:'原潛'},{target_id:'t1',choice_id:'n0'}]};
+ assert.equal(session.submit({operationId:'manual',requestId:request.requestId,text:JSON.stringify(response)}),true);
  const mapped=await pending;
  assert.deepEqual(mapped.results.map(r=>r.target_id),['local-0','local-1']);
- assert.equal(mapped.experimental_options[0].target_id,'local-0');
- assert.equal(mapped.experimental_options[0].choice_id,'x0');
+ assert.equal(mapped.results[0].choice_id,'原潛');
+ assert.ok(!('experimental_options' in mapped));
 });
 
-test('manual rejects invalid experimental result but keeps request pending for correction',async()=>{
+test('manual rejects unknown ID and old experimental array while allowing correction',async()=>{
  const events=[];const controller=new AbortController();
- const session=createManualReviewSession({operationId:'manual-err',signal:controller.signal,post:e=>events.push(e)});
- const pending=session.request({context:sentence,experimentalHanja:true,reviewPosFilter:false},[target0]);
+ const session=createManualReviewSession({operationId:'manual-bad',signal:controller.signal,post:e=>events.push(e)});
+ const pending=session.request({context:sentence,experimentalHanja:true},[target0]);
  const id=events[0].requestId;
- const submit=result=>session.submit({operationId:'manual-err',requestId:id,text:JSON.stringify({batch_id:id,...result})});
- assert.equal(submit({experimental_options:[],results:[{target_id:'t0',choice_id:'x0'}]}),false);
- assert.equal(submit({experimental_options:[proposed('unknown')],results:[{target_id:'t0',choice_id:'KEEP'}]}),false);
- assert.equal(submit({experimental_options:[proposed('t0')],results:[{target_id:'t0',choice_id:'x0'}]}),true);
- assert.equal((await pending).results[0].choice_id,'x0');
+ const submit=payload=>session.submit({operationId:'manual-bad',requestId:id,text:JSON.stringify({batch_id:id,...payload})});
+ assert.equal(submit({results:[{target_id:'t0',choice_id:'x0'}]}),false);
+ assert.equal(submit({results:[{target_id:'t0',choice_id:'原潛'}],experimental_options:[]}),false);
+ assert.equal(submit({results:[{target_id:'t0',choice_id:'原潛'}]}),true);
+ assert.equal((await pending).results[0].choice_id,'原潛');
  assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_ERROR').length,2);
 });
 
-test('API sends experimental modes in first review request, receiving x choice directly',async()=>{
- const originalFetch=globalThis.fetch;let requestCount=0,wire=null;
+test('API sends results-only protocol and configurable max_tokens (DeepSeek)',async()=>{
+ const saved=globalThis.fetch;let wire;
  globalThis.fetch=async(url,init)=>{
-  requestCount++;wire=JSON.parse(init.body);
-  const reply={experimental_options:[proposed('local-0')],results:[{target_id:'local-0',choice_id:'x0'}]};
-  return new Response(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{content:JSON.stringify(reply)}}]}),{headers:{'content-type':'application/json'}});
+  wire=JSON.parse(init.body);
+  return new Response(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{
+   content:JSON.stringify({results:[{target_id:'local-0',choice_id:'原潛'}]})}}]}),
+   {headers:{'content-type':'application/json'}});
  };
  try{
-  const result=await reviewTargets({enableModelReview:true,experimentalHanja:true,experimentalLoanword:false,provider:'deepseek',endpoint:'https://example.invalid/v1/chat/completions',model:'fixture',logger:{start:async()=>1,finish:async()=>{}}},[target0]);
-  assert.equal(requestCount,1);
+  const result=await reviewTargets({enableModelReview:true,experimentalHanja:true,
+   provider:'deepseek',endpoint:'https://example.invalid/v1/chat/completions',model:'fixture',
+   apiOutputTokenLimit:32000,logger:{start:async()=>1,finish:async()=>{}}},[target0]);
+  assert.equal(result.accepted.length,1);
   assert.equal(result.accepted[0].option.replacement,'原潛');
-  assert.ok(wire.messages[0].content.includes('experimental_options'));
+  assert.equal(wire.max_tokens,32000);
+  assert.ok(wire.messages[0].content.includes('原潛'));
+  assert.ok(!wire.messages[0].content.includes('"experimental_options":['));
   assert.equal(JSON.parse(wire.messages[1].content).experimental_modes.hanja,true);
- }finally{globalThis.fetch=originalFetch;}
+ }finally{globalThis.fetch=saved;}
 });
 
-test('streaming waits for complete validated proposals before previewing x choices',()=>{
- const snapshots=[];const receive=experimentalChoicePreviewParser([target0],{experimentalHanja:true},rows=>snapshots.push(rows.map(a=>a.option.choice_id)));
- const message=JSON.stringify({experimental_options:[proposed('local-0')],results:[{target_id:'local-0',choice_id:'x0'}]});
- const first=message.indexOf(',"results"');
- receive(message.slice(0,first));assert.equal(snapshots.length,0);
- for(const part of [message.slice(first,first+18),message.slice(first+18)])receive(part);
- assert.deepEqual(snapshots.at(-1),['x0']);
- const badSnapshots=[];const bad=experimentalChoicePreviewParser([target0],{experimentalHanja:true},rows=>badSnapshots.push(rows));
- bad(JSON.stringify({experimental_options:[proposed('cross-batch')],results:[{target_id:'local-0',choice_id:'x0'}]}));
- assert.equal(badSnapshots.length,0);
+test('OpenAI Chat/Responses and Anthropic use the correct configured output limit field',async()=>{
+ const saved=globalThis.fetch;
+ const cases=[
+  {provider:'openai',endpoint:'https://example.invalid/v1/chat/completions',name:'max_completion_tokens'},
+  {provider:'openai',endpoint:'https://example.invalid/v1/responses',name:'max_output_tokens'},
+  {provider:'anthropic',endpoint:'https://example.invalid/v1/messages',name:'max_tokens'}
+ ];
+ try{
+  for(const item of cases){
+   let wire;
+   globalThis.fetch=async(_,options)=>{
+    wire=JSON.parse(options.body);
+    const text=JSON.stringify({results:[{target_id:'local-0',choice_id:'KEEP'}]});
+    const body=item.provider==='anthropic'?{stop_reason:'end_turn',content:[{type:'text',text}]}:
+      item.endpoint.endsWith('/responses')?{status:'completed',output:[{type:'message',content:[{type:'output_text',text}]}]}:
+      {choices:[{index:0,finish_reason:'stop',message:{content:text}}]};
+    return new Response(JSON.stringify(body),{headers:{'content-type':'application/json'}});
+   };
+   const res=await reviewTargets({enableModelReview:true,...item,model:'fixture',
+    batchBudget:{outputLimit:44444},logger:{start:async()=>1,finish:async()=>{}}},[target0]);
+   assert.equal(res.accepted.length,1,item.provider);
+   assert.equal(wire[item.name],44444,item.endpoint);
+   assert.ok(!Object.hasOwn(wire,item.name==='max_tokens'?'max_completion_tokens':'max_tokens'),'no conflicting cap property');
+  }
+ }finally{globalThis.fetch=saved;}
 });
 
-test('batch budget includes unified experiment instructions and output proposal allowance',()=>{
- const ordinary=describeBatchBudget(sentence,[target0,target1],{tier:'32k'});
- const experimental=describeBatchBudget(sentence,[target0,target1],{tier:'32k',experimentalHanja:true});
+test('stream previews valid raw Hanja and dictionary choices from completed rows',()=>{
+ const events=[],parser=experimentalChoicePreviewParser([target0,target1],{experimentalHanja:true},rows=>events.push(rows.map(a=>a.option.choice_id)));
+ const message=JSON.stringify(answer([target0,target1]));
+ parser(message.slice(0,10));assert.equal(events.length,0);
+ for(let i=10;i<message.length;i+=8)parser(message.slice(i,i+8));
+ assert.deepEqual(events.at(-1),['原潛','n0']);
+ const badEvents=[],bad=experimentalChoicePreviewParser([target0],{experimentalHanja:true},rows=>badEvents.push(rows));
+ bad(JSON.stringify({results:[{target_id:'local-0',choice_id:'x0'}]}));
+ assert.ok(badEvents.every(rows=>rows.length===0));
+});
+
+test('output cap defaults, validation, and planning budgets are consistent',()=>{
+ assert.equal(normalizeOutputTokenLimit(undefined,false),16384);
+ assert.equal(normalizeOutputTokenLimit(undefined,true),65536);
+ assert.equal(normalizeOutputTokenLimit('32768'),32768);
+ for(const value of [100,1000001,0,'abc',1.25])assert.equal(normalizeOutputTokenLimit(value,true),65536);
+ const settings={tier:'512k',manual:true,experimentalHanja:true};
+ const defaultBudget=describeBatchBudget(sentence,[target0,target1],settings);
+ assert.equal(defaultBudget.outputLimit,65536);
+ assert.equal(describeBatchBudget(sentence,[target0,target1],{...settings,manualOutputTokenLimit:131072}).outputLimit,131072);
+ assert.equal(describeBatchBudget(sentence,[target0,target1],{tier:'512k',apiOutputTokenLimit:32000}).outputLimit,32000);
+ const batches=contextReviewBatches([{result:{unresolved:[target0,target1]}}],sentence,{...settings,manualOutputTokenLimit:120000});
+ assert.equal(batches[0].budget.outputLimit,120000);
+ assert.ok(defaultBudget.outputTokens<2000,'literal choice replies should not reserve an extra proposal object per target');
+});
+
+test('target flags no longer need a separate proposal reservation or field',()=>{
+ const ordinary=describeBatchBudget(sentence,[target0,target1],{tier:'512k',manual:true});
+ const experimental=describeBatchBudget(sentence,[target0,target1],{tier:'512k',manual:true,experimentalHanja:true});
  assert.ok(experimental.inputTokens>ordinary.inputTokens);
  assert.ok(experimental.outputTokens>ordinary.outputTokens);
-});
-
-test('experimental response budget excludes identities that proposal validator already forbids',()=>{
- const normal=describeBatchBudget(sentence,[target0,target1],{tier:'512k',manual:true,experimentalHanja:true});
- for(const flag of ['proper_noun','dictionary_person_name','dictionary_name_homograph','suspected_person_name','partial_word']){
-  const forbidden=describeBatchBudget(sentence,[{...target0,[flag]:true},target1],{tier:'512k',manual:true,experimentalHanja:true});
-  assert.ok(forbidden.outputTokens<normal.outputTokens,flag+' must not reserve imaginary x0');
- }
- const none=describeBatchBudget(sentence,[{...target0,proper_noun:true},{...target1,partial_word:true}],
-   {tier:'512k',manual:true,experimentalHanja:true});
- const ordinary=describeBatchBudget(sentence,[{...target0,proper_noun:true},{...target1,partial_word:true}],
-   {tier:'512k',manual:true,experimentalHanja:false});
- assert.ok(none.outputTokens-ordinary.outputTokens<50,'only the empty experimental_options array remains');
+ const forbidden=describeBatchBudget(sentence,[{...target0,proper_noun:true},{...target1,partial_word:true}],
+  {tier:'512k',manual:true,experimentalHanja:true});
+ assert.ok(forbidden.outputTokens<experimental.outputTokens);
 });
