@@ -170,11 +170,20 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   }
   await persist(cache);
  }
- for(const {sentence,analysis,result} of work){
-  const additions=result.accepted.filter(a=>a.option.type!=='keep').flatMap(a=>projectAnnotation(sentence.text,{...a.target,...a.option,start:a.target.start,end:a.target.end,surface:a.target.surface,context:a.target.context}));
-  stats.model_resolved+=result.accepted.filter(a=>a.option.type!=='keep').length;
-  stats.unresolved+=result.unresolved.length+result.accepted.filter(a=>a.option.type==='keep').length;
-  if(enabled)emit('RESULTS',{source:'model',replaceModel:true,results:[{id:sentence.id,annotations:additions,reviewed:result.accepted.map(a=>({start:a.target.start,end:a.target.end,surface:a.target.surface}))}]});
+ for(const item of work){
+  const {sentence,analysis,result}=item;
+  const replaced=new Set((item.repairs||[]).flatMap(r=>r.source_target_ids));
+  const valid=result.accepted.filter(a=>!a.target.scan_only&&!replaced.has(a.target.target_id));
+  const additions=[...valid.filter(a=>a.option.type!=='keep').flatMap(a=>projectAnnotation(sentence.text,{...a.target,...a.option,start:a.target.start,end:a.target.end,surface:a.target.surface,context:a.target.context})),
+   ...(item.repairs||[]).flatMap(r=>r.annotations)];
+  const reviewed=[...valid.map(a=>({start:a.target.start,end:a.target.end,surface:a.target.surface})),
+   ...(item.repairs||[]).flatMap(r=>[
+    ...r.source_target_ids.flatMap(id=>analysis.targets.filter(t=>t.target_id===id).map(t=>({start:t.start,end:t.end,surface:t.surface}))),
+    {start:r.start,end:r.end,surface:r.surface}
+   ])];
+  stats.model_resolved+=valid.filter(a=>a.option.type!=='keep').length+(item.repairs||[]).filter(r=>r.annotations.length).length;
+  stats.unresolved+=result.unresolved.filter(t=>!t.scan_only&&!replaced.has(t.target_id)).length+valid.filter(a=>a.option.type==='keep').length;
+  if(enabled)emit('RESULTS',{source:'model',replaceModel:true,results:[{id:sentence.id,annotations:additions,reviewed}]});
  }
  while(cache.size>300)cache.delete(cache.keys().next().value);await persist(cache);
  emit('DONE');return stats;
