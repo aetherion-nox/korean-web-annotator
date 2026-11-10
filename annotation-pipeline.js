@@ -1,6 +1,7 @@
 import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './local-engine.js';
 import {filterReviewTarget} from './review-pos.js';
-import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
+import {reviewTargets,validateChoices,safeDetail,requestExperimentalOptions} from './choice-review.js';
+import {appendExperimentalOptions} from './experimental-options.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
 export const CACHE_KEY='kraDictionaryReviewCacheV1Alignment3';
@@ -65,6 +66,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }else diagnostic({stage:'skipped',level:'info',message:enabled?'没有待审核候选，本次无需调用模型。':'模型审核开关关闭，仅使用本地词典规则。'});
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
 
+ const experimental=!!(config?.experimentalHanja&&modes.hanja||config?.experimentalLoanword&&modes.loanword);
  const context=message.context || sentences.map(s=>s.text).join('\n');
  const progressive=message.progressiveAnnotation===true;
  const lastPublished=new Map();
@@ -82,10 +84,10 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify(['id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort]);
+   const fingerprint=JSON.stringify(['id-review-v18-experimental-option',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,experimental]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
-   const cached=!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
+   const cached=!experimental&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
    if(cached){item.result=validateChoices(analysis.targets,cached,config);if(progressive)publishModel(item);stats.cacheHits++;diagnostic({stage:'cache',level:'info',message:'使用已验证的模型审核缓存；无需重复请求。'});}
    if(item.result.unresolved.length){pending.push(item);progress.modelTotal+=item.result.unresolved.length;}
   }
@@ -106,15 +108,39 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  for(const [batchIndex,batch] of batches.entries()){
   if(batch.budget)diagnostic({stage:'batch-budget',level:'info',message:`${batch.budget.label} 档批次：预估输入 ${batch.budget.inputTokens}、答案 ${batch.budget.outputTokens}、安全余量 ${batch.budget.safetyTokens} tokens。${batch.budget.limitReason==='output'?'本批受答案长度预算限制。':''}`,detail:JSON.stringify(batch.budget)});
   const {owners,targets,manualBindings,manualPrepared}=preparedBatches[batchIndex];
-  await reviewTargets({...config,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||120000,enableModelReview:true,context:batch.context,
+  const firstReview=await reviewTargets({...config,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||120000,enableModelReview:true,context:batch.context,
    ...(progressive?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
    onAccepted:accepted=>{for(const a of accepted){const owner=owners.get(a.target.target_id);owner.item.result.accepted.push({target:owner.target,option:a.option});}progress.modelCompleted+=accepted.length;reportProgress();for(const item of batch.items)if(progressive)publishModel(item);}
   },targets,signal);
+  // The original selector has the final say for all ordinary options. Only a
+  // validated KEEP triggers a separate optional candidate-suggestion round.
+  if(experimental){
+   const kept=firstReview.accepted.filter(a=>a.option.type==='keep').map(a=>a.target);
+   if(kept.length){
+    const supplementConfig={...config,context:batch.context,operationId:message.operationId,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,timeoutMs:config.timeoutMs||120000,experimentalHanja:config.experimentalHanja===true&&modes.hanja,experimentalLoanword:config.experimentalLoanword===true&&modes.loanword};
+    const proposed=await requestExperimentalOptions(supplementConfig,kept,signal);
+    const expanded=appendExperimentalOptions(kept,proposed,supplementConfig);
+    diagnostic({stage:'experimental',level:'info',message:'原候选判为 KEEP '+kept.length+' 项，新增通过词界和词源格式校验的候选 '+expanded.length+' 项。'});
+    if(expanded.length){
+     await reviewTargets({...supplementConfig,experimentalPhase:'choose',manualPrepared:undefined,manualBindings:undefined,enableModelReview:true,stream:progressive?true:config.stream,
+      ...(progressive?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
+      onAccepted:accepted=>{for(const a of accepted){
+       const owner=owners.get(a.target.target_id);
+       if(!owner)continue;
+       const index=owner.item.result.accepted.findIndex(v=>v.target===owner.target&&v.option.type==='keep');
+       if(index>=0)owner.item.result.accepted[index]={target:owner.target,option:a.option};
+      }
+      for(const item of batch.items)if(progressive)publishModel(item);
+      }
+     },expanded,signal);
+    }
+   }
+  }
   for(const item of batch.items){
    const answered=new Set(item.result.accepted.map(a=>a.target.target_id));
    item.result.unresolved=item.analysis.targets.filter(t=>!answered.has(t.target_id));
    const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,item.analysis.targets,batch.context]);
-   if(!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id}))});
+   if(!experimental&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id}))});
   }
   await persist(cache);
  }
