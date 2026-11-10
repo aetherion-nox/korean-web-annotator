@@ -630,7 +630,7 @@
       importButton.disabled=true;panel.querySelector('.kra-manual-apply').disabled=true;note(`正在读取 ${file.name}…`);
       try{
         if(!/\.(json|txt)$/i.test(file.name))throw Error('请选择 JSON 或 TXT 答案文件。');
-        if(file.size>5*1024*1024)throw Error('答案文件超过 5 MiB，请仅导入当前批次的结果。');
+        if(file.size>16*1024*1024)throw Error('答案文件超过 16 MiB，请仅导入当前批次的结果。');
         let readTimer;let text;
         try{text=await Promise.race([file.text(),new Promise((_,reject)=>{readTimer=setTimeout(()=>reject(Error('读取文件超时，请重新导入或粘贴答案。')),15000);})]);}finally{clearTimeout(readTimer);}
         if(!stillCurrent())return;
@@ -669,7 +669,7 @@
   function applyManualRecovery(task,text,{advance=true,paint=true}={}){
     const backup=task.manualBackup;
     if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
-    if(typeof text!=='string'||text.length>5*1024*1024)throw Error('请提供不超过 5 MiB 的完整 JSON 结果。');
+    if(typeof text!=='string'||text.length>16*1024*1024)throw Error('请提供不超过 16 MiB 的完整 JSON 结果。');
     let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
     let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
     if(response?.batch_id!==backup.requestId)throw Error('batch_id 缺失或不属于当前批次，未应用任何答案。');
