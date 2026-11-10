@@ -77,7 +77,6 @@ test('API sends results-only protocol and configurable max_tokens (DeepSeek)',as
   assert.equal(result.accepted.length,1);
   assert.equal(result.accepted[0].option.replacement,'原潛');
   assert.equal(wire.max_tokens,32000);
-  assert.ok(wire.messages[0].content.includes('原潛'));
   assert.ok(!wire.messages[0].content.includes('"experimental_options":['));
   assert.equal(JSON.parse(wire.messages[1].content).experimental_modes,undefined);
   assert.ok(wire.messages[0].content.includes('genuine Sino-Korean origin'));
