@@ -68,6 +68,33 @@ class RiskReview(unittest.IsolatedAsyncioTestCase):
   score.candidates[0]['score']=0.55
   self.assertTrue(weak_unique_candidate(score,[]))
 
+ async def test_high_scoring_single_spelling_without_context_is_still_a_risk(self):
+  # A high scorer is not a semantic match. Different dictionary definitions
+  # can share one written origin and still all be wrong in the sentence.
+  candidate={'entry_id':465818,'replacement':'原蠶','is_reliable':True,
+             'score':0.95,'selection_reason':'reliable_replacement, pos_match, pure_hanja_type'}
+  score=SimpleNamespace(original='원잠',status='converted',start=3,end=5,
+                        matched_entry_id=465818,candidates=[candidate])
+  self.assertTrue(weak_unique_candidate(score,[]))
+  score.candidates.append({**candidate,'entry_id':465819})
+  self.assertTrue(weak_unique_candidate(score,[]))
+  score.candidates[1]['replacement']='原潛'
+  self.assertFalse(weak_unique_candidate(score,[]))
+  score.candidates=score.candidates[:1]
+  score.candidates[0]['selection_reason']='collocation_match(핵잠->原蠶)'
+  self.assertFalse(weak_unique_candidate(score,[]))
+
+ async def test_military_context_does_not_auto_apply_an_unrelated_agriculture_headword(self):
+  # This fixture is intentionally the exact field failure; the production
+  # rule above does not contain special cases for words or subject domains.
+  self.add('원잠','原蠶','명사','원잠종을 받기 위하여 계통을 바르게 한 누에.')
+  result=await self.run_text('핵잠(원잠)',[('핵잠','NNG',0),('원잠','NNG',3)])
+  self.assertFalse(any(a['surface']=='원잠' for a in result['annotations']),result)
+  review=next(t for t in result['targets'] if t['surface']=='원잠')
+  self.assertIn('weak_unique_dictionary_candidate',review.get('review_reasons',[]))
+  self.assertTrue(any(c['replacement']=='原蠶' for c in review['options']))
+  self.assertEqual(result['stats']['unique_risk_reviews'],1,result)
+
  async def test_single_syllable_guard_off_restores_only_existing_rule(self):
   self.add('학','學','명사','공부.')
   r=await self.run_text('학',[('학','NNG',0)],risk=True,single=True)
