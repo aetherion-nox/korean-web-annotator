@@ -58,9 +58,9 @@ async def name_ranges(text,tokens,lookup):
 # when their definition is a full biographical entry. Demand BOTH a lifespan
 # and a human role in the opening gloss; ordinary "general name" nouns and
 # works merely mentioning a person must not be removed.
-_LIFESPAN=re.compile(r'[(（]\\s*(?:\\?|[Bb]\\.?[Cc]\\.?\\s*)?\\d{1,4}\\s*[~～–-]\\s*\\??\\d{1,4}\\s*[)）]')
+_LIFESPAN=re.compile(r'[(（]\s*(?:(?:[Bb]\.?[Cc]\.?\s*)?\d{1,4}|\?)\s*[~～–-]\s*\??\d{1,4}\s*[)）]')
 _PERSON_ROLE=re.compile(r'(?:장군|독립운동가|정치가|정치인|문신|무신|황제|국왕|왕|제독|학자|과학자|철학자|사상가|작곡가|화가|소설가|시인|작가|극작가|음악가|연주가|가수|배우|감독|군인|승려|성직자|외교관|혁명가|발명가|탐험가|운동가|대통령|총리|장관|교수|기자|수학자|천문학자|의학자|박물학자|종교인)')
-_CATEGORY_PERSON=re.compile(r'(?<!\\w)(?:인명|人名|personal name)(?!\\w)',re.I)
+_CATEGORY_PERSON=re.compile(r'(?<!\w)(?:인명|人名|personal name)(?!\w)',re.I)
 
 def is_person_biography(definition):
     if not isinstance(definition,str):return False
