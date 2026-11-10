@@ -1,6 +1,6 @@
 import {filterReviewTarget,filterReviewTargets} from './review-pos.js';
 import {safeReviewOption} from './review-boundary.js';
-import {generatedChoices,validateGeneratedRow,validateGeneratedSegmentsRow} from './model-origin.js';
+import {generatedChoices,validateGeneratedRow,validateGeneratedSegmentsRow,generatedRepairFeedback} from './model-origin.js';
 import {qwenRequestSettings} from './qwen-api.js';
 import {readModelContent,choicePreviewParser} from './model-stream.js';
 import {requestLogger} from './request-log.js';
@@ -23,6 +23,20 @@ export function validateChoices(targets,response,config={}) {
   if(option) accepted.push({target,option}); else unresolved.push(target);
  }
  return {accepted,unresolved};
+}
+// Report why this exact ID failed, so the next attempt does not repeat an
+// invalid partial segment. The wording is independent of any specific word.
+export function reviewRepairFeedback(target,rows=[],config={}){
+ if(!Array.isArray(rows)||!rows.length)return '未返回该 target_id。请重新判断该目标的完整词义并只返回一条合法结果。';
+ if(rows.length!==1)return '同一 target_id 返回了重复结果。请重新判断整个词并只返回一条结果。';
+ const row=rows[0];
+ if(row?.choice_id==='GEN_SEGMENTS'||row?.choice_id==='GEN_HANJA'||row?.choice_id==='GEN_LOANWORD')
+  return generatedRepairFeedback(target,row,config)||'生成词源未通过当前目标的授权或位置校验，请重审完整词。';
+ const option=filterReviewTarget(target,config).options.find(o=>o.choice_id===row?.choice_id);
+ if(option&&Object.keys(row).some(k=>k!=='target_id'&&k!=='choice_id'))
+  return '词典义项或 KEEP 只能包含 target_id 和 choice_id，不要额外添加字形或其他字段。';
+ if(!option)return '所选 choice_id 不属于此目标允许的 options。请逐条阅读候选定义，若都不适用则返回 KEEP 或获授权的 GEN_*。';
+ return '该目标的候选词界或标注约束未通过审核，请重新核对完整词界并避免孤立的音节转换。';
 }
 export function thinkingSettings(config){
  const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
@@ -48,7 +62,7 @@ export function safeDetail(value,config={}){
  return text.replace(/Bearer\s+[^\s"'<>]+/gi,'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,3000);
 }
 export function modelTargets(targets,config={}){
- return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.boundary_unverified?{boundary_unverified:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),...(t.dictionary_person_name===true?{dictionary_person_name:true}:{}),...(t.dictionary_name_homograph===true?{dictionary_name_homograph:true}:{}),...(t.suspected_person_name===true?{suspected_person_name:true}:{}),...(t.segmentation_review===true?{segmentation_review:true}:{}),...(Array.isArray(t.review_reasons)?{review_reasons:t.review_reasons}:{}),...(Array.isArray(t.component_candidates)?{component_candidates:t.component_candidates}:{}),...(generatedChoices(t,config).length?{generated_choices:generatedChoices(t,config)}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(o.subject_category?{subject_category:o.subject_category}:{}),...(o.semantic_category?{semantic_category:o.semantic_category}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
+ return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.boundary_unverified?{boundary_unverified:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),...(t.dictionary_person_name===true?{dictionary_person_name:true}:{}),...(t.dictionary_name_homograph===true?{dictionary_name_homograph:true}:{}),...(t.suspected_person_name===true?{suspected_person_name:true}:{}),...(t.segmentation_review===true?{segmentation_review:true}:{}),...(Array.isArray(t.review_reasons)?{review_reasons:t.review_reasons}:{}),...(typeof t.repair_feedback==='string'&&t.repair_feedback?{repair_feedback:t.repair_feedback}:{}),...(Array.isArray(t.component_candidates)?{component_candidates:t.component_candidates}:{}),...(generatedChoices(t,config).length?{generated_choices:generatedChoices(t,config)}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(o.subject_category?{subject_category:o.subject_category}:{}),...(o.semantic_category?{semantic_category:o.semantic_category}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
 }
 export async function reviewTargets(config,targets,signal){
  if(!config.enableModelReview || !targets.length)return {accepted:[],unresolved:targets,errors:[]};
@@ -61,7 +75,13 @@ export async function reviewTargets(config,targets,signal){
   notify({stage:'request',level:'info',attempt:attempt+1,model:config.model,thinking:thinking.label,message:`正在请求模型审核：${pending.length} 个候选；${thinking.label}`});
   try {
    const response=await (config.request || requestChoices)({...config,attempt:attempt+1},modelTargets(pending,config),signal);
-   const result=validateChoices(pending,response,config);accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);config.onPreview?.([]);
+   const result=validateChoices(pending,response,config);
+   accepted.push(...result.accepted);
+   const rows=Array.isArray(response?.results)?response.results:[];
+   pending=attempt===0?result.unresolved.map(target=>({
+    ...target,repair_feedback:reviewRepairFeedback(target,rows.filter(row=>row?.target_id===target.target_id),config)
+   })):result.unresolved;
+   config.onAccepted?.(result.accepted);config.onPreview?.([]);
    notify({stage:'response',level:pending.length?'warning':'info',message:`模型返回：采纳 ${result.accepted.length} 项，未解决 ${pending.length} 项`,detail:pending.length?JSON.stringify(response):''});
   }catch(error){
    config.onPreview?.([]);
