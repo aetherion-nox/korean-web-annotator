@@ -1,6 +1,6 @@
 import {storage} from './browser-storage.js';
 import {copyPlainText} from './clipboard.js';
-let worker,hydrated=false,dictionaryAvailable=false,preloaded=false,number=0;const pending=new Map();let queue=Promise.resolve();
+let worker,hydrated=false,dictionaryAvailable=false,preloaded=false,number=0,pendingImports=0;const pending=new Map();let queue=Promise.resolve();
 function resetWorker(){worker?.terminate();worker=null;hydrated=false;dictionaryAvailable=false;preloaded=false;for(const pair of pending.values())pair.reject(Error('Browser worker reset'));pending.clear();}
 function getWorker(){
  if(worker)return worker;hydrated=false;worker=new Worker(new URL('./browser-worker.js',import.meta.url),{type:'module'});
@@ -11,6 +11,7 @@ function work(request,transfer=[]){return new Promise((resolve,reject)=>{const i
 function reportProgress(progressId,progress){chrome.runtime.sendMessage({type:'BROWSER_ENGINE_PROGRESS',progressId,progress}).catch(()=>{});}
 async function dispatch(request){
  if(request.action==='clear'){resetWorker();await storage('delete','dictionary');return {ready:false,dictionary_loaded:false};}
+ if(request.action==='warmup'&&pendingImports)return {ready:false,skipped:true,reason:'import-pending'};
  if(request.action==='warmup'&&preloaded)return {ready:true,preloaded:true};
  const missing='当前插件没有已保存的词典。请打开插件设置，选择 ZIP 或电脑预处理的 DB 文件并导入；重新安装插件或更换扩展身份后需要再次导入。';
  if(!hydrated&&request.action!=='import'){if(request.progressId)reportProgress(request.progressId,{stage:'dictionary'});const saved=await storage('get','dictionary');if(!saved&&request.action==='warmup')return {ready:false,skipped:true};if(!saved&&request.action==='analyze')throw Error(missing);const status=await work({action:'status',database:saved,progressId:request.progressId},saved?[saved]:[]);dictionaryAvailable=Boolean(saved&&status.ready);hydrated=true;if(request.action==='status')return status;}
@@ -18,8 +19,24 @@ async function dispatch(request){
  if(request.action==='analyze'&&!dictionaryAvailable)throw Error(missing);
  if(request.action==='import'){
   preloaded=false;
+  if(request.progressId)reportProgress(request.progressId,{stage:'import-read'});
   const upload=await storage('get',request.upload);if(!upload)throw Error('Dictionary upload expired');
-  try{const result=await work({action:upload.kind==='db'?'import-db':'import',filename:upload.name,bytes:upload.bytes},[upload.bytes]);await storage('put','dictionary',result.database);hydrated=true;dictionaryAvailable=true;delete result.database;return result;}catch(error){resetWorker();throw error;}
+  // A new worker does not yet have the previous database in its virtual FS.
+  // Load it only for ZIP reimports, so matching archives can skip full rebuild.
+  const saved=upload.kind==='zip'&&!hydrated?await storage('get','dictionary'):undefined;
+  const workerRequest={action:upload.kind==='db'?'import-db':'import',filename:upload.name,bytes:upload.bytes,progressId:request.progressId,...(saved?{database:saved}:{})};
+  const transferable=[upload.bytes,...(saved?[saved]:[])];
+  try{
+   const result=await work(workerRequest,transferable);
+   if(!result.reused){
+    if(request.progressId)reportProgress(request.progressId,{stage:'import-save'});
+    if(!result.database)throw Error('Imported dictionary is missing SQLite bytes');
+    await storage('put','dictionary',result.database);
+   }
+   hydrated=true;dictionaryAvailable=true;delete result.database;
+   if(request.progressId)reportProgress(request.progressId,{stage:'import-done',reused:result.reused===true});
+   return result;
+  }catch(error){resetWorker();throw error;}
  }
  try{const result=await work(request);if(['warmup','analyze'].includes(request.action))preloaded=true;return result;}catch(error){
   if(!['analyze','warmup'].includes(request.action)||!String(error.message).includes('Dictionary database not found'))throw error;
@@ -37,5 +54,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   try{copyPlainText(message.text);reply({ok:true});}catch(error){reply({ok:false,error:String(error.message||error)});}return;
  }
  if(message.type!=='BROWSER_ENGINE_WORK')return;if(sender.id!==chrome.runtime.id)return;
- const next=queue.then(()=>dispatch(message.request));queue=next.catch(()=>{});next.then(result=>reply({ok:true,result}),error=>reply({ok:false,error:String(error.message||error)}));return true;
+ if(message.request?.action==='import')pendingImports++;
+ const next=queue.then(()=>dispatch(message.request));queue=next.catch(()=>{});
+ next.then(result=>reply({ok:true,result}),error=>reply({ok:false,error:String(error.message||error)})).finally(()=>{if(message.request?.action==='import')pendingImports--;});return true;
 });
