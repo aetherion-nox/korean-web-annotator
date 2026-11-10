@@ -1,7 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "test": "python3 tests/test_quantity_bonus.py && python3 tests/test_dictionary_names.py && python3 tests/test_pos_coverage.py && python3 tests/test_analysis_performance.py && python3 tests/test_startup_stats.py && python3 tests/test_preload.py && node --test tests/*.test.mjs",
+    "test": "python3 tests/test_selective_review.py && python3 tests/test_quantity_bonus.py && python3 tests/test_dictionary_names.py && python3 tests/test_pos_coverage.py && python3 tests/test_analysis_performance.py && python3 tests/test_startup_stats.py && python3 tests/test_preload.py && node --test tests/*.test.mjs",
     "test:recovery": "node --test tests/recovery-dynamic.test.mjs",
     "test:paragraph": "node --test tests/paragraph-context.test.mjs",
     "test:pos": "python3 tests/test_pos_coverage.py",
