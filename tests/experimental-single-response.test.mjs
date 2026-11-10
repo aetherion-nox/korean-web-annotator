@@ -94,3 +94,16 @@ test('batch budget includes unified experiment instructions and output proposal 
  assert.ok(experimental.inputTokens>ordinary.inputTokens);
  assert.ok(experimental.outputTokens>ordinary.outputTokens);
 });
+
+test('experimental response budget excludes identities that proposal validator already forbids',()=>{
+ const normal=describeBatchBudget(sentence,[target0,target1],{tier:'512k',manual:true,experimentalHanja:true});
+ for(const flag of ['proper_noun','dictionary_person_name','dictionary_name_homograph','suspected_person_name','partial_word']){
+  const forbidden=describeBatchBudget(sentence,[{...target0,[flag]:true},target1],{tier:'512k',manual:true,experimentalHanja:true});
+  assert.ok(forbidden.outputTokens<normal.outputTokens,flag+' must not reserve imaginary x0');
+ }
+ const none=describeBatchBudget(sentence,[{...target0,proper_noun:true},{...target1,partial_word:true}],
+   {tier:'512k',manual:true,experimentalHanja:true});
+ const ordinary=describeBatchBudget(sentence,[{...target0,proper_noun:true},{...target1,partial_word:true}],
+   {tier:'512k',manual:true,experimentalHanja:false});
+ assert.ok(none.outputTokens-ordinary.outputTokens<50,'only the empty experimental_options array remains');
+});
