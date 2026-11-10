@@ -163,6 +163,8 @@ class DictionaryService:
                 ids=list(dict.fromkeys(row['entry_id'] for row in rows if row.get('part_of_speech') in {'명사','의존 명사'}))
                 unit_ids=set()
                 surname_ids=set()
+                person_ids=set()
+                from backend.proper_nouns import is_person_biography
                 for begin in range(0,len(ids),400):
                     group=ids[begin:begin+400]
                     placeholders=','.join('?' for _ in group)
@@ -172,9 +174,11 @@ class DictionaryService:
                             if re.search(r'(?:성\s*[(（]\s*姓\s*[)）]|성씨)\s*의\s*하나',definition):
                                 surname_ids.add(sense['entry_id'])
                             if UNIT_DEFINITION.search(definition):unit_ids.add(sense['entry_id'])
+                            if is_person_biography(definition):person_ids.add(sense['entry_id'])
                 for row in rows:
                     row['unit_usage']=row['entry_id'] in unit_ids
                     row['surname_usage']=row['entry_id'] in surname_ids
+                    row['dictionary_person']=row['entry_id'] in person_ids
                     for form in sources.get(row['written_form'],()):
                         key=(row['candidate_id'],row['entry_id'])
                         if key in seen[form]:continue
