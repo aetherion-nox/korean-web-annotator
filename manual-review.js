@@ -48,7 +48,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
    return new Promise((resolve,reject)=>{
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
-    pending={requestId,targets,wireTargets,reviewPosFilter:config.reviewPosFilter,resolve:response=>{clear();resolve(response);}};
+    pending={requestId,targets,wireTargets,experimentalPhase:config.experimentalPhase,reviewPosFilter:config.reviewPosFilter,resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
     try{notify('MANUAL_REVIEW_REQUEST',prepared);}catch(error){clear();reject(error);}
    });
@@ -62,6 +62,13 @@ export function createManualReviewSession({operationId,post,signal}={}){
    try{
     const response=parseAnswer(message.text);
     if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
+    if(current.experimentalPhase==='propose'){
+     const ids=new Map(current.wireTargets.map((t,i)=>[t.target_id,i]));
+     const rows=response.results;
+     if(rows.length!==current.wireTargets.length||rows.some(r=>!r||!ids.has(r.target_id)||!Object.hasOwn(r,'proposal'))||new Set(rows.map(r=>r.target_id)).size!==rows.length)throw Error('实验性候选返回缺少目标、目标重复或跨批次；请完整返回每个 target_id 的 proposal（可以是 null）。');
+     const mapped={results:rows.map(r=>({target_id:current.targets[ids.get(r.target_id)].target_id,proposal:r.proposal}))};
+     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:rows.length});current.resolve(mapped);return true;
+    }
     const result=validateChoices(current.wireTargets,response,{reviewPosFilter:current.reviewPosFilter});
     if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果不完整，或包含重复/其他批次的 target_id、无效 choice_id。请完整复制本批结果，保留 ID 原样。');
     const mapped={results:result.accepted.map(({target,option})=>({target_id:current.targets[current.wireTargets.indexOf(target)].target_id,choice_id:option.choice_id}))};
