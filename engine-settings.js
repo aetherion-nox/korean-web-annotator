@@ -75,34 +75,34 @@ for(const [locale,labels] of Object.entries(preloadCopy))Object.assign(copy[loca
 
 const experimentalCopy={
  'zh-CN':{
-  experimentalHanja:'实验性：补全汉字词候选（默认关闭）',
-  experimentalHanjaHint:'只有原有词典选项被审核为 KEEP，且模型能确认缺失词源时，才补充汉字词候选并再次选义。保持 Kiwi 词界和原 JSON 格式；不猜测人名汉字。',
-  experimentalLoanword:'实验性：补全外来语原词候选（默认关闭）',
-  experimentalLoanwordHint:'只有原有词典选项被审核为 KEEP，且模型能确认实际借词来源时，才补充原词拼写并再次选义；不是翻译成英文。不改动词界或 JSON 格式。'
+  experimentalHanja:'实验性：直接补全汉字词源（默认关闭）',
+  experimentalHanjaHint:'同一轮模型审核中，若原词典没有合适义项且词源可靠，可直接在 results 的 choice_id 写入汉字，不再使用 experimental_options 或 x0，也无需先选 KEEP。本地验证音节对齐、词界与姓名保护。',
+  experimentalLoanword:'实验性：直接补全外来语原词（默认关闭）',
+  experimentalLoanwordHint:'同一轮审核中可在 choice_id 直接填写真实借词原文的拉丁字拼写，而不是翻译。现有 c0/n0/KEEP 仍可选；本地严格校验词界与字符。不生成额外候选数组。'
  },
  'zh-TW':{
-  experimentalHanja:'實驗性：補全漢字詞候選（預設關閉）',
-  experimentalHanjaHint:'僅在現有詞典選項選為 KEEP 且能確認缺失詞源時，補充漢字詞候選再審。維持原有詞界與 JSON 格式；不猜測人名漢字。',
-  experimentalLoanword:'實驗性：補全外來語原詞候選（預設關閉）',
-  experimentalLoanwordHint:'僅在現有候選選為 KEEP 且能確認借詞來源時補充原詞拼寫，不做英文翻譯，不更改詞界或 JSON 格式。'
+  experimentalHanja:'實驗性：直接補全漢字詞源（預設關閉）',
+  experimentalHanjaHint:'同輪審核時，若原字典沒有合適義項且詞源可靠，可在 results.choice_id 直接寫漢字。不使用 experimental_options 或 x0，也不需要先選 KEEP；本地驗證對齊、詞界與姓名保護。',
+  experimentalLoanword:'實驗性：直接補全外來語原文（預設關閉）',
+  experimentalLoanwordHint:'同輪審核可在 choice_id 直接填入真正的借詞拉丁字拼寫，不做英文翻譯。原 c0/n0/KEEP 仍可使用，本機檢查格式與詞界。'
  },
  en:{
-  experimentalHanja:'Experimental: complete missing Hanja options (off by default)',
-  experimentalHanjaHint:'Only after the original model chooses KEEP, offer a verified Hanja-origin spelling and review it again. Word boundaries and choice-ID JSON stay unchanged. Never invent name Hanja.',
-  experimentalLoanword:'Experimental: complete missing loanword options (off by default)',
-  experimentalLoanwordHint:'Only after KEEP, offer a well-supported borrowed original spelling, not an English translation. Re-review through the existing choice IDs. No re-tokenization.'
+  experimentalHanja:'Experimental: literal Hanja origins (off by default)',
+  experimentalHanjaHint:'In one model response, if no dictionary sense fits and the true origin is known, write Hanja directly in results.choice_id. No experimental_options, x0 or preliminary KEEP step. Local alignment, name and boundary checks still apply.',
+  experimentalLoanword:'Experimental: literal loanword originals (off by default)',
+  experimentalLoanwordHint:'Write the actual borrowed Latin-script original directly in choice_id when no supplied sense fits, never an English translation. Existing c0/n0/KEEP selections still work; all origins are checked locally.'
  },
  ja:{
-  experimentalHanja:'実験：漢字語候補を補完（初期設定は無効）',
-  experimentalHanjaHint:'元の候補が KEEP で、語源に確証がある場合だけ漢字候補を追加し再判定します。語境界と JSON 形式は不変で、人名の漢字は推測しません。',
-  experimentalLoanword:'実験：外来語の原綴りを補完（初期設定は無効）',
-  experimentalLoanwordHint:'KEEP の場合だけ実際の借用元の綴りを追加し再判定します。英語訳は使わず、語境界と JSON 形式を保持します。'
+  experimentalHanja:'実験：漢字語源を直接指定（初期設定は無効）',
+  experimentalHanjaHint:'辞書の候補が適切でなく語源に確証がある場合、同じ results.choice_id に漢字を直接記入します。別の候補配列や KEEP 後の再審査は不要です。アライメント・人名を検証します。',
+  experimentalLoanword:'実験：外来語の原綴りを直接指定（初期設定は無効）',
+  experimentalLoanwordHint:'真の借用元のラテン文字表記を choice_id に直接記入します。英訳ではありません。既存の選択肢は引き続き使用できます。'
  },
  ko:{
-  experimentalHanja:'실험: 누락된 한자어 후보 보완 (기본 꺼짐)',
-  experimentalHanjaHint:'기존 후보가 KEEP이고 어원에 확실한 근거가 있을 때만 한자 표기를 추가해 다시 선택합니다. 어절 경계와 JSON 형식은 유지하며 인명 한자를 추측하지 않습니다.',
-  experimentalLoanword:'실험: 외래어 원어 후보 보완 (기본 꺼짐)',
-  experimentalLoanwordHint:'기존 선택이 KEEP일 때만 실제 차용어의 원래 표기를 제안하고 다시 검토합니다. 임의 영어 번역이 아니며 분절과 JSON 형식은 그대로입니다.'
+  experimentalHanja:'실험: 한자 어원 직접 선택 (기본 꺼짐)',
+  experimentalHanjaHint:'사전 후보가 맞지 않고 실제 어원을 확실히 알 때 같은 results.choice_id에 한자를 직접 작성합니다. 별도 배열이나 KEEP 후 재검토가 필요하지 않습니다. 정렬·인명·경계를 확인합니다.',
+  experimentalLoanword:'실험: 외래어 원어 직접 선택 (기본 꺼짐)',
+  experimentalLoanwordHint:'실제 차용어의 라틴 문자 원어를 choice_id에 직접 작성합니다. 영문 번역을 대신 쓰지 않습니다. 기존 사전 선택지도 그대로 사용합니다.'
  }
 };
 for(const [locale,labels] of Object.entries(experimentalCopy))Object.assign(copy[locale],labels);
