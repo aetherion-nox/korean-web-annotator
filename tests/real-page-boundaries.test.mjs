@@ -4,6 +4,7 @@ import {localBoundaryUnsafe} from '../review-boundary.js';
 import {segmentationTargets} from '../segmentation-rescue.js';
 import {validateChoices,modelTargets} from '../choice-review.js';
 import {contextReviewBatches} from '../batch-budget.js';
+import {createParagraphPlan} from '../paragraph-plan.js';
 const KEEP={choice_id:'KEEP',type:'keep',replacement:'',entry_id:null,definitions:[]};
 function target(text,start,end,{partial_word=false,boundary_unverified=false}={}){
  const surface=text.slice(start,end);
@@ -62,4 +63,30 @@ test('a 512K manual batch accommodates all 418 review targets when input/output 
  const api=contextReviewBatches([item],context,{tier:'512k',manual:false,maxOutputTokens:131072});
  assert.equal(api.length,1);
  assert.equal(api[0].rows.length,418);
+});
+
+function dividedParagraph(text,cut){
+ const root={closest:()=>root};
+ const nodeA={parentElement:root},nodeB={parentElement:root};
+ const read=()=>({text,runs:[{node:nodeA,start:0,end:cut},
+  {node:nodeB,start:cut,end:text.length}]});
+ const entries=new Map([[nodeA,{id:'a',node:nodeA,text:text.slice(0,cut),selected:[{start:0,end:cut}]}],
+  [nodeB,{id:'b',node:nodeB,text:text.slice(cut),selected:[{start:0,end:text.length-cut}]}]]);
+ return createParagraphPlan(entries,read,'article');
+}
+test('audit reports loanword lost across DOM nodes but not syllable-aligned Hanja',()=>{
+ const loan=dividedParagraph('컴퓨터',1);
+ loan.projectResult({id:loan.sentences[0].id,annotations:[{
+  start:0,end:3,surface:'컴퓨터',type:'loanword',replacement:'computer'
+ }]},{source:'model'});
+ assert.equal(loan.projectionAudit().modelSourceSpans,1);
+ assert.equal(loan.projectionAudit().modelCrossNodeDropped,1);
+ const hanja=dividedParagraph('학교생활',2);
+ const projected=hanja.projectResult({id:hanja.sentences[0].id,annotations:[{
+  start:0,end:4,surface:'학교생활',type:'hanja',replacement:'學校生活'
+ }]},{source:'model'});
+ assert.equal(hanja.projectionAudit().modelSourceSpans,1);
+ assert.equal(hanja.projectionAudit().modelCrossNodeDropped,0);
+ assert.deepEqual(projected.map(e=>e.annotations.map(a=>a.replacement)),
+  [['學校'],['生活']]);
 });
