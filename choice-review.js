@@ -5,6 +5,7 @@ import {requestLogger} from './request-log.js';
 import './model-catalog.js';
 import {buildReviewPayload,REVIEW_INSTRUCTIONS} from './review-payload.js';
 import {EXPERIMENTAL_REVIEW_INSTRUCTIONS,literalOriginOption} from './experimental-options.js';
+import {normalizeOutputTokenLimit} from './batch-budget.js';
 export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
  const rows=Array.isArray(response?.results)?response.results:[];
@@ -104,12 +105,20 @@ async function requestChoices(config,targets,signal){
   {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
  if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
  const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
- if(responses){const {messages,reasoning_effort}=body;body={model:config.model,input:messages,store:false,text:{format:{type:'json_object'}},max_output_tokens:16384,...(reasoning_effort?{reasoning:{effort:reasoning_effort}}:{})};}
- if(provider==='anthropic'){const {messages,thinking,output_config}=body;body={model:config.model,system:messages[0].content,messages:messages.slice(1),max_tokens:16384,...(thinking?{thinking,output_config}:{})};}
- if(config.batchBudget){
-  if(responses)body.max_output_tokens=config.batchBudget.outputLimit;
-  else if(provider==='openai')body.max_completion_tokens=config.batchBudget.outputLimit;
-  else body.max_tokens=config.batchBudget.outputLimit;
+ const outputTokenLimit=normalizeOutputTokenLimit(config.batchBudget?.outputLimit??config.apiOutputTokenLimit,false);
+ if(responses){
+  const {messages,reasoning_effort}=body;
+  body={model:config.model,input:messages,store:false,
+   text:{format:{type:'json_object'}},max_output_tokens:outputTokenLimit,
+   ...(reasoning_effort?{reasoning:{effort:reasoning_effort}}:{})};
+ }else if(provider==='anthropic'){
+  const {messages,thinking,output_config}=body;
+  body={model:config.model,system:messages[0].content,messages:messages.slice(1),
+   max_tokens:outputTokenLimit,...(thinking?{thinking,output_config}:{})};
+ }else if(provider==='openai'){
+  body.max_completion_tokens=outputTokenLimit;
+ }else{
+  body.max_tokens=outputTokenLimit;
  }
  if(config.stream===true){body.stream=true;if(['qwen','deepseek'].includes(provider))body.stream_options={include_usage:true};}
  const auth=provider==='anthropic'?{'x-api-key':config.apiKey||'','anthropic-version':'2023-06-01'}:config.apiKey?(provider==='mimo'?{'api-key':config.apiKey}:{Authorization:`Bearer ${config.apiKey}`}):{};
