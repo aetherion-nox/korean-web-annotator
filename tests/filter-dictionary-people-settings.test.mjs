@@ -46,3 +46,21 @@ test('local analysis receives filter by default and cache changes if toggled off
  }
  assert.deepEqual(seen,[true,false],'reenabling should reuse original cache');
 });
+
+test('upgraded biography filter never reuses local results created before the fix',async()=>{
+ const text='장보고',identity={engine_version:'fixture',dictionary_fingerprint:'fingerprint'};
+ const modes={hanja:true,loanword:false,nameProtection:true,filterDictionaryPeople:true};
+ const oldKey=JSON.stringify(['dictionary-v3-alignment',false,identity.engine_version,identity.dictionary_fingerprint,modes,text]);
+ const outdated={...identity,annotations:[],targets:[{target_id:'old',surface:text,start:0,end:3,
+  context:text,options:[{choice_id:'KEEP',type:'keep',replacement:text,entry_id:null,definitions:[]},
+   {choice_id:'c0',type:'hanja',replacement:'張保皐',entry_id:262577,definitions:['historical general']}]}],stats:{pending:1}};
+ const cache=new Map([[oldKey,outdated]]);
+ let analyzed=0;
+ const result=await runSentencePipeline({operationId:'after-fix',sentences:[{id:'s',text}],modes:{hanja:true}},()=>{},{
+  status:async()=>identity,
+  analyze:async()=>{analyzed++;return {...identity,annotations:[],targets:[],stats:{pending:0}};},
+  cache
+ });
+ assert.equal(analyzed,1,'old cache must not resurrect the person entry');
+ assert.equal(result.pending,0);
+});
