@@ -87,10 +87,19 @@ export function validateSegmentationRepairs(targets,response,config={}){
    // and character checks still run through the existing projection routine.
    const virtual={target_id:'repair',start,end,surface,context:sentence.text,
      options:[{choice_id:'KEEP',type:'keep',replacement:surface,definitions:[],entry_id:null}]};
-   const option=literalOriginOption(virtual,choice_id,{
+   let option=literalOriginOption(virtual,choice_id,{
     experimentalHanja:config.repairModes?.hanja===true,
     experimentalLoanword:config.repairModes?.loanword===true
    });
+   // Inflected stems can contain unchanged Hangul suffix anchors. The
+   // existing projector verifies each same-position Hangul/Chinese pair;
+   // only the source's own Hangul may be kept, never synthesized suffixes.
+   if(!option&&config.repairModes?.hanja===true&&!surface.includes(' ')&&
+      /^[\p{Script=Han}가-힣]+$/u.test(choice_id)&&/\p{Script=Han}/u.test(choice_id)&&
+      [...choice_id].length===[...surface].length&&
+      [...choice_id].every((char,i)=>/\p{Script=Han}/u.test(char)||char===[...surface][i]))
+    option={choice_id,type:'hanja',replacement:choice_id,entry_id:'experimental:hanja',
+     definitions:['未经词典核实的修复词源']};
    if(!option){
     fail(index,'unreliable script, missing mode, or Hanja alignment',row);continue;
    }
