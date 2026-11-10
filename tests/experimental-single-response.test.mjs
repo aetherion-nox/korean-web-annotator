@@ -35,7 +35,9 @@ test('manual review remaps raw choice_id to local target ID with no proposal arr
  const events=[];const session=createManualReviewSession({operationId:'manual',post:e=>events.push(e)});
  const pending=session.request({context:sentence,experimentalHanja:true,reviewPosFilter:false,manualOutputTokenLimit:131072},[target0,target1]);
  const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
- assert.ok(request.text.includes('experimental_modes'));
+ assert.ok(request.text.includes('genuine Sino-Korean origin'));
+ assert.ok(!request.text.includes('genuine borrowed spelling'));
+ assert.ok(!request.text.includes('experimental_modes'));
  assert.equal(JSON.parse(request.text.split('\n').at(-1)).batch_id,request.requestId);
  assert.equal(request.budget.outputLimit,131072);
  const response={batch_id:request.requestId,results:[
@@ -77,7 +79,9 @@ test('API sends results-only protocol and configurable max_tokens (DeepSeek)',as
   assert.equal(wire.max_tokens,32000);
   assert.ok(wire.messages[0].content.includes('原潛'));
   assert.ok(!wire.messages[0].content.includes('"experimental_options":['));
-  assert.equal(JSON.parse(wire.messages[1].content).experimental_modes.hanja,true);
+  assert.equal(JSON.parse(wire.messages[1].content).experimental_modes,undefined);
+  assert.ok(wire.messages[0].content.includes('genuine Sino-Korean origin'));
+  assert.ok(!wire.messages[0].content.includes('genuine borrowed spelling'));
  }finally{globalThis.fetch=saved;}
 });
 
