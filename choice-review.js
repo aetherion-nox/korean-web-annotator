@@ -4,7 +4,7 @@ import {readModelContent,choicePreviewParser} from './model-stream.js';
 import {requestLogger} from './request-log.js';
 import './model-catalog.js';
 import {buildReviewPayload,REVIEW_INSTRUCTIONS} from './review-payload.js';
-import {EXPERIMENTAL_PROPOSAL_INSTRUCTIONS,EXPERIMENTAL_CHOICE_INSTRUCTIONS} from './experimental-options.js';
+import {EXPERIMENTAL_REVIEW_INSTRUCTIONS,expandExperimentalOptions} from './experimental-options.js';
 export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
  const rows=Array.isArray(response?.results)?response.results:[];
@@ -17,6 +17,13 @@ export function validateChoices(targets,response,config={}) {
   if(!invalid && option) accepted.push({target,option}); else unresolved.push(target);
  }
  return {accepted,unresolved};
+}
+export function validateExperimentalChoices(targets,response,config={}){
+ const parsed=expandExperimentalOptions(targets,response,config);
+ if(parsed.fatal)return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:parsed.rejected};
+ const result=validateChoices(parsed.targets,response,config);
+ return {...result,experimentalAccepted:result.accepted.filter(a=>a.option.choice_id.startsWith('x')).length,
+  experimentalProposed:parsed.added,experimentalRejected:parsed.rejected};
 }
 export function thinkingSettings(config){
  const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
@@ -55,7 +62,10 @@ export async function reviewTargets(config,targets,signal){
   notify({stage:'request',level:'info',attempt:attempt+1,model:config.model,thinking:thinking.label,message:`正在请求模型审核：${pending.length} 个候选；${thinking.label}`});
   try {
    const response=await (config.request || requestChoices)({...config,attempt:attempt+1},modelTargets(pending,config),signal);
-   const result=validateChoices(pending,response,config);accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);config.onPreview?.([]);
+   const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
+   const result=experimental?validateExperimentalChoices(pending,response,config):validateChoices(pending,response,config);
+   accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);config.onPreview?.([]);
+   if(experimental)notify({stage:'experimental',level:result.experimentalRejected?'warning':'info',message:`单次回复：有效补充候选 ${result.experimentalProposed} 项、选择实验候选 ${result.experimentalAccepted} 项、拒绝无效补充 ${result.experimentalRejected} 项。`});
    notify({stage:'response',level:pending.length?'warning':'info',message:`模型返回：采纳 ${result.accepted.length} 项，未解决 ${pending.length} 项`,detail:pending.length?JSON.stringify(response):''});
   }catch(error){
    config.onPreview?.([]);
@@ -68,30 +78,15 @@ export async function reviewTargets(config,targets,signal){
  }
  return {accepted,unresolved:pending,errors};
 }
-// Proposals are an internal enrichment step, not annotations. An invalid or
-// unavailable proposal quietly falls back to the original KEEP decision.
-export async function requestExperimentalOptions(config,targets,signal){
- if(!targets.length||!(config.experimentalHanja||config.experimentalLoanword))return {results:[]};
- const requestConfig={...config,experimentalPhase:'propose',manualPrepared:undefined,manualBindings:undefined,onPreview:undefined};
- try{
-  return await (config.request||requestChoices)(requestConfig,modelTargets(targets,config),signal);
- }catch(error){
-  if(signal?.aborted)throw error;
-  config.onDiagnostic?.({stage:'experimental',level:'warning',message:'实验性候选补全失败；原有 KEEP 结果不变。',detail:safeDetail(error.message,config)});
-  return {results:[]};
- }
-}
 async function requestChoices(config,targets,signal){
  const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
  const native=provider==='openai'||provider==='anthropic';
  const timeout=AbortSignal.timeout(config.timeoutMs || (native||provider==='qwen'?120000:20000));
  const requestSignal=signal?AbortSignal.any([signal,timeout]):timeout;
  const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets,config);
- const proposal=config.experimentalPhase==='propose';
- if(proposal)payload.experimental_modes={hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true};
  config.onDiagnostic?.({stage:'request',level:'info',message:`共享请求：${payloadStats.targets} 个词，${payloadStats.sentences} 份句子，${payloadStats.candidates} 个候选；用户输入 ${payloadStats.legacyUserBytes} → ${payloadStats.userBytes} 字节。`});
  let body={model:config.model,messages:[
-  {role:'system',content:proposal?EXPERIMENTAL_PROPOSAL_INSTRUCTIONS:REVIEW_INSTRUCTIONS+(config.experimentalPhase==='choose'?'\n'+EXPERIMENTAL_CHOICE_INSTRUCTIONS:'')},
+  {role:'system',content:REVIEW_INSTRUCTIONS+(config.experimentalHanja===true||config.experimentalLoanword===true?'\n'+EXPERIMENTAL_REVIEW_INSTRUCTIONS:'')},
   {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
  if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
  const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
@@ -116,11 +111,12 @@ async function requestChoices(config,targets,signal){
   const response=await fetch(config.endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:requestSignal});
   status=response.status;responseHeaders=Object.fromEntries(['content-type','x-request-id','request-id','retry-after'].map(name=>[name,response.headers.get(name)]).filter(([,v])=>v));
   if(!response.ok){const detail=await response.text();onRaw(detail);const error=Error(`模型 API HTTP ${response.status}`);error.detail=detail;error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
-  const preview=!proposal&&config.onPreview?choicePreviewParser(targets,config.onPreview):()=>{};
+  // Never preview unverified experimental replacement strings from partial JSON.
+  const preview=(config.experimentalHanja||config.experimentalLoanword)?()=>{}:config.onPreview?choicePreviewParser(targets,config.onPreview):()=>{};
   const content=await readModelContent(response,{protocol:responses?'responses':provider==='anthropic'?'anthropic':'chat',signal:requestSignal,onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
   let result;try{if(typeof content!=='string'||!content.trim())throw Error('empty');result=JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}
   catch{const error=Error('模型最终回复为空、非 JSON 或不符合候选 ID 协议');error.detail=content||raw;throw error;}
-  const checked=proposal?{accepted:Array.isArray(result?.results)?result.results:[],unresolved:[]} :validateChoices(targets,result,config);
+  const checked=(config.experimentalHanja||config.experimentalLoanword)?validateExperimentalChoices(targets,result,config):validateChoices(targets,result,config);
   await logger.finish(logId,{status,responseHeaders,finishedAt:new Date().toISOString(),elapsedMs:Date.now()-started,firstByteMs,validation:{accepted:checked.accepted.length,unresolved:checked.unresolved.length},response:{raw,truncated:rawTruncated,...metadata}},secrets);
   return result;
  }catch(error){
