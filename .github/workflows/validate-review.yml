@@ -10,6 +10,8 @@ on:
       - 'model-origin.js'
       - 'content.js'
       - 'tests/**'
+      - 'python/backend/risk_review.py'
+      - 'python/backend/analysis.py'
       - '.github/workflows/validate-review.yml'
   pull_request:
     paths:
@@ -20,6 +22,8 @@ on:
       - 'model-origin.js'
       - 'content.js'
       - 'tests/**'
+      - 'python/backend/risk_review.py'
+      - 'python/backend/analysis.py'
       - '.github/workflows/validate-review.yml'
   workflow_dispatch:
 permissions:
