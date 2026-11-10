@@ -147,36 +147,16 @@ async def request(raw):
     elif action == 'warmup':
         await _get_engine(database)
         result = {'ready':True,'preloaded':True}
+    elif action == 'warmup':
+        await _get_engine(database)
+        result = {'ready':True,'preloaded':True}
     elif action == 'analyze':
         result = await analyze(message['text'],message.get('modes',{}),database)
     elif action == 'import-db':
         result = await import_database(message['path'],database)
     elif action == 'import':
-        zip_path = message.get('zip_path', message.get('path'))
-        result = None
-        # A user may re-import the very same official ZIP after switching
-        # extension versions. Rebuilding ~1M rows is unnecessary if the
-        # existing fully validated DB comes from exactly those bytes.
-        if Path(database).is_file():
-            try:
-                import hashlib
-                import sqlite3
-                with sqlite3.connect(database) as existing:
-                    row = existing.execute('SELECT sha256 FROM import_metadata LIMIT 1').fetchone()
-                if row and row[0]:
-                    digest = hashlib.sha256()
-                    with open(zip_path, 'rb') as source:
-                        for chunk in iter(lambda: source.read(1024 * 1024), b''):
-                            digest.update(chunk)
-                    if digest.hexdigest().upper() == row[0]:
-                        previous = await status(database)
-                        result = {'imported': True, 'reused': True, 'log': 'Dictionary already imported; verified matching ZIP SHA-256.', **previous}
-            except (ValueError, OSError, RuntimeError, sqlite3.DatabaseError):
-                # A damaged or missing DB must be rebuilt normally.
-                result = None
-        if result is None:
-            result = import_dictionary(zip_path,database)
-            result.update(await status(database))
+        result = import_dictionary(message.get('zip_path',message.get('path')),database)
+        result.update(await status(database))
     else:
         raise ValueError('Unknown browser engine action: '+str(action))
     return json.dumps(result,ensure_ascii=False)
