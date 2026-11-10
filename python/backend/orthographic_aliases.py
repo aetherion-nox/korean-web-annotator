@@ -36,6 +36,15 @@ def headword_aliases(value):
             seen.add(candidate);result.append(candidate)
     seen={value}
     add(clean)
+    # Existing source spaces/hyphens/carets reveal reliable boundaries.
+    # Try their alternative spelling conventions FIRST, including phrases
+    # with three or four spaces, before less-constrained insertions.
+    chunks=re.split(r'[\\-^ ]',value)
+    if 2<=len(chunks)<=5 and all(chunks) and ''.join(chunks)==clean:
+        for separators in product(('^','-',' '),repeat=len(chunks)-1):
+            alternate=''.join(word+(separators[i] if i<len(separators) else '')
+                              for i,word in enumerate(chunks))
+            add(alternate)
     # One separator in any position covers 안중근/안-중근 and
     # 이산화 탄소/이산화^탄소, even when the query itself has no separator.
     for boundary in range(1,len(clean)):
