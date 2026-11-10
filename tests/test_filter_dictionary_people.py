@@ -70,5 +70,37 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(filtered['annotations'],[])
         self.assertGreater(filtered['stats']['protected_names'],0)
 
+    async def test_historical_biography_without_category_does_not_reach_model(self):
+        # Real dictionaries sometimes supply "人名" only in an external
+        # dictionary renderer, while the imported DB category is blank.
+        from backend.proper_nouns import is_person_biography
+        gloss='통일 신라 시대의 장군(?~846). 본명은 궁복(弓福)·궁파(弓巴).'
+        self.assertTrue(is_person_biography(gloss))
+        self.assertFalse(is_person_biography('군대의 장군을 가리키는 말.'))
+        self.assertFalse(is_person_biography('장군이 등장하는 소설. 1984년에 발표하였다.'))
+        self.assertFalse(is_person_biography('핵잠수함에 붙인 함급의 이름.'))
+        name=self.add('장-보고','張保皐','명사',gloss)
+        with sqlite3.connect(self.path) as db:
+            row=db.execute('SELECT subject_category,semantic_category FROM entries WHERE id=?',(name,)).fetchone()
+            self.assertEqual(row,(None,None))
+        protected=await self.run_case('장보고',filter_people=True,name_protection=True)
+        self.assertEqual(protected['annotations'],[],protected)
+        self.assertEqual(protected['targets'],[],protected)
+        filtered=await self.run_case('장보고',filter_people=True,name_protection=False,review=True)
+        self.assertEqual(filtered['annotations'],[],filtered)
+        self.assertEqual(filtered['targets'],[],filtered)
+        unfiltered=await self.run_case('장보고',filter_people=False,name_protection=False,review=True)
+        self.assertTrue(any(o.get('entry_id')==name for t in unfiltered['targets']
+                            for o in t['options']),unfiltered)
+
+    async def test_historical_person_homograph_does_not_remove_ordinary_sense(self):
+        gloss='통일 신라 시대의 장군(?~846). 본명은 궁복(弓福).'
+        person=self.add('장보고','張保皐','명사',gloss)
+        ordinary=self.add('장보고','長保庫','명사','특정 물건을 보관하는 창고.')
+        result=await self.run_case('장보고',filter_people=True,name_protection=False,review=True)
+        ids=[o.get('entry_id') for t in result['targets'] for o in t['options']]
+        self.assertNotIn(person,ids,result)
+        self.assertIn(ordinary,ids,result)
+
 if __name__=='__main__':
     unittest.main(verbosity=2)
