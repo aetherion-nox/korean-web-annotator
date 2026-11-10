@@ -1,12 +1,21 @@
 import {projectAnnotation} from './local-engine.js';
 
-// A model may optionally write a literal origin in the existing choice_id.
-// Include each rule only if its own feature switch is enabled.
-export const HANJA_ORIGIN_INSTRUCTIONS =
- "If no supplied dictionary sense fits and you know the genuine Sino-Korean origin, you may write its Hanja characters directly as choice_id instead of a dictionary key. Preserve the Korean word boundaries and align Hanja to its syllables; never guess a personal name.";
-
-export const LOANWORD_ORIGIN_INSTRUCTIONS =
- "If no supplied dictionary sense fits and you know the genuine borrowed spelling, you may write its Latin-script original directly as choice_id instead of a dictionary key. Use the original word, not an English translation or romanization.";
+// Only describe origins the user actually enabled. This rule states the
+// decision priority rather than suggesting a rarely-used optional feature.
+export function buildExperimentalOriginInstructions(config={}){
+ const hanja=config.experimentalHanja===true,loanword=config.experimentalLoanword===true;
+ if(!hanja&&!loanword)return '';
+ const origin=hanja&&loanword
+  ?'genuine Hanja spelling of a Sino-Korean word or original Latin-script spelling of a borrowed word'
+  :hanja?'genuine Hanja spelling of a Sino-Korean word'
+         :'original Latin-script spelling of a borrowed word';
+ const caution=hanja&&loanword
+  ?'Preserve source word boundaries and Hanja-to-syllable alignment; do not translate, romanize, or guess personal names or uncertain origins.'
+  :hanja?'Preserve source word boundaries and Hanja-to-syllable alignment; never guess personal-name Hanja or uncertain origins.'
+         :'Use the actual borrowed spelling, not a translation or Korean romanization; preserve source word boundaries and never guess names or uncertain origins.';
+ return 'If no supplied dictionary sense matches the meaning of this occurrence but you confidently know its '+origin+
+  ', write that origin directly as choice_id. Prefer it over KEEP and any semantically mismatching dictionary key, even if the Korean spelling is identical. '+caution;
+}
 
 const CJK=/^[\p{Script=Han}]+$/u;
 const LOANWORD=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u;
