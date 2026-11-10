@@ -674,6 +674,8 @@
     let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
     if(response?.batch_id!==backup.requestId)throw Error('batch_id 缺失或不属于当前批次，未应用任何答案。');
     const rows=response?.results,bindings=new Map(backup.bindings.map(b=>[b.target_id,b])),seen=new Set(),accepted=[];
+    if(response.repairs!==undefined&&(!Array.isArray(response.repairs)||response.repairs.length))
+      throw Error('分词修复必须由后台核对词界和人名；断线页面备份不能直接应用 repairs，请恢复连接或重新开始。');
     // Page-only backup has approved dictionary choices only. Raw model-origin
     // spellings in choice_id require Python-backed validation in the worker.
     if(Array.isArray(rows)&&rows.some(row=>{
@@ -750,7 +752,9 @@
       let requiresBackground=false;
       try{
         const known=new Map((task.manualBackup?.bindings||[]).map(b=>[b.target_id,b]));
-        requiresBackground=JSON.parse(submitted).results?.some(row=>{
+        const parsed=JSON.parse(submitted);
+        requiresBackground=parsed.repairs!==undefined&&(!Array.isArray(parsed.repairs)||parsed.repairs.length>0)||
+         parsed.results?.some(row=>{
           const binding=known.get(row?.target_id);
           return binding&&!binding.choices.some(o=>o.choice_id===row?.choice_id);
         })===true;
