@@ -99,7 +99,7 @@ class Engine:
         if self.dictionary is None: return {f:[] for f in forms}
         db=await self.dictionary.get_connection()
         try:
-            entries={f:await self.dictionary.lookup_by_written_form(f,db) for f in dict.fromkeys(forms)}
+            entries=await self.dictionary.batch_lookup_entries(forms,db)
             return {f:[r for r in records if not is_dictionary_person(r)] for f,records in entries.items()} if filter_people else entries
         finally:
             await db.close()
