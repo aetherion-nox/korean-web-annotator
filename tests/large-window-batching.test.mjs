@@ -91,16 +91,9 @@ test('compact generated answer estimate excludes retired confidence and evidence
  const t=item.result.unresolved;
  const cfg={tier:'512k',manual:true,allowModelSegmentation:true,allowModelHanja:true,manualOutputTokens:65536};
  const result=describeBatchBudget(context,t,cfg);
- const legacy={batch_id:'00000000',results:t.map((target,i)=>({
-  target_id:'t'+i,choice_id:'GEN_SEGMENTS',segments:[
-   {start:0,end:2,surface:'最高',type:'hanja',replacement:'最高'}
-  ],confidence:'high',evidence:'Detailed phonetic and etymological evidence supporting the proposed compound segmentation'
- }))};
- const extra=estimateTokenCount(JSON.stringify(legacy));
  assert.ok(result.outputTokens>0);
- // Estimation still accounts for multiple lexical segments; it should no
- // longer reserve unsupported confidence/evidence strings per target.
- assert.ok(result.outputTokens<extra*1.5);
+ // Compare the same conservative four-segment estimate, differing only in
+ // obsolete metadata. A one-segment answer is not a comparable upper bound.
  const oldLikeCurrent=JSON.stringify({batch_id:'00000000',results:t.map((target,i)=>({
   target_id:'t'+i,choice_id:'GEN_SEGMENTS',
   segments:Array.from({length:4},(_,j)=>({start:j*2,end:j*2+2,surface:target.surface.slice(j*2,j*2+2),type:'hanja',replacement:'中中'})),
