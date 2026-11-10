@@ -1,8 +1,8 @@
 from pathlib import Path
 import hashlib,io,urllib.request,zipfile
 ROOT=Path(__file__).resolve().parent
-URL='https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.42/Korean-Web-Annotator-v1.1.42.zip'
-EXPECTED='f05dc0858995ed2398ffb024b06f5f8c9a723c3f478e18b98312e40059c9ba5d'
+URL='https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.55/Korean-Web-Annotator-v1.1.55.zip'
+EXPECTED='fde4f8a54a281d97b181daaa7faf21cf9e5c5cdc8672f9964dccce6a5118a2a6'
 print('Downloading verified bundled runtime...')
 data=urllib.request.urlopen(URL,timeout=180).read()
 if hashlib.sha256(data).hexdigest()!=EXPECTED:raise SystemExit('Archive checksum mismatch')
