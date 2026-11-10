@@ -1,7 +1,6 @@
 import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './local-engine.js';
 import {filterReviewTarget} from './review-pos.js';
-import {reviewTargets,validateChoices,safeDetail,requestExperimentalOptions} from './choice-review.js';
-import {appendExperimentalOptions} from './experimental-options.js';
+import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
 export const CACHE_KEY='kraDictionaryReviewCacheV1Alignment3';
@@ -68,6 +67,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
 
  const experimental=!!(config?.experimentalHanja&&modes.hanja||config?.experimentalLoanword&&modes.loanword);
+ if(config)config={...config,experimentalHanja:experimental&&config.experimentalHanja===true&&modes.hanja,experimentalLoanword:experimental&&config.experimentalLoanword===true&&modes.loanword};
  const context=message.context || sentences.map(s=>s.text).join('\n');
  const progressive=message.progressiveAnnotation===true;
  const lastPublished=new Map();
@@ -85,7 +85,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify([experimental?'id-review-v18-experimental-option':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
+   const fingerprint=JSON.stringify([experimental?'id-review-v19-experimental-single-response':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
    const cached=!experimental&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
@@ -95,7 +95,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  reportProgress();
  const tier=normalizeBatchContextTier(config?.batchContextTier);
- const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter}):sentenceReviewBatches(pending,context);
+ const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword}):sentenceReviewBatches(pending,context);
  const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
   const targets=batch.rows?batch.rows.map(({item,target},i)=>{const id=`b0t${i}`;owners.set(id,{item,target});return {...target,target_id:id};}):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
@@ -113,40 +113,6 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    ...(progressive?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
    onAccepted:accepted=>{for(const a of accepted){const owner=owners.get(a.target.target_id);owner.item.result.accepted.push({target:owner.target,option:a.option});}progress.modelCompleted+=accepted.length;reportProgress();for(const item of batch.items)if(progressive)publishModel(item);}
   },targets,signal);
-  // The original selector has the final say for all ordinary options. Only a
-  // validated KEEP triggers a separate optional candidate-suggestion round.
-  if(experimental){
-   const kept=firstReview.accepted.filter(a=>a.option.type==='keep').map(a=>a.target);
-   if(kept.length){
-    let proposedCount=0;
-    // The proposal answer is larger than a choice-id answer. Bound each
-    // supplemental round independently; never reuse the original output cap.
-    for(let offset=0;offset<kept.length;offset+=32){
-     const subset=kept.slice(offset,offset+32);
-     const supplementConfig={...config,context:[...new Set(subset.map(t=>t.context))].join('\n'),operationId:message.operationId,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:undefined,timeoutMs:config.timeoutMs||120000,experimentalHanja:config.experimentalHanja===true&&modes.hanja,experimentalLoanword:config.experimentalLoanword===true&&modes.loanword};
-     const proposed=await requestExperimentalOptions(supplementConfig,subset,signal);
-     const expanded=appendExperimentalOptions(subset,proposed,supplementConfig);
-     proposedCount+=expanded.length;
-     if(!expanded.length)continue;
-     const extraManualBindings=config.manualReview?expanded.map(target=>{
-      const owner=owners.get(target.target_id);
-      return {target_id:target.target_id,sentenceId:owner.item.sentence.id,start:owner.target.start,end:owner.target.end,surface:owner.target.surface,choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(owner.item.sentence.text,{...owner.target,...option}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};
-     }):undefined;
-     await reviewTargets({...supplementConfig,experimentalPhase:'choose',manualPrepared:undefined,manualBindings:extraManualBindings,enableModelReview:true,stream:progressive?true:config.stream,
-      ...(progressive?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
-      onAccepted:accepted=>{for(const a of accepted){
-       const owner=owners.get(a.target.target_id);
-       if(!owner)continue;
-       const index=owner.item.result.accepted.findIndex(v=>v.target===owner.target&&v.option.type==='keep');
-       if(index>=0)owner.item.result.accepted[index]={target:owner.target,option:a.option};
-      }
-      for(const item of batch.items)if(progressive)publishModel(item);
-      }
-     },expanded,signal);
-    }
-    diagnostic({stage:'experimental',level:'info',message:'原候选判为 KEEP '+kept.length+' 项，新增通过词界和词源格式校验的候选 '+proposedCount+' 项。'});
-   }
-  }
   for(const item of batch.items){
    const answered=new Set(item.result.accepted.map(a=>a.target.target_id));
    item.result.unresolved=item.analysis.targets.filter(t=>!answered.has(t.target_id));
