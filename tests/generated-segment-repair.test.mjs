@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {canonicalizeGeneratedSegments,validateGeneratedSegmentsRow,generatedChoices} from '../model-origin.js';
-import {validateChoices} from '../choice-review.js';
+import {validateChoices,reviewTargets,reviewRepairFeedback} from '../choice-review.js';
 import {choicePreviewParser} from '../model-stream.js';
 import {createManualReviewSession} from '../manual-review.js';
 import {segmentationTargets} from '../segmentation-rescue.js';
@@ -138,4 +138,77 @@ test('unknown IDs or duplicate patch rows never erase previously validated decis
  assert.equal(session.submit({operationId:'partial',requestId:request,
   text:JSON.stringify({batch_id:request,results:[{target_id:'t1',choice_id:'KEEP'}]})}),true);
  assert.equal((await pending).results.length,2);
+});
+
+test('whole-lexeme corrective feedback repairs an isolated Hanja syllable without guessing missing characters',()=>{
+ const t=target('t0','공영');
+ const invalid={target_id:'t0',choice_id:'GEN_SEGMENTS',
+  segments:[{start:0,end:1,surface:'공',type:'hanja',replacement:'公'}]};
+ const diagnosis=reviewRepairFeedback(t,[invalid],config);
+ assert.match(diagnosis,/ISOLATED_SYLLABLE/);
+ assert.match(diagnosis,/공영/);
+ assert.match(diagnosis,/완전|完整|整个|完整目标|完整词干/);
+ assert.equal(validateChoices([t],{results:[invalid]},config).accepted.length,0);
+ const whole={target_id:'t0',choice_id:'GEN_SEGMENTS',segments:[
+  {start:0,end:2,surface:'공영',type:'hanja',replacement:'公營'}]};
+ const valid=validateChoices([t],{results:[whole]},config);
+ assert.equal(valid.accepted.length,1);
+ assert.equal(valid.accepted[0].option.replacement,'公營');
+ const attached=target('suffix','공영을');
+ assert.equal(validateGeneratedSegmentsRow(attached,{...whole,target_id:'suffix'},config)?.replacement,'公營을');
+});
+
+test('manual repair supplies the exact failed target and recommends complete lexical analysis',async()=>{
+ const targets=[target('a','공영'),target('b','학교')],events=[];
+ const session=createManualReviewSession({operationId:'whole-word',post:e=>events.push(e)});
+ const pending=session.request({...config,context:'공영을 운영한다.'},targets);
+ const request=events[0].requestId;
+ const first={batch_id:request,results:[
+  {target_id:'t0',choice_id:'GEN_SEGMENTS',segments:[
+   {start:0,end:1,surface:'공',type:'hanja',replacement:'公'}]},
+  {target_id:'t1',choice_id:'KEEP'}
+ ]};
+ assert.equal(session.submit({operationId:'whole-word',requestId:request,text:JSON.stringify(first)}),false);
+ const error=events.at(-1);
+ assert.equal(error.acceptedCount,1);
+ assert.deepEqual(error.invalidTargetIds,['t0']);
+ assert.match(error.repairPrompt,/repair_feedback/);
+ assert.match(error.repairPrompt,/ISOLATED_SYLLABLE/);
+ assert.match(error.repairPrompt,/公營|完整词干/);
+ assert.match(error.repairPrompt,/"surface":"공영"/);
+ assert.doesNotMatch(error.repairPrompt,/"target_id":"t1"/);
+ const second={batch_id:request,results:[{target_id:'t0',choice_id:'GEN_SEGMENTS',
+  segments:[{start:0,end:2,surface:'공영',type:'hanja',replacement:'公營'}]}]};
+ assert.equal(session.submit({operationId:'whole-word',requestId:request,text:JSON.stringify(second)}),true);
+ const done=await pending;
+ assert.equal(done.results.length,2);
+ assert.equal(done.results[0].target_id,'a');
+ assert.equal(done.results[0].segments[0].replacement,'公營');
+ assert.equal(done.results[1].choice_id,'KEEP');
+});
+
+test('automatic second attempt receives specific failure feedback and keeps valid first answers',async()=>{
+ const t=target('orig','공영'),keepTarget=target('safe','학교');
+ const calls=[];
+ const result=await reviewTargets({...config,enableModelReview:true,model:'test',
+  request:async(_configuration,targets)=>{
+   calls.push(targets);
+   if(calls.length===1)return {results:[
+    {target_id:'orig',choice_id:'GEN_SEGMENTS',segments:[
+     {start:0,end:1,surface:'공',type:'hanja',replacement:'公'}]},
+    {target_id:'safe',choice_id:'KEEP'}
+   ]};
+   return {results:[{target_id:'orig',choice_id:'GEN_SEGMENTS',
+    segments:[{start:0,end:2,surface:'공영',type:'hanja',replacement:'公營'}]}]};
+  }},[t,keepTarget]);
+ assert.equal(calls.length,2);
+ assert.equal(calls[0][0].repair_feedback,undefined);
+ assert.equal(calls[1].length,1);
+ assert.equal(calls[1][0].target_id,'orig');
+ assert.match(calls[1][0].repair_feedback,/ISOLATED_SYLLABLE/);
+ assert.match(calls[1][0].repair_feedback,/공영/);
+ assert.equal(result.unresolved.length,0);
+ assert.equal(result.accepted.length,2);
+ assert.equal(result.accepted.find(a=>a.target.target_id==='orig').option.replacement,'公營');
+ assert.equal(result.accepted.find(a=>a.target.target_id==='safe').option.choice_id,'KEEP');
 });
