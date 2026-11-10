@@ -77,7 +77,9 @@ class RiskReview(unittest.IsolatedAsyncioTestCase):
                         matched_entry_id=465818,candidates=[candidate])
   self.assertTrue(weak_unique_candidate(score,[]))
   score.candidates.append({**candidate,'entry_id':465819})
-  self.assertTrue(weak_unique_candidate(score,[]))
+  # Two independent lexicon records keep the existing fast path; one record
+  # can already hold multiple definitions and is still treated as one entry.
+  self.assertFalse(weak_unique_candidate(score,[]))
   score.candidates[1]['replacement']='原潛'
   self.assertFalse(weak_unique_candidate(score,[]))
   score.candidates=score.candidates[:1]
