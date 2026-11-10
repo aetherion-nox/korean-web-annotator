@@ -79,7 +79,7 @@ class DictionaryService:
         try:
             query = '''
                 SELECT e.id, e.target_code, e.written_form, e.homonym_number, e.part_of_speech,
-                       e.origin_raw, e.vocabulary_level,
+                       e.origin_raw, e.vocabulary_level, e.subject_category, e.semantic_category,
                        (SELECT s.definition FROM senses s 
                         WHERE s.entry_id = e.id 
                         ORDER BY s.sense_number LIMIT 1) as definition_preview
