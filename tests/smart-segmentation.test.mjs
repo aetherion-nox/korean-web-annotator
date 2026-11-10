@@ -95,6 +95,17 @@ test('repaired Hanja stems may retain exact unchanged Korean endings but may not
  assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'可那라')]).accepted.length,0);
 });
 
+test('delete and KEEP may safely suppress malformed spans containing punctuation',()=>{
+ const text='한국, 정부',f=fixture(text,[target('t0',text,0,text.length,'韓國政府')]);
+ const deleted=validate(f,[row(f.sid,'delete',['t0'],0,text.length,text,'KEEP')]);
+ assert.equal(deleted.accepted.length,1);
+ assert.deepEqual(deleted.accepted[0].annotations,[]);
+ const keep=validate(f,[row(f.sid,'replace',['t0'],0,text.length,text,'KEEP')]);
+ assert.equal(keep.accepted.length,1);
+ const unsafe=validate(f,[row(f.sid,'replace',['t0'],0,text.length,text,'韓國政府')]);
+ assert.equal(unsafe.accepted.length,0);
+});
+
 test('UTF-16 source indices, wrong offsets, missing/duplicate IDs and unsafe formats fail individually',()=>{
  const text='😀게임',f=fixture(text,[{...target('scan',text,0,text.length),scan_only:true,options:[keep(text)]}]);
  const good=row(f.sid,'add',[],2,4,'게임','game');
