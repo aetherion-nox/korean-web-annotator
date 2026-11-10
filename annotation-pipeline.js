@@ -63,6 +63,8 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     options:[{choice_id:'KEEP',type:'keep',replacement:sentence.text,entry_id:null,definitions:[]}]};
    analysis={...analysis,targets:[scan]};
   }
+  if(smartSegmentation)analysis={...analysis,targets:analysis.targets.map(t=>({...t,repair_sentence_key:sentence.id,
+   repair_context:analysis.repair_context||{kiwi_tokens:[],protected_ranges:[]}}))};
   work.push({sentence,analysis,localKey,repairs:[]});
  }
  if(stats.protected_names)diagnostic({stage:'rules',level:'info',message:`已按完整名称范围保留 ${stats.protected_names} 处疑似姓名，未使用内部普通词义替换。`,detail:JSON.stringify({protected_names:stats.protected_names})});
@@ -109,7 +111,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  reportProgress();
  const tier=normalizeBatchContextTier(config?.batchContextTier);
- const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,manualOutputTokenLimit:config?.manualOutputTokenLimit,apiOutputTokenLimit:config?.apiOutputTokenLimit}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword}):sentenceReviewBatches(pending,context);
+ const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,smartSegmentation:config?.smartSegmentation,manualOutputTokenLimit:config?.manualOutputTokenLimit,apiOutputTokenLimit:config?.apiOutputTokenLimit}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,smartSegmentation:config?.smartSegmentation}):sentenceReviewBatches(pending,context);
  const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
   const targetWire=(id,item,target)=>{
