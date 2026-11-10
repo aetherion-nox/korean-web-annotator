@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
-from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, surname_name_evidence, dictionary_name_evidence
+from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun, surname_name_evidence, dictionary_name_evidence, is_dictionary_person
 from backend.name_homographs import homograph_target, surname_ambiguity_target
 from backend.loanwords import is_nonconversion_origin, nonconversion_options
 ensure_environment()
@@ -94,12 +94,13 @@ class Engine:
     async def tokens(self,text):
         await self.initialize()
         return await self.tokenizer.tokenize_async(text)
-    async def lookup_entries(self,forms):
+    async def lookup_entries(self,forms,*,filter_people=False):
         await self.initialize()
         if self.dictionary is None: return {f:[] for f in forms}
         db=await self.dictionary.get_connection()
         try:
-            return {f:await self.dictionary.lookup_by_written_form(f,db) for f in dict.fromkeys(forms)}
+            entries={f:await self.dictionary.lookup_by_written_form(f,db) for f in dict.fromkeys(forms)}
+            return {f:[r for r in records if not is_dictionary_person(r)] for f,records in entries.items()} if filter_people else entries
         finally:
             await db.close()
     async def analyze(self,text,modes):
@@ -109,13 +110,21 @@ class Engine:
         # Selective audit: review positive local conversions, but do NOT resurrect
         # locally rejected/nonconversion senses or turn unchanged words into targets.
         review_conversions=review_all or bool(modes.get('reviewLocalConversions',False))
+        filter_dictionary_people=modes.get('filterDictionaryPeople',False) is True
+        # Filter a working view, never mutate the imported dictionary or its
+        # globally cached candidate lists. Raw lookups still power name protection.
+        async def conversion_lookup(forms):
+            result=await self.lookup_fn(forms)
+            if not filter_dictionary_people:return result
+            return {form:[record for record in records if not is_dictionary_person(record)]
+                    for form,records in result.items()}
         # The original converter owns tokenization, lookup forms, scoring,
         # whole-word precedence and certainty. Do not rescan skipped compounds
         # for general conversion. Exact mixed/cross-origin words have a
         # complete whole-entry choice path below, before source projection.
         converter=ConverterService(self.tokenizer,self.disambiguation)
         tokens=await self.tokens(text)
-        segments,_=await converter.convert(text,self.lookup_fn,tokens=tokens)
+        segments,_=await converter.convert(text,conversion_lookup,tokens=tokens)
         dictionary_names,homograph_evidence=await dictionary_name_evidence(text,tokens,self.lookup_fn)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
         name_protection=modes.get('nameProtection',True) is not False
@@ -129,8 +138,8 @@ class Engine:
         surname_ambiguities=[item for item in surname_ambiguities if not any(a<item[1] and item[0]<b for a,b,_,_ in homograph_evidence)]
         conflicting_ranges=[(a,b) for a,b,_,_ in homograph_evidence]
         suspect_ranges=[(a,b) for a,b,_,_ in surname_ambiguities]
-        homograph_targets=[homograph_target(text,a,b,word,records,modes) for a,b,word,records in homograph_evidence]
-        suspect_targets=[surname_ambiguity_target(text,a,b,word,records,modes) for a,b,word,records in surname_ambiguities]
+        homograph_targets=[homograph_target(text,a,b,word,[r for r in records if not filter_dictionary_people or not is_dictionary_person(r)],modes) for a,b,word,records in homograph_evidence]
+        suspect_targets=[surname_ambiguity_target(text,a,b,word,[r for r in records if not filter_dictionary_people or not is_dictionary_person(r)],modes) for a,b,word,records in surname_ambiguities]
         blocked_for_local=protected_names+conflicting_ranges+suspect_ranges
         upstream_counts={f'upstream_{status}':sum(s.status==status for s in segments) for status in ('converted','ambiguous','no_match','kept')}
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
@@ -203,7 +212,7 @@ class Engine:
         skipped_mixed=0
         if modes.get('loanword',False):
             from backend.loanwords import collect, merge_targets
-            entries=await self.lookup_entries([t.form for t in tokens])
+            entries=await self.lookup_entries([t.form for t in tokens],filter_people=filter_dictionary_people)
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
             loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
@@ -225,6 +234,7 @@ class Engine:
             for option in target['options']:
                 if option['type']=='keep':continue
                 option={**option,**option_metadata.get(option['entry_id'],{})}
+                if filter_dictionary_people and is_dictionary_person(option):continue
                 definitions=option_definitions.get(option['entry_id'],option['definitions'])
                 if option['type']=='nonconversion':
                     for definition in definitions:
