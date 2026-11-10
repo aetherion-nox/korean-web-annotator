@@ -1,11 +1,11 @@
 import {filterReviewTargets,canTrimReviewMorphology} from './review-pos.js';
-import {HANJA_ORIGIN_INSTRUCTIONS,LOANWORD_ORIGIN_INSTRUCTIONS} from './experimental-options.js';
+import {buildExperimentalOriginInstructions} from './experimental-options.js';
 
 // Concise common rules. The optional origin clauses are separate and conditional.
 export const REVIEW_INSTRUCTIONS = [
  "Review Korean word occurrences for dictionary-origin annotation; do not translate or rewrite freely.",
- "For each target, read its sentence and candidate definitions. Select a dictionary sense only when its meaning, grammatical use and origin fit this exact occurrence. Topic similarity, a familiar spelling, or the number of candidates is not evidence. Do not force a mismatching origin.",
- "Dictionary nonconversion senses (n0, etc.) keep Korean and must be chosen when their meaning fits; missing etymology alone does not make a sense native. KEEP means uncertain or no supported sense; do not use KEEP to avoid a confirmed conversion or a confirmed nonconversion sense.",
+ "For each target, first determine its meaning from the sentence and context; then check the supplied dictionary definitions, grammatical use and origins against that meaning. Select a dictionary sense only when it actually fits. Never choose a semantically mismatching candidate merely because it has the same Korean spelling or appears closest.",
+ "Dictionary nonconversion senses (n0, etc.) keep Korean and must be chosen when their meaning fits; missing etymology alone does not make a sense native. KEEP is the fallback when no reliable match or origin is available. Do not use KEEP to avoid a confirmed conversion or nonconversion sense.",
  "Input is pooled: targets[].sentence_id identifies sentences[].text; each target's options maps its own choice_id keys to candidates[].candidate_id. KEEP maps to null. For dictionary choices return the target's option KEY, not its pooled candidate_id. Use context and adjacent_context only to interpret the occurrence; start/end refer to the target sentence in UTF-16 offsets, not neighboring text.",
  "Names need exact identity evidence. A proper_noun flag is only a tokenizer hint. For dictionary_person_name, dictionary_name_homograph or suspected_person_name, distinguish names from same-spelling common words; never assign an unrelated person's or ordinary word's Hanja to an unlisted name. Treat historical namesakes, places and organizations cautiously.",
  "Morphology and POS hints can be wrong. For pos_conflict recheck actual usage; for partial_word require the sense to apply to that precise component of the full word. Similar dictionary spellings, grammatical forms, and neighboring words are not interchangeable. Equivalent visible evidence should yield consistent decisions.",
@@ -13,11 +13,8 @@ export const REVIEW_INSTRUCTIONS = [
 ].join("\n");
 
 export function buildReviewInstructions(config={}){
- return [
-  REVIEW_INSTRUCTIONS,
-  ...(config.experimentalHanja===true?[HANJA_ORIGIN_INSTRUCTIONS]:[]),
-  ...(config.experimentalLoanword===true?[LOANWORD_ORIGIN_INSTRUCTIONS]:[])
- ].join("\n");
+ const experimental=buildExperimentalOriginInstructions(config);
+ return experimental?REVIEW_INSTRUCTIONS+"\n"+experimental:REVIEW_INSTRUCTIONS;
 }
 
 export function buildManualPrompt(context,targets,batchId,config={}){
