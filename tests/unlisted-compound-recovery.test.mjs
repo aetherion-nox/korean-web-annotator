@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {segmentationTargets} from '../segmentation-rescue.js';
-import {mergeResegmentationTargets} from '../review-merge.js';
+import {mergeResegmentationTargets,planSegmentationFallback} from '../review-merge.js';
 import {generatedChoices,validateGeneratedSegmentsRow} from '../model-origin.js';
 import {buildReviewPayload,buildManualPrompt,reviewInstructions} from '../review-payload.js';
 import {validateChoices} from '../choice-review.js';
@@ -125,4 +125,143 @@ test('pipeline can recover a dictionary-missing term and leaves particles unchan
  assert.ok(result);
  assert.deepEqual(result.results[0].annotations.map(a=>({surface:a.surface,replacement:a.replacement,start:a.start,end:a.end})),
   [{surface:'인대',replacement:'人大',start:0,end:2}]);
+});
+
+function conservativeFixture(){
+ const text='학교생활을';
+ const old=(id,start,end,surface,replacement)=>({
+  target_id:id,start,end,surface,context:text,
+  options:[keep(surface),{choice_id:'c0',type:'hanja',replacement,
+   entry_id:start+40,definitions:['A dictionary sense of '+surface]}]
+ });
+ const analyze=async()=>({engine_version:'fixture',dictionary_fingerprint:'v',
+  annotations:[],targets:[
+   old('original-school',0,2,'학교','學校'),
+   old('original-life',2,4,'생활','生活')
+  ],protected_name_spans:[],
+  boundary_risks:[{start:0,end:4,surface:'학교생활',reason:'kiwi_split_no_full_headword'}],
+  suffix_spans:[{start:4,end:5}],stats:{local_determined:0,pending:2,protected_names:0}});
+ const status=async()=>({engine_version:'fixture',dictionary_fingerprint:'v'});
+ const whole={target_id:'b0t0',choice_id:'GEN_SEGMENTS',segments:[
+  {start:0,end:4,surface:'학교생활',type:'hanja',replacement:'學校生活'}
+ ]};
+ return {text,analyze,status,whole};
+}
+
+test('merged original targets remain internal, and an unsafe compound requires whole-word re-review',async()=>{
+ const {text,analyze}=conservativeFixture();
+ const analysis=await analyze();
+ const proposed=segmentationTargets(text,analysis);
+ const merged=mergeResegmentationTargets(analysis,proposed);
+ assert.equal(merged.removed,2);
+ const whole=merged.targets[0];
+ assert.deepEqual(whole.fallback_targets.map(t=>t.target_id),['original-school','original-life']);
+ assert.equal(whole.fallback_targets[0].context,undefined);
+ assert.equal(whole.fallback_targets[1].options[1].replacement,'生活');
+ const prompt=buildReviewPayload(text,merged.targets,config);
+ assert.equal(prompt.payload.targets[0].fallback_targets,undefined);
+ assert.equal(JSON.stringify(prompt.payload).includes('"fallback_targets"'),false);
+ const fallback=planSegmentationFallback(text,{...analysis,targets:merged.targets},
+  [{target:whole,option:{choice_id:'KEEP',type:'keep'}}],[]);
+ assert.equal(fallback.preserved,2);
+ assert.equal(fallback.unsafeComponents,2);
+ assert.equal(fallback.safeOriginals,0);
+ assert.equal(fallback.wholeRechecks,1);
+ assert.equal(fallback.targets[0].surface,'학교생활을');
+ assert.match(fallback.targets[0].repair_feedback,/完整词干/);
+ assert.equal(fallback.targets.length,1);
+});
+
+test('safe independent original dictionary candidates are re-reviewed, never blindly restored',()=>{
+ const text='학교를';
+ const original={target_id:'old',start:0,end:2,surface:'학교',context:text,
+  options:[keep('학교'),{choice_id:'c0',type:'hanja',replacement:'學校',
+    entry_id:41,definitions:['학교 교육 기관']}]};
+ const parent={target_id:'seg0-3',start:0,end:3,surface:text,context:text,
+  segmentation_review:true,options:[keep(text)],fallback_targets:[original]};
+ const analysis={targets:[parent],suffix_spans:[{start:2,end:3}]};
+ const plan=planSegmentationFallback(text,analysis,
+  [{target:parent,option:{choice_id:'KEEP',type:'keep'}}],[]);
+ assert.equal(plan.safeOriginals,1);
+ assert.equal(plan.wholeRechecks,0);
+ assert.equal(plan.targets[0].target_id,'old');
+ assert.equal(plan.targets[0].fallback_dictionary_only,true);
+ assert.equal(plan.targets[0].recovery_parent,parent.target_id);
+ assert.deepEqual(generatedChoices(plan.targets[0],config),[]);
+ assert.equal(validateChoices(plan.targets,
+   {results:[{target_id:'old',choice_id:'c0'}]},config).accepted.length,1);
+ const unsafe=planSegmentationFallback(text,{...analysis,targets:[{
+  ...parent,fallback_targets:[{...original,boundary_unverified:true}]
+ }]},[{target:parent,option:{choice_id:'KEEP',type:'keep'}}],[]);
+ assert.equal(unsafe.safeOriginals,0);
+ assert.equal(unsafe.wholeRechecks,1);
+});
+
+test('whole-word KEEP triggers a second safe complete-lexeme review, not subword auto-conversion',async()=>{
+ const {text,analyze,status,whole}=conservativeFixture(),events=[],calls=[];
+ const modelConfig=async()=>({...config,provider:'test',endpoint:'https://example.invalid',
+  model:'test',request:async(conf,targets)=>{
+   calls.push(targets);
+   if(calls.length===1)return {results:[{target_id:targets[0].target_id,choice_id:'KEEP'}]};
+   assert.equal(targets.length,1);
+   assert.match(targets[0].repair_feedback,/component_candidates/);
+   return {results:[{...whole,target_id:targets[0].target_id}]};
+  }});
+ const stats=await runSentencePipeline({operationId:'fallback',sentences:[{id:'s',text}],
+  modes:{hanja:true,loanword:false},experimentalSegmentation:true},
+  e=>events.push(e),{enabled:true,analyze,status,modelConfig});
+ assert.equal(calls.length,2);
+ assert.equal(stats.segmentation_preserved_targets,2);
+ assert.equal(stats.segmentation_fallback_unsafe,2);
+ assert.equal(stats.segmentation_fallback_full_retry,1);
+ assert.equal(stats.segmentation_fallback_recovered,1);
+ assert.equal(stats.model_review_keep,0);
+ assert.equal(stats.model_annotation_spans,1);
+ const final=events.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1);
+ assert.deepEqual(final.results[0].annotations.map(a=>[a.surface,a.replacement]),
+  [['학교생활','學校生活']]);
+ assert.ok(events.some(e=>e.type==='DIAGNOSTIC'&&e.diagnostic?.stage==='annotation-audit'));
+});
+
+test('whole-word fallback KEEP never resurrects unjustified dictionary pieces',async()=>{
+ const {text,analyze,status}=conservativeFixture(),events=[];
+ const modelConfig=async()=>({...config,request:async(_config,targets)=>({
+  results:targets.map(t=>({target_id:t.target_id,choice_id:'KEEP'}))
+ })});
+ const stats=await runSentencePipeline({operationId:'no-invented-recovery',
+  sentences:[{id:'s',text}],modes:{hanja:true,loanword:false},
+  experimentalSegmentation:true},e=>events.push(e),{enabled:true,analyze,status,modelConfig});
+ assert.equal(stats.segmentation_fallback_recovered,0);
+ assert.equal(stats.segmentation_fallback_unsafe,2);
+ const last=events.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1);
+ assert.deepEqual(last.results[0].annotations,[]);
+ assert.equal(stats.model_review_keep,1);
+});
+
+test('manual whole-word fallback creates a second resumable manual batch',async()=>{
+ const {text,analyze,status,whole}=conservativeFixture(),events=[];
+ let session;
+ session=createManualReviewSession({operationId:'manual-fallback',post:event=>{
+  events.push(event);
+  if(event.type==='MANUAL_REVIEW_REQUEST')queueMicrotask(()=>{
+   const candidate=event.batchNumber===1?
+    {target_id:'t0',choice_id:'KEEP'}:{...whole,target_id:'t0'};
+   session.submit({operationId:'manual-fallback',requestId:event.requestId,
+    text:JSON.stringify({batch_id:event.requestId,results:[candidate]})});
+  });
+ }});
+ const modelConfig=async()=>({...config,manualReview:true,model:'fixture',
+  request:async(cfg,targets)=>session.request(cfg,targets)});
+ const emitted=[];
+ const stats=await runSentencePipeline({operationId:'manual-fallback',sentences:[{id:'s',text}],
+  modes:{hanja:true,loanword:false},experimentalSegmentation:true},
+  e=>emitted.push(e),{enabled:true,analyze,status,modelConfig});
+ assert.equal(stats.segmentation_fallback_recovered,1);
+ const requests=events.filter(e=>e.type==='MANUAL_REVIEW_REQUEST');
+ assert.equal(requests.length,2);
+ assert.equal(requests[0].batchNumber,1);
+ assert.equal(requests[1].batchNumber,2);
+ assert.match(requests[1].text,/fallback_complete_lexeme/);
+ assert.equal(emitted.filter(e=>e.type==='MANUAL_REVIEW_PLAN').length,2);
+ assert.equal(emitted.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1).results[0].annotations[0].replacement,'學校生活');
 });
