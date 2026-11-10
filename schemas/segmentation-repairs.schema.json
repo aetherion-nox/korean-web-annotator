@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aetherion-nox/korean-web-annotator/blob/experimental-sense-options-from-v1.1.55/schemas/segmentation-repairs.schema.json",
+  "title": "Korean Web Annotator single-pass segmentation repair response",
+  "description": "Model response for an ordinary results[] review with optional same-request segmentation repairs. Runtime verifies source substrings, target identity, protected names, alignment and overlap independently.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "results"
+  ],
+  "properties": {
+    "batch_id": {
+      "type": "string",
+      "description": "Required only for manual paste-back; must equal request's batch_id."
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_id",
+          "choice_id"
+        ],
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "choice_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "repairs": {
+      "type": "array",
+      "maxItems": 256,
+      "description": "Optional. Only actual boundary/omission errors; omit or [] when none. Any invalid item is independently rejected without aborting results.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sentence_id",
+          "op",
+          "old_target_ids",
+          "start",
+          "end",
+          "surface",
+          "choice_id"
+        ],
+        "properties": {
+          "sentence_id": {
+            "type": "string",
+            "pattern": "^s[0-9]+$"
+          },
+          "op": {
+            "enum": [
+              "add",
+              "replace",
+              "delete"
+            ]
+          },
+          "old_target_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "surface": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 90
+          },
+          "choice_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "op": {
+                  "const": "add"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "old_target_ids": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "op": {
+                  "enum": [
+                    "replace",
+                    "delete"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "old_target_ids": {
+                  "minItems": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "op": {
+                  "const": "delete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "choice_id": {
+                  "const": "KEEP"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
