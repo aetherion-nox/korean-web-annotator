@@ -79,6 +79,22 @@ test('omitted word with no existing target can be added in a one-pass scan-only 
  assert.equal(unknown.accepted.length,1);assert.deepEqual(unknown.accepted[0].annotations,[]);
 });
 
+test('a dictionary flagged as a person cannot be re-originated but can be kept',()=>{
+ const text='이수민',t={...target('t0',text,0,3,'李壽民'),dictionary_person_name:true};
+ const f=fixture(text,[t],{protected_ranges:[]});
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'李壽民')]).accepted.length,0);
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'KEEP')]).accepted.length,1);
+});
+
+test('repaired Hanja stems may retain exact unchanged Korean endings but may not fabricate them',()=>{
+ const text='가나다',f=fixture(text,[target('t0',text,0,3,'可那多')]);
+ const good=validate(f,[row(f.sid,'replace',['t0'],0,3,text,'可那다')]);
+ assert.equal(good.accepted.length,1);
+ assert.deepEqual(good.accepted[0].annotations.map(a=>[a.start,a.end,a.surface,a.replacement]),
+  [[0,2,'가나','可那']]);
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'可那라')]).accepted.length,0);
+});
+
 test('UTF-16 source indices, wrong offsets, missing/duplicate IDs and unsafe formats fail individually',()=>{
  const text='😀게임',f=fixture(text,[{...target('scan',text,0,text.length),scan_only:true,options:[keep(text)]}]);
  const good=row(f.sid,'add',[],2,4,'게임','game');
