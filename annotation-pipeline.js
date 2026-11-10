@@ -165,6 +165,114 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   }
   await persist(cache);
  }
+ // Only a failed or KEEP whole-word review can trigger this second stage.
+ // The original dictionary targets survive merge as provenance, never as
+ // automatically restored annotations.
+ if(config?.allowModelSegmentation===true){
+  const fallbackWork=[];
+  for(const item of work){
+   const plan=planSegmentationFallback(item.sentence.text,item.analysis,item.result.accepted,item.result.unresolved);
+   stats.segmentation_fallback_unsafe+=plan.unsafeComponents;
+   stats.segmentation_fallback_full_retry+=plan.wholeRechecks;
+   stats.segmentation_fallback_safe_review+=plan.safeOriginals;
+   if(plan.targets.length)fallbackWork.push({sentence:item.sentence,root:item,result:{unresolved:plan.targets}});
+  }
+  if(fallbackWork.length){
+   stats.segmentation_fallback_targets=fallbackWork.reduce((n,w)=>n+w.result.unresolved.length,0);
+   progress.modelTotal+=stats.segmentation_fallback_targets;reportProgress();
+   diagnostic({stage:'segmentation-fallback',level:'info',
+    message:'已保留原始词典候选：补审 '+stats.segmentation_fallback_safe_review+
+     ' 个独立词界词典目标、重新判断 '+stats.segmentation_fallback_full_retry+
+     ' 个完整词；阻止 '+stats.segmentation_fallback_unsafe+' 个词界不可靠的子词直接恢复。'});
+   const options={tier,manual:config.manualReview===true,reviewPosFilter:config.reviewPosFilter,
+    allowModelHanja:config.allowModelHanja,allowModelLoanword:config.allowModelLoanword,
+    allowModelSegmentation:config.allowModelSegmentation,maxOutputTokens:config.maxOutputTokens,
+    manualOutputTokens:config.manualOutputTokens};
+   const fallbackBatches=tier!=='current'?contextReviewBatches(fallbackWork,context,options):
+    config.manualReview?manualReviewBatches(fallbackWork,context,options):sentenceReviewBatches(fallbackWork,context);
+   const fallbackPrepared=fallbackBatches.map((batch,index)=>{
+    const owners=new Map();
+    const targets=batch.rows?batch.rows.map(({item,target},i)=>{
+     const id='b0t'+i;owners.set(id,{root:item.root,target});return {...target,target_id:id};
+    }):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
+     const id='b'+i+'t'+j;owners.set(id,{root:item.root,target});return {...target,target_id:id};
+    }));
+    const manualBindings=config.manualReview?targets.map(t=>{
+     const {root,target}=owners.get(t.target_id);
+     return {target_id:t.target_id,sentenceId:root.sentence.id,start:target.start,end:target.end,
+      surface:target.surface,segmentationReview:target.segmentation_review===true,
+      componentCandidates:target.component_candidates||[],morphology:target.morphology||[],
+      nameRisk:target.name_risk===true,boundaryUnverified:target.boundary_unverified===true,
+      partialWord:target.partial_word===true,generatedChoices:generatedChoices(target,config),
+      choices:filterReviewTarget(target,config).options.map(option=>({
+       choice_id:option.choice_id,
+       annotations:option.type==='keep'?[]:projectAnnotation(root.sentence.text,{
+        ...target,...option,start:target.start,end:target.end,surface:target.surface
+       }).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))
+      }))
+     };
+    }):undefined;
+    const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,
+     batchNumber:batches.length+index+1,batchTotal:batches.length+fallbackBatches.length,
+     context:batch.context,batchBudget:batch.budget},targets):undefined;
+    return {owners,targets,manualBindings,manualPrepared};
+   });
+   if(config.manualReview)emit('MANUAL_REVIEW_PLAN',{batches:[
+    ...preparedBatches.map(x=>x.manualPrepared),...fallbackPrepared.map(x=>x.manualPrepared)
+   ]});
+   for(const [index,batch] of fallbackBatches.entries()){
+    const {owners,targets,manualBindings,manualPrepared}=fallbackPrepared[index];
+    if(batch.budget)diagnostic({stage:'batch-budget',level:'info',
+     message:'整词安全补审 '+(index+1)+'/'+fallbackBatches.length+': 预估输入 '+
+      batch.budget.inputTokens+'、答案 '+batch.budget.outputTokens+' tokens。'});
+    await reviewTargets({...config,manualBindings,manualPrepared,
+     batchNumber:batches.length+index+1,batchTotal:batches.length+fallbackBatches.length,
+     batchBudget:batch.budget,operationId:message.operationId,
+     stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||120000,
+     enableModelReview:true,context:batch.context,
+     onAccepted:accepted=>{
+      const changed=new Set();
+      for(const a of accepted){
+       const owner=owners.get(a.target.target_id);if(!owner)continue;
+       const {root,target}=owner;
+       if(a.option.type==='keep')continue;
+       const parentId=target.recovery_parent;
+       if(target.fallback_dictionary_only){
+        if(root.result.accepted.some(previous=>previous.option.type!=='keep'&&
+         previous.target.start<target.end&&target.start<previous.target.end))continue;
+        root.result.accepted=root.result.accepted.filter(previous=>
+         !(previous.target.target_id===parentId&&previous.option.type==='keep'));
+        root.result.accepted.push({target,option:a.option});
+       }else{
+        root.result.accepted=root.result.accepted.filter(previous=>previous.target.target_id!==parentId);
+        const original=root.analysis.targets.find(t=>t.target_id===parentId)||target;
+        root.result.accepted.push({target:original,option:a.option});
+        root.result.unresolved=root.result.unresolved.filter(t=>t.target_id!==parentId);
+       }
+       stats.segmentation_fallback_recovered++;changed.add(root);
+      }
+      progress.modelCompleted+=accepted.length;reportProgress();
+      if(progressive)for(const root of changed)publishModel(root);
+     }
+    },targets,signal);
+   }
+   diagnostic({stage:'segmentation-fallback',
+    level:stats.segmentation_fallback_recovered?'info':'warning',
+    message:'整词安全补审：恢复 '+stats.segmentation_fallback_recovered+
+     ' 个经过重新验证的转换。其他候选保持原文，未恢复未经确认的旧汉字。'});
+   if(!config.manualReview)for(const item of work){
+    if(!item.reviewKey)continue;
+    const primaryIds=new Set(item.analysis.targets.map(t=>t.target_id));
+    const accepted=item.result.accepted.filter(a=>primaryIds.has(a.target.target_id));
+    if(accepted.length)cache.set(item.reviewKey,{results:accepted.map(a=>({
+     target_id:a.target.target_id,choice_id:a.option.choice_id,
+     ...(a.option.generated?(a.option.segmentationGenerated?
+      {segments:a.option.segments}:{replacement:a.option.replacement}):{})
+    }))});
+   }
+   await persist(cache);
+  }
+ }
  for(const {sentence,analysis,result} of work){
   const additions=annotationsFromAccepted(sentence.text,result.accepted);
   stats.model_resolved+=result.accepted.filter(a=>a.option.type!=='keep').length;
