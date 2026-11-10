@@ -222,7 +222,7 @@ test('pipeline can inspect a whole Hangul sentence even if local dictionary prod
 test('invalid repair does not invalidate a normal choice or cause a second model request',async()=>{
  const text='학교',t=target('local',text,0,2,'學校'),identity={engine_version:'v',dictionary_fingerprint:'d'};
  let calls=0,events=[];
- await runSentencePipeline({operationId:'invalid-repair',sentences:[{id:'s',text}],
+ const stats=await runSentencePipeline({operationId:'invalid-repair',sentences:[{id:'s',text}],
   modes:{hanja:true},smartSegmentation:true},e=>events.push(e),{
   enabled:true,cache:new Map(),status:async()=>identity,
   analyze:async()=>({...identity,targets:[t],annotations:[],repair_context:{kiwi_tokens:[],protected_ranges:[]},stats:{pending:1}}),
@@ -231,6 +231,7 @@ test('invalid repair does not invalidate a normal choice or cause a second model
      repairs:[row('s999','add',[],0,2,text,'學校')]};}})
  });
  assert.equal(calls,1);
+ assert.equal(stats.repair_rejected,1);
  assert.deepEqual(events.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1).results[0].annotations.map(a=>a.replacement),['學校']);
  assert.ok(events.some(e=>e.type==='DIAGNOSTIC'&&e.diagnostic.stage==='segmentation'&&e.diagnostic.level==='warning'));
 });
