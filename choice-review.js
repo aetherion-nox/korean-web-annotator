@@ -4,7 +4,7 @@ import {readModelContent,choicePreviewParser,experimentalChoicePreviewParser} fr
 import {requestLogger} from './request-log.js';
 import './model-catalog.js';
 import {buildReviewPayload,REVIEW_INSTRUCTIONS} from './review-payload.js';
-import {EXPERIMENTAL_REVIEW_INSTRUCTIONS,expandExperimentalOptions} from './experimental-options.js';
+import {EXPERIMENTAL_REVIEW_INSTRUCTIONS,literalOriginOption} from './experimental-options.js';
 export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
  const rows=Array.isArray(response?.results)?response.results:[];
@@ -19,11 +19,25 @@ export function validateChoices(targets,response,config={}) {
  return {accepted,unresolved};
 }
 export function validateExperimentalChoices(targets,response,config={}){
- const parsed=expandExperimentalOptions(targets,response,config);
- if(parsed.fatal)return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:parsed.rejected};
- const result=validateChoices(parsed.targets,response,config);
- return {...result,experimentalAccepted:result.accepted.filter(a=>a.option.choice_id.startsWith('x')).length,
-  experimentalProposed:parsed.added,experimentalRejected:parsed.rejected};
+ // Enforce one response array, and reject previous x0/external-list protocol.
+ if(!response||!Array.isArray(response.results)||Object.prototype.hasOwnProperty.call(response,'experimental_options'))
+  return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:0};
+ const rows=response.results,known=new Set(targets.map(t=>t.target_id));
+ const invalid=rows.some(row=>!row||typeof row.target_id!=='string'||!known.has(row.target_id)||
+  typeof row.choice_id!=='string'||Object.keys(row).sort().join(',')!=='choice_id,target_id');
+ if(invalid)return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:rows.length};
+ const accepted=[],unresolved=[];let experimentalAccepted=0,experimentalRejected=0;
+ for(const target of targets){
+  const matches=rows.filter(row=>row.target_id===target.target_id);
+  if(matches.length!==1){unresolved.push(target);continue;}
+  const id=matches[0].choice_id;
+  const option=filterReviewTarget(target,config).options.find(o=>o.choice_id===id);
+  if(option){accepted.push({target,option});continue;}
+  const generated=literalOriginOption(target,id,config);
+  if(generated){accepted.push({target,option:generated});experimentalAccepted++;}
+  else{unresolved.push(target);experimentalRejected++;}
+ }
+ return {accepted,unresolved,experimentalAccepted,experimentalProposed:experimentalAccepted,experimentalRejected};
 }
 export function thinkingSettings(config){
  const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
@@ -65,7 +79,7 @@ export async function reviewTargets(config,targets,signal){
    const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
    const result=experimental?validateExperimentalChoices(pending,response,config):validateChoices(pending,response,config);
    accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);config.onPreview?.([]);
-   if(experimental)notify({stage:'experimental',level:result.experimentalRejected?'warning':'info',message:`单次回复：有效补充候选 ${result.experimentalProposed} 项、选择实验候选 ${result.experimentalAccepted} 项、拒绝无效补充 ${result.experimentalRejected} 项。`});
+   if(experimental)notify({stage:'experimental',level:result.experimentalRejected?'warning':'info',message:`单次回复：直接词源标注 ${result.experimentalAccepted} 项、拒绝无效直接词源 ${result.experimentalRejected} 项。`});
    notify({stage:'response',level:pending.length?'warning':'info',message:`模型返回：采纳 ${result.accepted.length} 项，未解决 ${pending.length} 项`,detail:pending.length?JSON.stringify(response):''});
   }catch(error){
    config.onPreview?.([]);
