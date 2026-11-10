@@ -40,7 +40,7 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  return {tier,label:tier==='32k'?'32K':tier==='128k'?'128K':tier==='256k'?'256K':tier==='512k'?'512K':'1M',estimated:true,contextTokens,inputTokens,outputTokens,reservedOutputTokens,safetyTokens,outputLimit,totalTokens,remainingTokens:contextTokens===null?null:contextTokens-totalTokens};
 }
 
-export function contextReviewBatches(items,context='',{tier='128k',manual=false,reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false,manualOutputTokenLimit=DEFAULT_MANUAL_OUTPUT_TOKENS,apiOutputTokenLimit=DEFAULT_API_OUTPUT_TOKENS}={}){
+export function contextReviewBatches(items,context='',{tier='128k',manual=false,reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false,smartSegmentation=false,manualOutputTokenLimit=DEFAULT_MANUAL_OUTPUT_TOKENS,apiOutputTokenLimit=DEFAULT_API_OUTPUT_TOKENS}={}){
  tier=normalizeBatchContextTier(tier);if(tier==='current')throw Error('Explicit context capacity required');
  const rows=items.flatMap(item=>item.result.unresolved.map(target=>({item,target}))),batches=[];
  const fits=budget=>budget.totalTokens<=budget.contextTokens&&budget.outputTokens<=budget.outputLimit;
