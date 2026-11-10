@@ -103,7 +103,7 @@ def candidate_spans(text,tokens):
 async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=(),review_ranges=()):
     spans=candidate_spans(text,tokens)
     proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
-    entries=await engine.lookup_entries([form for _,_,form in spans])
+    entries=await engine.lookup_entries([form for _,_,form in spans],filter_people=modes.get('filterDictionaryPeople',False) is True)
     annotations=[];targets=[];ranges=[];skipped=0
     for start,end,word in spans:
         if overlaps_proper_noun(start,end,blocked_ranges):continue
