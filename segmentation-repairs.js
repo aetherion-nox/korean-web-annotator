@@ -74,10 +74,12 @@ export function validateSegmentationRepairs(targets,response,config={}){
   const oldNative=new Set(old.map(t=>t.original_target_id||t.target_id));
   if((scope.allTargets||[]).some(t=>overlaps(span,t)&&!oldNative.has(t.target_id))||
      (scope.localAnnotations||[]).some(a=>overlaps(span,a))||
-     (scope.existingRepairs||[]).some(r=>overlaps(span,r)||r.old_target_ids?.some(id=>oldNative.has(id)))){
+     (scope.existingRepairs||[]).some(r=>overlaps(span,r)||r.source_target_ids?.some(id=>oldNative.has(id))||r.old_target_ids?.some(id=>oldNative.has(id)))){
    fail(index,'source conflicts with another target, local annotation or prior repair',row);continue;
   }
-  const protectedRange=(scope.protected_ranges||[]).some(([a,b])=>start<b&&a<end);
+  const protectedRange=(scope.protected_ranges||[]).some(([a,b])=>start<b&&a<end)||
+   old.some(t=>t.proper_noun===true||t.suspected_person_name===true||
+    t.dictionary_person_name===true||t.dictionary_name_homograph===true);
   if(choice_id!=='KEEP'&&protectedRange){
    fail(index,'protected name or proper noun',row);continue;
   }
