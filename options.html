@@ -47,6 +47,9 @@
       <p id="manualReviewHint" class="profile-note" data-engine-i18n="manualHint"></p>
       <label><span data-engine-i18n="batchLabel">每批上下文容量（API／手动）</span><select id="batchContextTier" aria-describedby="batchContextHint"><option value="32k" data-engine-i18n="batchCurrent">32K</option><option value="128k" data-engine-i18n="batch128k">128K</option><option value="256k" data-engine-i18n="batch256k">256K</option><option value="512k" data-engine-i18n="batch512k">512K</option><option value="1m" data-engine-i18n="batch1m">1M</option></select></label>
       <p id="batchContextHint" class="profile-note" data-engine-i18n="batchHint"></p>
+      <label><span data-engine-i18n="apiOutputTokenLimitLabel">API 每批最大输出 tokens</span><input id="apiOutputTokenLimit" type="number" min="1024" max="1000000" step="1" value="16384" aria-describedby="outputTokenLimitHint"></label>
+      <label><span data-engine-i18n="manualOutputTokenLimitLabel">手动聊天每批最大输出 tokens</span><input id="manualOutputTokenLimit" type="number" min="1024" max="1000000" step="1" value="65536" aria-describedby="outputTokenLimitHint"></label>
+      <p id="outputTokenLimitHint" class="profile-note" data-engine-i18n="outputTokenLimitHint"></p>
       <p data-engine-i18n="instructions"></p>
       <p><a href="https://krdict.korean.go.kr/download/downloadPopup" target="_blank" rel="noopener" data-engine-i18n="download"></a></p>
       <p data-engine-i18n="import"></p>
