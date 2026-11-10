@@ -6,7 +6,11 @@ export const EXPERIMENTAL_REVIEW_INSTRUCTIONS = "When experimental_modes enables
 
 const CJK=/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]/u;
 const LOANWORD=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u;
-const unsafe=t=>t.proper_noun===true||t.dictionary_person_name===true||t.dictionary_name_homograph===true||t.suspected_person_name===true||t.partial_word===true;
+// Both proposal validation and budget reservation must agree about eligibility.
+export const canProposeExperimentalOption=t=>/[가-힣]/u.test(t?.surface||'')&&
+ !(t.proper_noun===true||t.dictionary_person_name===true||t.dictionary_name_homograph===true||
+   t.suspected_person_name===true||t.partial_word===true);
+const unsafe=t=>!canProposeExperimentalOption(t);
 
 export function expandExperimentalOptions(targets,response,{experimentalHanja=false,experimentalLoanword=false}={}){
  const rows=response?.experimental_options;
