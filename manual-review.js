@@ -148,7 +148,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
      const repairPrompt='只修复以下 '+remaining.length+' 个未通过校验的 target_id。之前已通过的 '+current.acceptedRows.size+
       ' 条答案已保存，无需重新生成。必须保留原 batch_id '+current.requestId+
       '；results 只包含下列目标。请读取每个目标的 repair_feedback，重新判断完整词干与助词/词尾。'+
-      '完整汉字词优先使用覆盖整个词干的一条 GEN_SEGMENTS，不要只返回孤立单音节；不能确定词源时选择 KEEP，严禁编造缺失的汉字。\n\n'+
+      '完整汉字词优先使用覆盖整个词干的一条 GEN_SEGMENTS，不要只返回孤立单音节；子词在完整词中唯一出现时可以同时省略 start/end，重复出现必须提供精确坐标；不能确定词源时选择 KEEP，严禁编造缺失的汉字。\n\n'+
       buildManualPrompt(current.config.context,repairTargets,current.requestId,current.config);
      notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,
       error:'已保存 '+current.acceptedRows.size+'/'+current.wireTargets.length+' 条有效答案；还有 '+remaining.length+
