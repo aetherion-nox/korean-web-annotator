@@ -8,7 +8,7 @@ import re
 from backend.offsets import to_utf16
 from backend.loanwords import CJK
 
-SPACED_WORD = re.compile(r'^[가-힣]+(?: [가-힣]+){1,2}$')
+SPACED_WORD = re.compile(r'^[가-힣]+(?: [가-힣]+){1,3}$')
 
 def spaced_hanja_option(surface,record):
     if not SPACED_WORD.fullmatch(surface):
@@ -22,11 +22,13 @@ def spaced_hanja_option(surface,record):
     if sum(len(chunk) for chunk in chunks)!=len(origin):
         return None
     pos=0
+    hanja_index=0
     segments=[]
     converted=[]
     for chunk in chunks:
         offset=surface.index(chunk,pos)
-        replacement=origin[len(''.join(converted).replace(' ','')):][:len(chunk)]
+        replacement=origin[hanja_index:hanja_index+len(chunk)]
+        hanja_index+=len(chunk)
         segments.append(dict(start=to_utf16(surface,offset),end=to_utf16(surface,offset+len(chunk)),
                              surface=chunk,type='hanja',replacement=replacement))
         converted.append(replacement)
