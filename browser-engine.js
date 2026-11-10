@@ -14,13 +14,12 @@ async function call(request,signal,onProgress){
 export function warmBrowserEngine(signal,onProgress){return call({action:'warmup'},signal,onProgress);}
 export function browserEngineStatus(signal,onProgress){return call({action:'status'},signal,onProgress);}
 export function browserAnalyze(text,modes,signal,onProgress){return call({action:'analyze',text,modes},signal,onProgress);}
-export async function importBrowserDictionary(file,onProgress){
+export async function importBrowserDictionary(file){
  if(!file)throw Error('请选择官方 JSON ZIP 或预处理词典数据库');
  const kind=/\.(db|sqlite|sqlite3)$/i.test(file.name)?'db':'zip';
  if(kind==='db'&&new TextDecoder().decode(await file.slice(0,16).arrayBuffer())!=='SQLite format 3\0')throw Error('不是有效的 SQLite 词典数据库。请选择电脑导入器生成的 hanja_dict.db。');
- onProgress?.({stage:'import-upload'});
  const id=crypto.randomUUID();await storage('put',id,{name:file.name,kind,bytes:await file.arrayBuffer()});
- try{return await call({action:'import',upload:id},undefined,onProgress);}finally{await storage('delete',id);}
+ try{return await call({action:'import',upload:id});}finally{await storage('delete',id);}
 }
 export function clearBrowserDictionary(){return call({action:'clear'});}
 
