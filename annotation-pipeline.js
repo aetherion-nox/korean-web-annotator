@@ -155,7 +155,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     progress.modelCompleted+=accepted.length;reportProgress();
     if(!smartSegmentation)for(const item of batch.items)if(progressive)publishModel(item);
    },
-   ...(smartSegmentation?{onRepairs:repairs=>{
+   ...(smartSegmentation?{onRepairRejected:count=>{stats.repair_rejected+=count;},onRepairs:repairs=>{
     for(const repair of repairs){
      const owner=[...owners.values()].find(({item})=>item.sentence.id===repair.sentenceKey);
      if(owner){owner.item.repairs.push(repair);stats.repair_applied++;}
