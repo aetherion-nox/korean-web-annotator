@@ -29,7 +29,7 @@ jobs:
       - name: Restore bundled Kiwi model assets for runtime tests
         run: |
           python3 restore_distribution.py
-          git restore runtime/python-sources.json runtime/assets.json runtime/kiwi/index.js runtime/kiwi/kiwi-wasm.wasm
+          git restore runtime/python-sources.json
       - name: Full repository regression suite
         run: PYTHONPATH=python/browser-support npm test
       - name: Verify bundled Python matches source
