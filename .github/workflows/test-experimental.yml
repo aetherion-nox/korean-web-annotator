@@ -26,6 +26,8 @@ jobs:
         run: PYTHONPATH=python/browser-support python3 tests/test_selective_review.py
       - name: Candidate and pipeline protocol regressions
         run: node --test tests/selective-local-review.test.mjs tests/experimental-options.test.mjs tests/name-homograph-payload.test.mjs
+      - name: Full repository regression suite
+        run: npm test
       - name: Verify bundled Python matches source
         run: |
           python3 - <<'PY'
