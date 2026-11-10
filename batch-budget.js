@@ -1,5 +1,5 @@
 import {buildReviewPayload,buildManualPrompt,REVIEW_INSTRUCTIONS} from './review-payload.js';
-import {EXPERIMENTAL_REVIEW_INSTRUCTIONS} from './experimental-options.js';
+import {EXPERIMENTAL_REVIEW_INSTRUCTIONS,canProposeExperimentalOption} from './experimental-options.js';
 
 export const normalizeBatchContextTier=value=>['32k','128k','256k','512k','1m'].includes(value)?value:'32k';
 // This is a multilingual byte heuristic, not any provider's exact tokenizer.
@@ -11,9 +11,10 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  const experimental=experimentalHanja===true||experimentalLoanword===true;
  const config={reviewPosFilter,experimentalHanja,experimentalLoanword};
  const input=manual?buildManualPrompt(context,wire,batchId,config):REVIEW_INSTRUCTIONS+(experimental?'\n'+EXPERIMENTAL_REVIEW_INSTRUCTIONS:'')+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
- // Reserve room for one plausible suggestion per target, even though most
- // targets will return no proposals. Actual output limits remain enforced.
- const experimentalRows=experimental?wire.map(t=>({target_id:t.target_id,choice_id:'x0',type:experimentalHanja?'hanja':'loanword',
+ // One optional proposal per ELIGIBLE target. The validator will never
+ // accept an experimental proposal for proper nouns, name homographs, partial
+ // words or other forbidden targets. Do not reserve fictional answers for them.
+ const experimentalRows=experimental?wire.filter(canProposeExperimentalOption).map(t=>({target_id:t.target_id,choice_id:'x0',type:experimentalHanja?'hanja':'loanword',
   replacement:experimentalHanja?'漢字詞':'loanword',definition:'a precise matching sense of this Korean word in context'})):[];
  const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),...(experimental?{experimental_options:experimentalRows}:{}),results:wire.map(t=>({target_id:t.target_id,choice_id:experimental?'x0':t.options.reduce((longest,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(longest).length?o.choice_id:longest,'')}))});
  const contextTokens=limits[tier],inputTokens=estimateTokenCount(input)+(manual?0:64),outputTokens=Math.ceil(estimateTokenCount(reply)*1.1)+32;
