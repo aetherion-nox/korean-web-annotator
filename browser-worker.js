@@ -25,6 +25,7 @@ async function initialize(){
 async function dispatch(request,progress=()=>{}){
  if(!initialization)progress({stage:'dictionary'});
  await initialize();
+ if(['import','import-db'].includes(request.action))progress({stage:'import-parse'});
  if(['analyze','warmup'].includes(request.action)){if(!kiwiInitialization)progress({stage:'tokenizer'});await initializeKiwi();if(request.action==='analyze')progress({stage:'analysis'});}
  if(request.database&&!python.FS.analyzePath('/data/hanja_dict.db').exists){python.FS.writeFile('/data/hanja_dict.db',new Uint8Array(request.database));}
  let payload={...request};delete payload.database;
@@ -33,7 +34,7 @@ async function dispatch(request,progress=()=>{}){
  python.globals.set('browser_payload',JSON.stringify(payload));let result;
  try{result=JSON.parse(await python.runPythonAsync('await browser_bridge.request(browser_payload)'));}
  finally{if(request.action==='import'&&python.FS.analyzePath('/data/dictionary.zip').exists)python.FS.unlink('/data/dictionary.zip');if(request.action==='import-db'&&python.FS.analyzePath('/data/candidate.db').exists)python.FS.unlink('/data/candidate.db');python.globals.delete('browser_payload');}
- if(['import','import-db'].includes(request.action))result.database=python.FS.readFile('/data/hanja_dict.db').buffer;
+ if(['import','import-db'].includes(request.action)&&!result.reused){progress({stage:'import-serialize'});result.database=python.FS.readFile('/data/hanja_dict.db').buffer;}
  if(request.action==='status')result.dictionary_loaded=result.ready;return result;
 }
 let queue=Promise.resolve();self.onmessage=({data})=>{queue=queue.then(async()=>{try{const result=await dispatch(data.request,progress=>self.postMessage({id:data.id,progress}));self.postMessage({id:data.id,ok:true,result},result.database?[result.database]:[]);}catch(error){self.postMessage({id:data.id,ok:false,error:String(error.stack||error)});}});};
