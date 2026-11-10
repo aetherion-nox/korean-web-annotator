@@ -9,6 +9,9 @@ export const GENERATED_HANJA='GEN_HANJA';
 export const GENERATED_LOANWORD='GEN_LOANWORD';
 export const GENERATED_SEGMENTS='GEN_SEGMENTS';
 export function generatedChoices(target,config={}){
+ // The fallback for a safely bounded original dictionary target may only
+ // accept dictionary choices. Free generation belongs to whole-word review.
+ if(target?.fallback_dictionary_only===true)return [];
  if(target?.segmentation_review===true){
   if(target.protected_name===true||(target.dictionary_person_name===true&&target.dictionary_name_homograph!==true))return [];
   return config.allowModelSegmentation===true&&(config.allowModelHanja===true||config.allowModelLoanword===true)&&HANGUL.test(target.surface)?[GENERATED_SEGMENTS]:[];
