@@ -17,40 +17,40 @@ async function harness({kind='db',reject=false}={}){
   postMessage(message,transfer){
    work.push({request:message.request,transfer});
    const answer=reject?{id:message.id,ok:false,error:'SQLite DB integrity check failed'}:
-    {id:message.id,ok:true,result:kind==='db'
-     ?{ready:true,imported:true,dictionary_fingerprint:'ABCD',dictionary_metadata:{}}
-     :{ready:true,imported:true,dictionary_fingerprint:'ABCD',database:new ArrayBuffer(12)}};
+    {id:message.id,ok:true,result:{
+      ready:true,imported:true,dictionary_fingerprint:'ABCD',
+      database:new ArrayBuffer(12)
+    }};
    queueMicrotask(()=>this.onmessage({data:answer}));
   }
   terminate(){}
  }
  const updates=[];
  const context={
-  Worker,URL,Map,Promise,Error,Boolean,String,Uint8Array,ArrayBuffer,crypto:globalThis.crypto,
+  Worker,URL,Map,Promise,Error,Boolean,String,Uint8Array,ArrayBuffer,
   storage:async(action,key,value)=>{
    if(action==='get')return stored.get(key);
    if(action==='put'){updates.push({key,value});stored.set(key,value);}
    if(action==='delete')stored.delete(key);
   },
   chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f},sendMessage:async()=>{}}},
-  copyPlainText(){},
+  copyPlainText(){}
  };
  vm.runInNewContext(source,context);
  const send=request=>new Promise(resolve=>listener({type:'BROWSER_ENGINE_WORK',request},{id:'test'},resolve));
  return {send,stored,work,updates,original,previous};
 }
 
-test('DB import validates in Python but persists the original buffer, with no SQLite return roundtrip',async()=>{
+test('v1.1.55 DB import transfers input to Worker, validates it, and persists returned SQLite database',async()=>{
  const h=await harness();
  const result=await h.send({action:'import',upload:'upload-test'});
  assert.equal(result.ok,true,result.error);
  assert.equal(result.result.imported,true);
  assert.equal(h.work.length,1);
  assert.equal(h.work[0].request.action,'import-db');
- assert.equal(h.work[0].transfer.length,0,'DB bytes must not be transferred/detached from page');
- assert.equal(h.original.byteLength,1024*1024);
- assert.equal(h.stored.get('dictionary'),h.original,'persist original buffer instead of second worker-exported copy');
- assert.equal(h.stored.get('dictionary-hash'),'ABCD');
+ assert.equal(h.work[0].transfer.length,1,'original worker transfer protocol must be retained');
+ assert.equal(h.stored.get('dictionary').byteLength,12);
+ assert.equal(h.updates.length,1);
  assert.ok(!Object.hasOwn(result.result,'database'));
 });
 
@@ -63,7 +63,7 @@ test('failed DB validation preserves previously saved dictionary',async()=>{
  assert.equal(h.updates.length,0);
 });
 
-test('ZIP import still transfers archive bytes and persists rebuilt SQLite bytes',async()=>{
+test('v1.1.55 ZIP import continues to transfer archive bytes and persist returned SQLite database',async()=>{
  const h=await harness({kind:'zip'});
  const result=await h.send({action:'import',upload:'upload-test'});
  assert.equal(result.ok,true,result.error);
