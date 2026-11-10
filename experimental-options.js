@@ -1,8 +1,12 @@
 import {projectAnnotation} from './local-engine.js';
 
-// A normal dictionary choice_id (KEEP, c0, n0...) or a literal origin spelling
-// shares the SAME results[] field. There is no second experimental_options list.
-export const EXPERIMENTAL_REVIEW_INSTRUCTIONS = "When experimental_modes enables Hanja and/or loanwords, return exactly ONE JSON object with results only: {\"results\":[{\"target_id\":\"t0\",\"choice_id\":\"原潛\"},{\"target_id\":\"t1\",\"choice_id\":\"game\"},{\"target_id\":\"t2\",\"choice_id\":\"c0\"},{\"target_id\":\"t3\",\"choice_id\":\"KEEP\"}]}. Choose an existing target-local dictionary choice_id (KEEP, n0, c0, etc.) when its definition AND etymology match. Only if NO existing option fits and you reliably know the actual origin spelling of THIS SAME Korean word, put that origin DIRECTLY as choice_id: bare Chinese characters for Hanja or the actual Latin-script original spelling for loanwords. Never return p0/p1 candidate pool IDs, invented c/n/x IDs, translations, romanizations, explanatory prose, proposals, or an experimental_options array. Do not add any properties to a result item. Do not generate origin spellings for proper_noun, suspected_person_name, dictionary_person_name, dictionary_name_homograph, or partial_word targets. Do not generate names from pronunciation; no guessing. Do not change or infer target IDs, word boundaries or offsets. Only write a literal origin if the corresponding experimental mode is enabled and the source surface is genuinely that lexical word; otherwise choose KEEP. For Hanja write the genuine Chinese characters with one-to-one Korean syllable alignment; for loanwords write the original foreign orthography, NOT an English translation. When uncertain, KEEP. Return one result for every target and no other keys than results (and the unchanged batch_id in manual requests).";
+// A model may optionally write a literal origin in the existing choice_id.
+// Include each rule only if its own feature switch is enabled.
+export const HANJA_ORIGIN_INSTRUCTIONS =
+ "If no supplied dictionary sense fits and you know the genuine Sino-Korean origin, you may write its Hanja characters directly as choice_id instead of a dictionary key. Preserve the Korean word boundaries and align Hanja to its syllables; never guess a personal name.";
+
+export const LOANWORD_ORIGIN_INSTRUCTIONS =
+ "If no supplied dictionary sense fits and you know the genuine borrowed spelling, you may write its Latin-script original directly as choice_id instead of a dictionary key. Use the original word, not an English translation or romanization.";
 
 const CJK=/^[\p{Script=Han}]+$/u;
 const LOANWORD=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u;
