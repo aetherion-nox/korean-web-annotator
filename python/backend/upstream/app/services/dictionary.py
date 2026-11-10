@@ -169,7 +169,7 @@ class DictionaryService:
                     async with db.execute(f'SELECT entry_id,definition FROM senses WHERE entry_id IN ({placeholders})',group) as cursor:
                         for sense in await cursor.fetchall():
                             definition=sense['definition'] or ''
-                            if re.search(r'(?:성\\s*[(（]\\s*姓\\s*[)）]|성씨)\\s*의\\s*하나',definition):
+                            if re.search(r'(?:성\s*[(（]\s*姓\s*[)）]|성씨)\s*의\s*하나',definition):
                                 surname_ids.add(sense['entry_id'])
                             if UNIT_DEFINITION.search(definition):unit_ids.add(sense['entry_id'])
                 for row in rows:
