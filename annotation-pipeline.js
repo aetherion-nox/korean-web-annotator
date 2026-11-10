@@ -9,6 +9,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const sentences=message.sentences;
  const selectionReview=message.reviewAll===true;
  const reviewAll=selectionReview || message.reviewAllCandidates===true;
+ const reviewLocalConversions=!reviewAll&&message.reviewLocalConversions===true;
  const bypassCache=selectionReview || message.forceRegenerate;
  enabled=enabled || reviewAll;
  if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>5000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
@@ -28,9 +29,9 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const currentSentence=completedSentences+1;
   const progress=detail=>loading({...detail,currentSentence,sentenceCharacters:sentence.text.length});
   progress({stage:'analysis'});
-  const localKey=JSON.stringify(['dictionary-v3-alignment',reviewAll,identity.engine_version,identity.dictionary_fingerprint,modes,sentence.text]);
+  const localKey=JSON.stringify(['dictionary-v3-alignment',reviewAll,identity.engine_version,identity.dictionary_fingerprint,modes,sentence.text,...(reviewLocalConversions?['review-local-conversions-v1']:[])]);
   let analysis=!bypassCache&&cache.get(localKey);
-  if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:modes,signal,progress));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
+  if(analysis){analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}else {analysis=validateAnalysis(sentence.text,await analyze(sentence.text,reviewAll?{...modes,reviewAll:true}:reviewLocalConversions?{...modes,reviewLocalConversions:true}:modes,signal,progress));if(analysis.engine_version!==identity.engine_version||analysis.dictionary_fingerprint!==identity.dictionary_fingerprint)throw Error('Dictionary changed during operation');cache.set(localKey,analysis);}
   if(reviewAll){
    if(analysis.annotations.length)throw Error('模型重审不允许使用本地直接标注结果。');
    if(selectionReview){
