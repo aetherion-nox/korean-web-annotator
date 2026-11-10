@@ -32,7 +32,11 @@ export function mergeResegmentationTargets(analysis,proposed){
   ];
   const merged={...raw,
    ...(review_reasons.length?{review_reasons:[...new Set(review_reasons)]}:{}),
-   ...(components.length?{component_candidates:components}:{})
+   ...(components.length?{component_candidates:components}:{}),
+   // Retain the exact original dictionary review obligations, including the
+   // independent-boundary and name hints. Never reapply them automatically.
+   // Their repeated full context is omitted to avoid inflating the batch.
+   ...(collisions.length?{fallback_targets:collisions.map(({context,adjacent_context,...t})=>t)}:{})
   };
   for(const prior of collisions)targets.splice(targets.indexOf(prior),1);
   removed+=collisions.length;
