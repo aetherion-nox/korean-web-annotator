@@ -69,111 +69,123 @@ class DictionaryService:
             if close_db:
                 await db.close()
 
-    async def lookup_by_written_form(
-        self, written_form: str, db: Optional[aiosqlite.Connection] = None
-    ) -> List[dict]:
-        """Look up entries by exact written_form match."""
-        close_db = db is None
-        if close_db:
-            db = await self.get_connection()
+    @staticmethod
+    def _alias_sources(forms):
+        """Map indexed exact title keys back to the requested spelling."""
+        from backend.orthographic_aliases import headword_aliases
+        sources = defaultdict(list)
+        for form in dict.fromkeys(forms):
+            for alias in headword_aliases(form):
+                sources[alias].append(form)
+        return sources
+
+    async def batch_lookup_entries(self, forms, db=None):
+        """Exact index probes for dictionary records including spelling aliases."""
+        unique=list(dict.fromkeys(forms))
+        result={form:[] for form in unique}
+        if not unique:return result
+        close_db=db is None
+        if close_db:db=await self.get_connection()
         try:
-            query = '''
-                SELECT e.id, e.target_code, e.written_form, e.homonym_number, e.part_of_speech,
-                       e.origin_raw, e.vocabulary_level, e.subject_category, e.semantic_category,
-                       (SELECT s.definition FROM senses s 
-                        WHERE s.entry_id = e.id 
-                        ORDER BY s.sense_number LIMIT 1) as definition_preview
-                FROM entries e
-                WHERE e.written_form = ?
-                ORDER BY e.homonym_number ASC
-            '''
-            async with db.execute(query, (written_form,)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
-        finally:
-            if close_db:
-                await db.close()
-
-    async def lookup_candidates(
-        self, written_form: str, db: Optional[aiosqlite.Connection] = None
-    ) -> List[dict]:
-        """Include non-conversion readings from existing full dictionary entries."""
-        return (await self.batch_lookup_candidates([written_form], db)).get(written_form, [])
-
-    async def batch_lookup_candidates(
-        self, written_forms: List[str], db: Optional[aiosqlite.Connection] = None
-    ) -> Dict[str, List[dict]]:
-        """Fast batch lookup for multiple written forms without slow subqueries."""
-        result: Dict[str, List[dict]] = {}
-        missing = []
-
-        for wf in dict.fromkeys(written_forms):
-            if wf in self._candidate_cache:
-                self._candidate_cache.move_to_end(wf)
-                result[wf] = self._candidate_cache[wf]
-            else:
-                missing.append(wf)
-                result[wf] = []
-
-        if not missing:
+            sources=self._alias_sources(unique)
+            aliases=list(sources)
+            seen={form:set() for form in unique}
+            for start in range(0,len(aliases),300):
+                part=aliases[start:start+300]
+                placeholders=','.join('?' for _ in part)
+                query=f'''
+                    SELECT e.id,e.target_code,e.written_form,e.homonym_number,e.part_of_speech,
+                           e.origin_raw,e.vocabulary_level,e.subject_category,e.semantic_category,
+                           (SELECT s.definition FROM senses s WHERE s.entry_id=e.id
+                            ORDER BY s.sense_number LIMIT 1) as definition_preview
+                    FROM entries e WHERE e.written_form IN ({placeholders})
+                    ORDER BY e.homonym_number ASC
+                '''
+                async with db.execute(query,part) as cursor:
+                    for record in await cursor.fetchall():
+                        row=dict(record)
+                        for form in sources.get(row['written_form'],()):
+                            if row['id'] not in seen[form]:
+                                result[form].append(row)
+                                seen[form].add(row['id'])
             return result
+        finally:
+            if close_db:await db.close()
 
-        close_db = db is None
-        if close_db:
-            db = await self.get_connection()
+    async def lookup_by_written_form(self, written_form: str, db=None):
+        return (await self.batch_lookup_entries([written_form],db)).get(written_form,[])
+
+    async def lookup_candidates(self, written_form: str, db=None):
+        return (await self.batch_lookup_candidates([written_form],db)).get(written_form,[])
+
+    async def batch_lookup_candidates(self, written_forms, db=None):
+        """Indexed exact+alias probes without changing the on-disk dictionary."""
+        from backend.orthographic_aliases import aligned_hanja_alias
+        result={}
+        missing=[]
+        for form in dict.fromkeys(written_forms):
+            if form in self._candidate_cache:
+                self._candidate_cache.move_to_end(form)
+                result[form]=self._candidate_cache[form]
+            else:
+                missing.append(form)
+                result[form]=[]
+        if not missing:return result
+        close_db=db is None
+        if close_db:db=await self.get_connection()
         try:
-            batch_size = 400
-            for i in range(0, len(missing), batch_size):
-                batch = missing[i:i + batch_size]
-                placeholders = ','.join(['?'] * len(batch))
-                query = f'''
+            sources=self._alias_sources(missing)
+            aliases=list(sources)
+            seen={form:set() for form in missing}
+            from app.services.quantity import UNIT_DEFINITION
+            for start in range(0,len(aliases),300):
+                part=aliases[start:start+300]
+                marks=','.join('?' for _ in part)
+                query=f'''
                     SELECT cc.id as candidate_id, cc.entry_id, cc.written_form,
                            cc.origin_raw, cc.replacement, cc.replacement_type,
                            cc.is_reliable,
-                           e.part_of_speech, e.vocabulary_level, e.homonym_number, e.subject_category, e.semantic_category
+                           e.part_of_speech,e.vocabulary_level,e.homonym_number,e.subject_category,e.semantic_category
                     FROM conversion_candidates cc
-                    JOIN entries e ON cc.entry_id = e.id
-                    WHERE cc.written_form IN ({placeholders})
+                    JOIN entries e ON cc.entry_id=e.id
+                    WHERE cc.written_form IN ({marks})
                     UNION ALL
-                    SELECT NULL as candidate_id, e.id as entry_id, e.written_form,
-                           e.origin_raw, NULL as replacement, NULL as replacement_type,
+                    SELECT NULL as candidate_id,e.id as entry_id,e.written_form,
+                           e.origin_raw,NULL as replacement,NULL as replacement_type,
                            0 as is_reliable,
-                           e.part_of_speech, e.vocabulary_level, e.homonym_number, e.subject_category, e.semantic_category
+                           e.part_of_speech,e.vocabulary_level,e.homonym_number,e.subject_category,e.semantic_category
                     FROM entries e
-                    WHERE e.written_form IN ({placeholders})
-                      AND NOT EXISTS (SELECT 1 FROM conversion_candidates cc WHERE cc.entry_id = e.id)
-                    ORDER BY written_form, is_reliable DESC, homonym_number ASC
+                    WHERE e.written_form IN ({marks})
+                      AND NOT EXISTS (SELECT 1 FROM conversion_candidates cc WHERE cc.entry_id=e.id)
                 '''
-                async with db.execute(query, batch + batch) as cursor:
-                    rows = await cursor.fetchall()
-                    rows = [dict(row) for row in rows]
-                # Only read senses for entries whose POS can receive this bonus.
-                ids = list(dict.fromkeys(row['entry_id'] for row in rows
-                           if row.get('part_of_speech') in {'명사', '의존 명사'}))
-                unit_ids = set()
-                surname_ids = set()
-                from app.services.quantity import UNIT_DEFINITION
-                for begin in range(0, len(ids), 400):
-                    part = ids[begin:begin + 400]
-                    marks = ','.join('?' for _ in part)
-                    async with db.execute(f'SELECT entry_id,definition FROM senses WHERE entry_id IN ({marks})', part) as cursor:
+                async with db.execute(query,part+part) as cursor:
+                    rows=[dict(row) for row in await cursor.fetchall()]
+                ids=list(dict.fromkeys(row['entry_id'] for row in rows if row.get('part_of_speech') in {'명사','의존 명사'}))
+                unit_ids=set()
+                surname_ids=set()
+                for begin in range(0,len(ids),400):
+                    group=ids[begin:begin+400]
+                    placeholders=','.join('?' for _ in group)
+                    async with db.execute(f'SELECT entry_id,definition FROM senses WHERE entry_id IN ({placeholders})',group) as cursor:
                         for sense in await cursor.fetchall():
-                            if re.search(r'(?:성\s*[(（]\s*姓\s*[)）]|성씨)\s*의\s*하나',sense['definition'] or ''):
+                            definition=sense['definition'] or ''
+                            if re.search(r'(?:성\\s*[(（]\\s*姓\\s*[)）]|성씨)\\s*의\\s*하나',definition):
                                 surname_ids.add(sense['entry_id'])
-                            if UNIT_DEFINITION.search(sense['definition'] or ''):
-                                unit_ids.add(sense['entry_id'])
+                            if UNIT_DEFINITION.search(definition):unit_ids.add(sense['entry_id'])
                 for row in rows:
-                    row['unit_usage'] = row['entry_id'] in unit_ids
-                    row['surname_usage'] = row['entry_id'] in surname_ids
-                    result.setdefault(row['written_form'], []).append(row)
-
-            for wf in missing:
-                self._cache_candidates(wf, result.get(wf, []))
-
+                    row['unit_usage']=row['entry_id'] in unit_ids
+                    row['surname_usage']=row['entry_id'] in surname_ids
+                    for form in sources.get(row['written_form'],()):
+                        key=(row['candidate_id'],row['entry_id'])
+                        if key in seen[form]:continue
+                        seen[form].add(key)
+                        result[form].append(aligned_hanja_alias(form,row))
+            for form in missing:
+                result[form].sort(key=lambda r:(-int(bool(r.get('is_reliable'))),r.get('homonym_number') or 0,r.get('entry_id') or 0))
+                self._cache_candidates(form,result[form])
             return result
         finally:
-            if close_db:
-                await db.close()
+            if close_db:await db.close()
 
     async def get_metadata_for_entries(self, entry_ids):
         ids=list(dict.fromkeys(i for i in entry_ids if i is not None))
