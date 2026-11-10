@@ -583,7 +583,7 @@
     const missingFromCurrentDom=Math.max(0,expectedSpans-actualOperationSpans);
     const projection=task.paragraphPlan?.projectionAudit?.()||{};
     const invalidatedExamples=entries.filter(e=>e.invalidated&&e.annotations?.length).slice(0,12)
-      .map(e=>({entryId:e.id,text:e.text.slice(0,80),annotations:e.annotations.length}));
+      .map(e=>({entryId:e.id,text:String(e.text||'').slice(0,80),annotations:e.annotations.length}));
     return {reviewAccepted:upstream.model_review_accepted||0,
       reviewConversions:upstream.model_review_conversion||0,
       reviewKeep:upstream.model_review_keep||0,
