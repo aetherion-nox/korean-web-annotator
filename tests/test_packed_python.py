@@ -51,7 +51,22 @@ assert ENGINE_VERSION
 assert callable(surname_name_evidence) and callable(dictionary_name_evidence)
 assert callable(homograph_target) and callable(surname_ambiguity_target)
 assert callable(is_dependent_noun)
-print('Packaged Pyodide import dependencies: OK')
+# Reproduce the exact import-db path that previously crashed at status(source).
+import asyncio
+import sqlite3
+from app.schema import SCHEMA_SQL
+incoming=root/'candidate.db'
+destination=root/'data'/'hanja_dict.db'
+with sqlite3.connect(incoming) as db:
+    db.executescript(SCHEMA_SQL)
+    db.execute("INSERT INTO import_metadata VALUES(1,'fixture','test-sha','now','fixture',1,1,0,1)")
+    db.execute("INSERT INTO entries(id,target_code,written_form,part_of_speech,origin_raw,raw_json) VALUES (1,1,'학교','명사','學校','{}')")
+    db.execute("INSERT INTO senses(entry_id,sense_number,definition) VALUES (1,1,'school')")
+    db.execute("INSERT INTO conversion_candidates(written_form,entry_id,origin_raw,replacement,replacement_type,is_reliable) VALUES ('학교',1,'學校','學校','pure_hanja',1)")
+    db.commit()
+result=asyncio.run(browser_bridge.import_database(incoming,destination))
+assert result['imported'] and destination.is_file()
+print('Packaged Pyodide DB validation and import: OK')
 """
             result = subprocess.run(
                 [sys.executable, "-c", snippet, str(root)],
