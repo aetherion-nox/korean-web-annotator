@@ -97,3 +97,38 @@ test('offline mixed-invalid replies preserve valid choices while isolating dupli
  assert.equal(entry.annotations.length,2);
  assert.equal(entry.hasPreview,false);
 });
+
+test('DOM audit distinguishes validated model decisions from live page annotations',()=>{
+ const code=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
+ const begin=code.indexOf('  function liveAnnotationCount(');
+ const end=code.indexOf('  function contextState()',begin);
+ assert.ok(begin>0&&end>begin);
+ const ruby={nodeType:1,isConnected:true,matches:selector=>selector==='ruby[kra-annotated="true"]',
+  querySelectorAll:()=>[]};
+ const disconnected={...ruby,isConnected:false};
+ const e1={annotations:[{start:0,end:2},{start:2,end:4}],
+  renderRecord:{inserted:[ruby]}};
+ const e2={annotations:[{start:0,end:1}],invalidated:true,renderRecord:{inserted:[disconnected]}};
+ const task={entries:new Map([['a',e1],['b',e2]]),
+  paragraphPlan:{projectionAudit:()=>({modelSourceSpans:4,modelCrossNodeDropped:1,modelUnownedSpans:0})},
+  audit:{invalidSpan:2,disabledMode:0,outsideSelection:1}};
+ const context={OWN_RUBY:'ruby[kra-annotated="true"]',
+  document:{querySelectorAll:()=>[ruby]}};vm.createContext(context);
+ vm.runInContext(code.slice(begin,end),context);
+ const audit=context.annotationOperationAudit(task,{
+  model_review_accepted:10,model_review_conversion:6,model_review_keep:3,
+  model_review_nonconversion:1,segmentation_fallback_recovered:2});
+ assert.equal(audit.reviewAccepted,10);
+ assert.equal(audit.reviewConversions,6);
+ assert.equal(audit.reviewKeep,3);
+ assert.equal(audit.reviewNonconversion,1);
+ assert.equal(audit.expectedDomAnnotationSpans,3);
+ assert.equal(audit.actualOperationSpans,1);
+ assert.equal(audit.actualPageSpans,1);
+ assert.equal(audit.missingFromCurrentDom,2);
+ assert.equal(audit.invalidatedWithAnnotations,1);
+ assert.equal(audit.modelCrossNodeDropped,1);
+ assert.equal(audit.filteredInvalidSpan,2);
+ assert.equal(audit.filteredOutsideSelection,1);
+ assert.equal(audit.segmentationFallbackRecovered,2);
+});
