@@ -30,7 +30,8 @@ export function experimentalChoicePreviewParser(targets,config,onPreview){
  return choicePreviewParser(targets,onPreview,(target,id)=>literalOriginOption(target,id,config));
 }
 
-export async function readModelContent(response,{protocol='chat',signal,onStarted=()=>{},onDelta=()=>{},onRaw=()=>{},onMetadata=()=>{}}={}){
+export async function readModelContent(response,{protocol='chat',signal,onStarted=()=>{},onDelta=()=>{},onRaw=()=>{},onMetadata=()=>{},maxContentChars=2_000_000}={}){
+ const contentCap=Number.isSafeInteger(maxContentChars)?Math.min(16_000_000,Math.max(2_000_000,maxContentChars)):2_000_000;
  if(!response.headers.get('content-type')?.includes('text/event-stream')){
   const raw=await response.text();onRaw(raw);
   let data;try{data=JSON.parse(raw);}catch{throw streamError('模型响应不是有效 JSON',raw);}
@@ -51,7 +52,7 @@ export async function readModelContent(response,{protocol='chat',signal,onStarte
  if(!response.body)throw streamError('模型流式响应为空');
  const reader=response.body.getReader(),decoder=new TextDecoder();
  let buffer='',lines=[],content='',finish=null,done=false,started=false;
- const append=delta=>{if(typeof delta==='string'){content+=delta;if(content.length>2_000_000)throw streamError('模型回复超出审核结果大小限制');onDelta(delta);}};
+ const append=delta=>{if(typeof delta==='string'){content+=delta;if(content.length>contentCap)throw streamError('模型回复超出审核结果大小限制');onDelta(delta);}};
  function dispatch(){
   if(!lines.length)return;const data=lines.join('\n');lines=[];
   if(data.trim()==='[DONE]'){done=true;return;}
