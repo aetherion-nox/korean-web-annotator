@@ -17,6 +17,8 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  const wire=wireIds?targets:targets.map((t,i)=>({...t,target_id:manual?'t'+i:'b0t'+i}));
  const config={reviewPosFilter,allowModelHanja,allowModelLoanword,allowModelSegmentation};
  const input=manual?buildManualPrompt(context,wire,batchId,config):reviewInstructions(config)+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
+ // Estimate the current compact JSON schema: do not reserve removed confidence/evidence
+ // fields. Still budget multiple subwords rather than assuming all words are whole.
  // Reserve enough reply space for multiple subwords; otherwise long documents
  // can exhaust the model's output limit even when the input fits comfortably.
  const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),results:wire.map(t=>{
@@ -27,9 +29,9 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
     start:i*2,end:Math.min(t.surface.length,i*2+2),surface:t.surface.slice(i*2,i*2+2),
     type:'hanja',replacement:'中'.repeat(Math.min(2,t.surface.length-i*2))
    }));
-   return {target_id:t.target_id,choice_id:'GEN_SEGMENTS',segments,confidence:'high',evidence:'Detailed phonetic and etymological evidence supporting the proposed compound segmentation'};
+   return {target_id:t.target_id,choice_id:'GEN_SEGMENTS',segments};
   }
-  return choices.length?{target_id:t.target_id,choice_id:choices[0],replacement:'W'.repeat(Math.max(4,t.surface.length)),confidence:'high',evidence:'Specific phonetic and etymological evidence'}:
+  return choices.length?{target_id:t.target_id,choice_id:choices[0],replacement:'W'.repeat(Math.max(4,t.surface.length))}:
     {target_id:t.target_id,choice_id:t.options.reduce((longest,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(longest).length?o.choice_id:longest,'')};
  })});
  const contextTokens=limits[tier],inputTokens=estimateTokenCount(input)+(manual?0:64),outputTokens=Math.ceil(estimateTokenCount(reply)*1.1)+32;
