@@ -88,7 +88,7 @@ test('UTF-16 source indices, wrong offsets, missing/duplicate IDs and unsafe for
   row(f.sid,'replace',['unlisted'],2,4,'게임','game'),
   {...good,extra:true},
   row(f.sid,'delete',[],2,4,'게임','KEEP'),
-  row(f.sid,'add',[],2,4,'게임','translator says game'),
+  row(f.sid,'add',[],2,4,'게임','word😀'),
  ];
  const result=validate(f,[...invalid,good]);
  assert.equal(result.accepted.length,1);
@@ -102,7 +102,7 @@ test('conflicting overlapping repairs reject both and keep old normal target dec
   row(f.sid,'replace',['t0'],1,4,'학기술','學技術')]);
  assert.equal(r.accepted.length,0);assert.equal(r.rejected.length,2);
  const malformed=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學'),
-  row(f.sid,'replace',['t0'],2,4,'기술','wrong English translation')]);
+  row(f.sid,'replace',['t0'],2,4,'기술','invalid😀')]);
  assert.equal(malformed.accepted.length,0,'bad split sibling cannot discard original target');
  const deleteReplace=validate(f,[row(f.sid,'delete',['t0'],0,4,text,'KEEP'),
   row(f.sid,'replace',['t0'],0,2,'과학','科學')]);
@@ -120,10 +120,10 @@ test('cannot overlap a different target, a locally certain annotation, or a prio
 });
 
 test('selected text confinement, person-names and no second lookup for repaired terms',()=>{
- const text='가나다라마바사',f=fixture(text,[target('scan',text,0,7,'可')],{selected:[{start:2,end:5}]});
+ const text='가나다라마바사',f=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{selected:[{start:2,end:5}]});
  assert.equal(validate(f,[row(f.sid,'add',[],0,2,'가나','可那')]).accepted.length,0);
  assert.equal(validate(f,[row(f.sid,'add',[],2,4,'다라','多羅')]).accepted.length,1);
- const f2=fixture(text,[target('scan',text,0,7,'可')],{protected_ranges:[[2,4]]});
+ const f2=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{protected_ranges:[[2,4]]});
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','多羅')]).accepted.length,0);
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','KEEP')]).accepted.length,1);
 });
@@ -168,7 +168,7 @@ test('pipeline uses exactly one model call and valid repair supersedes old dicti
     repairs:[row('s0','replace',[rows[0].target_id],0,2,text,'game')]};}})
  });
  assert.equal(calls.length,1);
- assert.equal(result.repair_applied,1);
+ assert.equal(result.repair_applied,1,JSON.stringify(events.filter(e=>e.type==='DIAGNOSTIC').map(e=>e.diagnostic)));
  const final=events.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1).results[0];
  assert.deepEqual(final.annotations.map(a=>a.replacement),['game']);
  assert.deepEqual(final.reviewed.map(r=>r.surface),[text,text]);
