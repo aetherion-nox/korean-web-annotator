@@ -6,6 +6,7 @@ import {choicePreviewParser} from '../model-stream.js';
 import {createManualReviewSession} from '../manual-review.js';
 import {segmentationTargets} from '../segmentation-rescue.js';
 import {mergeResegmentationTargets} from '../review-merge.js';
+import {reviewInstructions} from '../review-payload.js';
 const config={allowModelHanja:true,allowModelLoanword:true,allowModelSegmentation:true,reviewPosFilter:true};
 const keep=s=>({choice_id:'KEEP',type:'keep',replacement:s,entry_id:null,definitions:[]});
 function target(id,surface,details={}){
