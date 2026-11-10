@@ -1,5 +1,5 @@
 import {browserEngineStatus,browserAnalyze} from './browser-engine.js';
-import {normalizeBatchContextTier} from './batch-budget.js';
+import {normalizeBatchContextTier,normalizeOutputTokenLimit} from './batch-budget.js';
 const CJK=/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{323af}]/u;
 export function projectAnnotation(text,annotation){
  const {start,end,surface,replacement,type}=annotation;
@@ -91,8 +91,8 @@ export function validateAnalysis(text,data){
  return {...data,annotations,targets,diagnostics,stats:{...data.stats,local_determined:Math.max(0,Number(data.stats.local_determined||0)-rejectedAnnotations),pending:Math.max(0,Number(data.stats.pending||0)-rejectedTargets),structural_rejections:Number(data.stats.structural_rejections||0)+rejectedAnnotations+rejectedTargets,rejected_options:Number(data.stats.rejected_options||0)+rejectedOptions}};
 }
 export async function engineConfig(){
- const {enableModelReview=false,reviewAllCandidates=false,manualModelReview=false,experimentalHanja=false,experimentalLoanword=false,reviewLocalConversions=true,batchContextTier,nameProtection=true,filterDictionaryPeople=true,reviewPosFilter=true}=await chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','experimentalHanja','experimentalLoanword','reviewLocalConversions','batchContextTier','nameProtection','filterDictionaryPeople','reviewPosFilter']);
- return {reviewPosFilter:reviewPosFilter!==false,nameProtection:nameProtection!==false,filterDictionaryPeople:filterDictionaryPeople!==false,enableModelReview:enableModelReview===true||reviewAllCandidates===true||manualModelReview===true||experimentalHanja===true||experimentalLoanword===true,reviewAllCandidates:reviewAllCandidates===true,manualModelReview:manualModelReview===true,experimentalHanja:experimentalHanja===true,experimentalLoanword:experimentalLoanword===true,reviewLocalConversions:reviewLocalConversions!==false,batchContextTier:normalizeBatchContextTier(batchContextTier)};
+ const {enableModelReview=false,reviewAllCandidates=false,manualModelReview=false,experimentalHanja=false,experimentalLoanword=false,reviewLocalConversions=true,batchContextTier,manualOutputTokenLimit,apiOutputTokenLimit,nameProtection=true,filterDictionaryPeople=true,reviewPosFilter=true}=await chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','experimentalHanja','experimentalLoanword','reviewLocalConversions','batchContextTier','manualOutputTokenLimit','apiOutputTokenLimit','nameProtection','filterDictionaryPeople','reviewPosFilter']);
+ return {reviewPosFilter:reviewPosFilter!==false,nameProtection:nameProtection!==false,filterDictionaryPeople:filterDictionaryPeople!==false,enableModelReview:enableModelReview===true||reviewAllCandidates===true||manualModelReview===true||experimentalHanja===true||experimentalLoanword===true,reviewAllCandidates:reviewAllCandidates===true,manualModelReview:manualModelReview===true,experimentalHanja:experimentalHanja===true,experimentalLoanword:experimentalLoanword===true,reviewLocalConversions:reviewLocalConversions!==false,batchContextTier:normalizeBatchContextTier(batchContextTier),manualOutputTokenLimit:normalizeOutputTokenLimit(manualOutputTokenLimit,true),apiOutputTokenLimit:normalizeOutputTokenLimit(apiOutputTokenLimit,false)};
 }
 export const engineStatus=browserEngineStatus;
 export const analyzeLocal=browserAnalyze;
