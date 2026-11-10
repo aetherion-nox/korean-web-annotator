@@ -34,14 +34,21 @@ async function dispatch(request){
    }
   }
   const saved=sameArchive&&!hydrated?await storage('get','dictionary'):undefined;
-  const workerRequest={action:upload.kind==='db'?'import-db':'import',filename:upload.name,bytes:upload.bytes,progressId:request.progressId,...(saved?{database:saved}:{})};
-  const transferable=[upload.bytes,...(saved?[saved]:[])];
+  const isDatabase=upload.kind==='db';
+  const workerRequest={action:isDatabase?'import-db':'import',filename:upload.name,bytes:upload.bytes,progressId:request.progressId,...(saved?{database:saved}:{})};
+  // DB files are already validated in the worker by import_database().
+  // Keep the ORIGINAL input ArrayBuffer here; copying/transferring a second
+  // entire SQLite database back from Pyodide doubles peak memory pressure.
+  // The worker receives a structured clone (not a transfer) for DB imports.
+  const transferable=isDatabase?[]:[upload.bytes,...(saved?[saved]:[])];
   try{
    const result=await work(workerRequest,transferable);
    if(!result.reused){
     if(request.progressId)reportProgress(request.progressId,{stage:'import-save'});
-    if(!result.database)throw Error('Imported dictionary is missing SQLite bytes');
-    await storage('put','dictionary',result.database);
+    const databaseBytes=isDatabase?upload.bytes:result.database;
+    if(!(databaseBytes instanceof ArrayBuffer)||!databaseBytes.byteLength)throw Error('Imported dictionary is missing SQLite bytes');
+    try{await storage('put','dictionary',databaseBytes);}
+    catch(error){throw Error('浏览器存储数据库失败（可能是存储配额或内存不足）：'+(error.message||error));}
     if(typeof result.dictionary_fingerprint==='string')await storage('put','dictionary-hash',result.dictionary_fingerprint);
    }
    hydrated=true;dictionaryAvailable=true;delete result.database;
