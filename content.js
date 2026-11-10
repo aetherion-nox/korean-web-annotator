@@ -643,7 +643,14 @@
 
   function recoverManualConnection(task,reason){
     const backup=task.manualBackup;
-    if(task.finished||currentTask!==task||!backup?.bindings?.length)return false;
+    if(task.finished||currentTask!==task)return false;
+    if(!backup?.bindings?.length){
+      if(backup?.experimentalPhase==='propose'){
+        const panel=document.querySelector('.kra-manual-review');
+        if(panel)panel.querySelector('.kra-manual-status').textContent='候选补全请求无法安全离线恢复；请保留已粘贴的 JSON，重新运行标注以继续。';
+      }
+      return false;
+    }
     clearTimeout(task.manualTimer);clearInterval(task.keepalive);
     if(task.manualLocalOnly)return true;
     task.manualLocalOnly=true;task.manualRequest=backup.requestId;
@@ -699,7 +706,7 @@
       panelStatus(`本批已应用，当前显示 ${count} 个标注。后台断线，已从本页备份继续下一批。`);
       return;
     }
-    const complete=Boolean(task.manualPlan?.length)&&task.manualPlan.every(batch=>task.manualApplied.has(batch.requestId));
+    const complete=!task.experimentalRecoveryIncomplete&&Boolean(task.manualPlan?.length)&&task.manualPlan.every(batch=>task.manualApplied.has(batch.requestId));
     const message=`本批答案已在页面校验并应用，当前显示 ${count} 个标注。${complete?'全部手动批次已完成。':'本批已恢复，但缺少后续批次备份，请保留答案。'}`;
     if(complete){for(const entry of task.entries.values())seenSources.add(entry.text);if(task.wholePage)pageCompleted=true;}
     finishTask(task,message,complete);status(message);if(complete)configureAutomaticAnnotation();publishState();
@@ -711,6 +718,7 @@
     const panel=manualPanel();
     if(event.type==='MANUAL_REVIEW_REQUEST'){
       clearTimeout(task.manualTimer);task.manualLocalOnly=false;task.manualBackup={requestId:event.requestId,bindings:event.bindings,experimentalPhase:event.experimentalPhase,batchNumber:event.batchNumber,batchTotal:event.batchTotal};
+      if(event.experimentalPhase)task.experimentalRecoveryIncomplete=true;
       task.manualRequest=event.requestId;panel.dataset.operationId=task.operationId;panel.dataset.requestId=event.requestId;
       panel.querySelector('.kra-manual-summary').textContent=`${event.experimentalPhase==='propose'?'实验性候选补全 · ':event.experimentalPhase==='choose'?'补充候选复审 · ':''}第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次 · ${event.targetCount} 个词 · ${event.text.length.toLocaleString()} 字符（仅任务内容，无 API Key）`;
       if(event.budget){const b=event.budget;panel.querySelector('.kra-manual-summary').textContent+=`\n${b.label}档 · 预估输入 ${b.inputTokens.toLocaleString()} / 答案 ${b.outputTokens.toLocaleString()} tokens${b.contextTokens?` / 余量 ${b.safetyTokens.toLocaleString()}（窗口 ${b.contextTokens.toLocaleString()}）`:''}${b.limitReason==='output'?' · 受答案长度预算限制':''}。估算与实际分词可能不同。`;}
