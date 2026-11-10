@@ -26,6 +26,10 @@ jobs:
         run: PYTHONPATH=python/browser-support python3 tests/test_selective_review.py
       - name: Candidate and pipeline protocol regressions
         run: node --test tests/selective-local-review.test.mjs tests/experimental-options.test.mjs tests/name-homograph-payload.test.mjs
+      - name: Restore bundled Kiwi model assets for runtime tests
+        run: |
+          python3 restore_distribution.py
+          git restore runtime/python-sources.json runtime/assets.json runtime/kiwi/index.js runtime/kiwi/kiwi-wasm.wasm
       - name: Full repository regression suite
         run: PYTHONPATH=python/browser-support npm test
       - name: Verify bundled Python matches source
