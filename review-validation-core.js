@@ -15,16 +15,20 @@
   const source=target.surface,parts=[];let cursor=0;
   for(const segment of raw){
    if(!allowed(segment,['start','end','surface','type','replacement'])||
-      !Number.isInteger(segment.start)||!Number.isInteger(segment.end)||
-      segment.end<=segment.start||typeof segment.surface!=='string'||
-      !/^[가-힣]+$/u.test(segment.surface))return null;
-   let start=segment.start,end=segment.end;
-   if(start<0||end>source.length||source.slice(start,end)!==segment.surface){
+      typeof segment.surface!=='string'||!/^[가-힣]+$/u.test(segment.surface))return null;
+   const hasStart=Object.hasOwn(segment,'start'),hasEnd=Object.hasOwn(segment,'end');
+   if(hasStart!==hasEnd||(hasStart&&
+      (!Number.isInteger(segment.start)||!Number.isInteger(segment.end)||
+       segment.end<=segment.start)))return null;
+   let start=hasStart?segment.start:source.indexOf(segment.surface);
+   let end=hasEnd?segment.end:start+segment.surface.length;
+   if(!hasStart||start<0||end>source.length||source.slice(start,end)!==segment.surface){
+    // Only unique exact substrings can be safely located or realigned.
     start=source.indexOf(segment.surface);
     if(start<0||source.indexOf(segment.surface,start+1)!==-1)return null;
     end=start+segment.surface.length;
    }
-   if(start<cursor||end>source.length)return null;
+   if(start<cursor||start<0||end>source.length||source.slice(start,end)!==segment.surface)return null;
    parts.push({...segment,start,end});cursor=end;
   }
   return parts;
@@ -73,22 +77,26 @@
   for(let i=0;i<(raw||[]).length;i++){
    const part=raw[i],index=i+1;
    if(!allowed(part,['start','end','surface','type','replacement'])||
-      !Number.isInteger(part.start)||!Number.isInteger(part.end)||part.end<=part.start||
       typeof part.surface!=='string'||!/^[가-힣]+$/u.test(part.surface))
-    return '第 '+index+' 段缺少合法 start/end/surface，或包含多余字段';
-   let start=part.start,end=part.end;
-   if(start<0||end>source.length||source.slice(start,end)!==part.surface){
+    return '第 '+index+' 段缺少合法 surface，或包含多余字段';
+   const hasStart=Object.hasOwn(part,'start'),hasEnd=Object.hasOwn(part,'end');
+   if(hasStart!==hasEnd||(hasStart&&
+      (!Number.isInteger(part.start)||!Number.isInteger(part.end)||part.end<=part.start)))
+    return '第 '+index+' 段必须同时提供合法 start/end，或在子词唯一出现时同时省略';
+   let start=hasStart?part.start:source.indexOf(part.surface);
+   let end=hasEnd?part.end:start+part.surface.length;
+   if(!hasStart||start<0||end>source.length||source.slice(start,end)!==part.surface){
     start=source.indexOf(part.surface);
-    if(start<0)return '第 '+index+' 段的 surface 无法在本目标原文中找到';
+    if(start<0)return '第 '+index+' 段的 surface 无法在目标原文中找到';
     if(source.indexOf(part.surface,start+1)!==-1)
-     return '第 '+index+' 段的 surface 在原文中重复出现，不能安全猜测位置';
+     return '第 '+index+' 段的 surface 重复出现，必须提供准确 start/end，不能猜测位置';
     end=start+part.surface.length;
    }
    if(start<cursor)return '第 '+index+' 段与前一段重叠或顺序错误';
-   if(end>source.length)return '第 '+index+' 段超出目标原文边界';
+   if(end>source.length)return '第 '+index+' 段超出完整词边界';
    cursor=end;
   }
-  return '片段与当前目标的原文位置不一致';
+  return '片段与完整目标的原文位置不一致';
  }
  function generatedSegments(target,row,config={}){
   if(!target?.segmentation_review||!row||row.choice_id!=='GEN_SEGMENTS'||
