@@ -32,6 +32,7 @@ test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>
  }
  assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'nonconversion');
  assert.equal(validateChoices([hanja],reply('t0','原潛')).accepted.length,0,'ordinary mode must not accept raw origins');
+ assert.equal(choose(hanja,'元箴',{experimentalHanja:true}).unresolved.length,1,'existing dictionary spelling requires its c0 key');
 });
 
 test('Latin spelling is validated as loanword without trusting an invented pool key',()=>{
