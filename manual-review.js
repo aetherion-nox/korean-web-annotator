@@ -21,7 +21,7 @@ export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=600
 
 function parseAnswer(text){
  if(typeof text!=='string'||!text.trim())throw Error('请先粘贴模型返回的完整 JSON。');
- if(text.length>5*1024*1024)throw Error('结果超过 5 MiB，请仅粘贴本批的 JSON 结果。');
+ if(text.length>16*1024*1024)throw Error('结果超过 16 MiB，请仅粘贴本批的 JSON 结果。');
  let source=text.trim();
  const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
  let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效。请复制完整结果或完整的 ```json 代码块，不要包含解释文字。');}
