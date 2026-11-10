@@ -674,6 +674,11 @@
     let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
     if(response?.batch_id!==backup.requestId)throw Error('batch_id 缺失或不属于当前批次，未应用任何答案。');
     const rows=response?.results,bindings=new Map(backup.bindings.map(b=>[b.target_id,b])),seen=new Set(),accepted=[];
+    // Only the background has the complete original dictionary options and
+    // the independent alignment verifier for experimental x0/x1/x2.
+    // Page-only recovery must not trust model-proposed replacement strings.
+    if(Array.isArray(rows)&&rows.some(row=>/^x[012]$/.test(row?.choice_id)))
+      throw Error('实验性 x0/x1/x2 候选需要后台校验，不能在断线的页面备份中直接应用；请重新连接或重启本次审核。');
     if(!Array.isArray(rows)||rows.length!==bindings.size)throw Error('本批结果不完整，请使用当前批次的全部 target_id。');
     for(const row of rows){
       const binding=bindings.get(row?.target_id),choice=binding?.choices.find(o=>o.choice_id===row?.choice_id);
@@ -737,7 +742,12 @@
       panel.querySelector('.kra-manual-status').textContent=event.error;panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
     }else{
       clearTimeout(task.manualTimer);
-      if(task.manualBackup?.experimentalPhase!=='propose')try{applyManualRecovery(task,task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value,{advance:false,paint:false});}catch(error){addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message});}
+      const submitted=task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value;
+      // The background already validated experimental candidates. Let the
+      // normal model RESULTS event apply them; do not falsely warn on x0.
+      let requiresBackground=false;
+      try{requiresBackground=JSON.parse(submitted).results?.some(row=>/^x[012]$/.test(row?.choice_id))===true;}catch{}
+      if(!requiresBackground)try{applyManualRecovery(task,submitted,{advance:false,paint:false});}catch(error){addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message});}
       task.manualRequest=null;panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }
