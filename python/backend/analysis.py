@@ -268,7 +268,18 @@ class Engine:
             target['partial_word']=a in nominal_ends or b in nominal_starts
             if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
             if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
-        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
+        # Expose Kiwi's actual proposal and conservative name/proper-noun
+        # boundaries only for optional single-pass LLM segmentation auditing.
+        # All offsets are converted once to JavaScript UTF-16 coordinates.
+        # No second tokenization/lookup run, no new dictionary dependencies.
+        repair_context={}
+        if modes.get('smartSegmentation',False):
+            guarded=proper_ranges+(protected_names if name_protection else [])+suspect_ranges+conflicting_ranges
+            protected=sorted(set((to_utf16(text,a),to_utf16(text,b)) for a,b in guarded if 0<=a<b<=len(text)))
+            repair_context={'repair_context':{
+                'kiwi_tokens':token_morphology,
+                'protected_ranges':[list(item) for item in protected]}}
+        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,**repair_context,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
 
 _default_engine=None
 async def analyze(text: str,modes: dict) -> dict:
