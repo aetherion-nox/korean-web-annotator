@@ -5,6 +5,7 @@ import {mergeResegmentationTargets} from '../review-merge.js';
 import {validateGeneratedSegmentsRow} from '../model-origin.js';
 import {runSentencePipeline} from '../annotation-pipeline.js';
 import {engineConfig} from '../local-engine.js';
+import {modelTargets,validateChoices} from '../choice-review.js';
 const config={allowModelSegmentation:true,allowModelHanja:true,allowModelLoanword:true};
 const keep=(surface)=>({choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]});
 const target=(start,end,surface,origin)=>({target_id:'t'+start,start,end,surface,context:'팀장이',options:[keep(surface),{choice_id:'c0',type:'hanja',replacement:origin,entry_id:start+1,definitions:['dictionary sense']}]});
@@ -82,4 +83,20 @@ test('model pipeline reviews previously missed compound exactly once',async()=>{
  assert.deepEqual(result.results[0].annotations.map(a=>({surface:a.surface,replacement:a.replacement})),
   [{surface:'팀',replacement:'team'},{surface:'장',replacement:'長'}]);
  assert.equal(out.find(e=>e.type==='DONE').stats.model_resegmented,1);
+});
+
+test('unknown current meaning can generate its real origin instead of borrowing the sole dictionary homophone',()=>{
+ const current={target_id:'t0',start:3,end:5,surface:'원잠',context:'핵잠(원잠)',
+  review_reasons:['weak_unique_dictionary_candidate'],
+  options:[keep('원잠'),{choice_id:'c0',type:'hanja',replacement:'原蠶',
+   entry_id:465818,definitions:['원잠종을 받기 위하여 계통을 바르게 한 누에.'],
+   subject_category:'농업',written_form:'원잠',part_of_speech:'명사'}]};
+ const inputs=modelTargets([current],{allowModelHanja:true});
+ assert.deepEqual(inputs[0].generated_choices,['GEN_HANJA']);
+ assert.equal(inputs[0].options[1].replacement,'原蠶');
+ const generated={target_id:'t0',choice_id:'GEN_HANJA',replacement:'原潛'};
+ const result=validateChoices([current],{results:[generated]}, {allowModelHanja:true});
+ assert.equal(result.unresolved.length,0);
+ assert.equal(result.accepted[0].option.replacement,'原潛');
+ assert.equal(validateChoices([current],{results:[{...generated,choice_id:'c9'}]}, {allowModelHanja:true}).accepted.length,0);
 });
