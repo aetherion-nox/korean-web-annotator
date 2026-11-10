@@ -1,91 +1,101 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {appendExperimentalOptions} from '../experimental-options.js';
+import {literalOriginOption,canProposeExperimentalOption} from '../experimental-options.js';
 import {buildReviewPayload,buildManualPrompt} from '../review-payload.js';
-import {validateExperimentalChoices} from '../choice-review.js';
+import {validateExperimentalChoices,validateChoices} from '../choice-review.js';
 import {projectAnnotation} from '../local-engine.js';
+
 const hanja={target_id:'t0',start:0,end:2,surface:'원잠',context:'원잠을 보유한다.',options:[
  {choice_id:'KEEP',type:'keep',replacement:'원잠',entry_id:null,definitions:[]},
  {choice_id:'c0',type:'hanja',replacement:'元箴',entry_id:10,definitions:['unrelated meaning']}]};
 const loan={target_id:'t1',start:0,end:2,surface:'게임',context:'게임을 한다.',options:[
  {choice_id:'KEEP',type:'keep',replacement:'게임',entry_id:null,definitions:[]},
- {choice_id:'n0',type:'nonconversion',replacement:'게임',entry_id:12,definitions:['unrelated sense']}]};
-const proposal=(target_id,type,replacement,definition='specific etymological sense',choice_id='x0')=>({target_id,choice_id,type,replacement,definition});
-const response=(proposals,results)=>({experimental_options:proposals,results});
+ {choice_id:'n0',type:'nonconversion',replacement:'게임',entry_id:12,definitions:['native meaning']}]};
+const reply=(target_id,choice_id)=>({results:[{target_id,choice_id}]});
+const choose=(target,choice_id,config)=>validateExperimentalChoices([target],reply(target.target_id,choice_id),config);
 
-test('one JSON answer adds Hanja candidate and selects x0',()=>{
- const answer=response([proposal('t0','hanja','原潛')],[{target_id:'t0',choice_id:'x0'}]);
- const expanded=appendExperimentalOptions([hanja],answer,{experimentalHanja:true});
- assert.equal(expanded.length,1);
- assert.deepEqual(expanded[0].options.map(o=>o.choice_id),['KEEP','c0','x0']);
- assert.deepEqual(projectAnnotation(hanja.context,{...expanded[0],...expanded[0].options.at(-1)}).map(x=>x.replacement),['原潛']);
- const checked=validateExperimentalChoices([hanja],answer,{experimentalHanja:true});
- assert.equal(checked.accepted.length,1);assert.equal(checked.accepted[0].option.replacement,'原潛');
- assert.equal(checked.experimentalAccepted,1);assert.equal(checked.unresolved.length,0);
+test('literal Hanja is read from results.choice_id; no proposal array or x0 required',()=>{
+ const result=choose(hanja,'原潛',{experimentalHanja:true});
+ assert.equal(result.accepted.length,1);assert.equal(result.unresolved.length,0);
+ assert.equal(result.accepted[0].option.choice_id,'原潛');
+ assert.equal(result.accepted[0].option.entry_id,'experimental:hanja');
+ assert.deepEqual(projectAnnotation(hanja.context,{...result.accepted[0].target,...result.accepted[0].option}).map(a=>a.replacement),['原潛']);
+ assert.equal(result.experimentalAccepted,1);
+ assert.deepEqual(hanja.options.map(o=>o.choice_id),['KEEP','c0'],'dictionary target is not mutated');
 });
 
-test('ordinary existing c0/n0/KEEP remain selectable with experimental mode enabled',()=>{
- for(const choice_id of ['c0','KEEP']){
-  const result=validateExperimentalChoices([hanja],response([],[{target_id:'t0',choice_id}]),{experimentalHanja:true});
-  assert.equal(result.accepted[0].option.choice_id,choice_id);
+test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>{
+ for(const id of ['c0','KEEP']){
+  const result=choose(hanja,id,{experimentalHanja:true});
+  assert.equal(result.accepted[0].option.choice_id,id);
+  assert.equal(result.experimentalAccepted,0);
  }
- const native=validateExperimentalChoices([loan],response([],[{target_id:'t1',choice_id:'n0'}]),{experimentalLoanword:true});
- assert.equal(native.accepted[0].option.type,'nonconversion');
+ assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'nonconversion');
+ assert.equal(validateChoices([hanja],reply('t0','原潛')).accepted.length,0,'ordinary mode must not accept raw origins');
 });
 
-test('loanword original works but arbitrary translations, disabled modes and malformed origins do not',()=>{
- const result=validateExperimentalChoices([loan],response([proposal('t1','loanword','game')],[{target_id:'t1',choice_id:'x0'}]),{experimentalLoanword:true});
- assert.equal(result.accepted[0].option.replacement,'game');
- const spans=projectAnnotation(loan.context,{...result.accepted[0].target,...result.accepted[0].option});
- assert.deepEqual([spans[0].start,spans[0].end,spans[0].replacement],[0,2,'game']);
- for(const [type,replacement,settings] of [
-  ['hanja','原潛',{}],['hanja','原子潛水艇',{experimentalHanja:true}],
-  ['hanja','元箴',{experimentalHanja:true}],['loanword','遊戲',{experimentalLoanword:true}],
-  ['loanword','game',{experimentalHanja:true}]
+test('Latin spelling is validated as loanword without trusting an invented pool key',()=>{
+ const result=choose(loan,'game',{experimentalLoanword:true});
+ assert.equal(result.accepted.length,1);assert.equal(result.accepted[0].option.type,'loanword');
+ assert.deepEqual(projectAnnotation(loan.context,{...result.accepted[0].target,...result.accepted[0].option}).map(a=>a.replacement),['game']);
+ for(const id of ['x0','c99','n999','p0','KEEP '])
+  assert.equal(choose(loan,id,{experimentalLoanword:true}).unresolved.length,1,id);
+});
+
+test('script, alignment and enabled-mode guards reject invented or malformed values',()=>{
+ for(const [target,raw,config] of [
+  [hanja,'原潛',{}],[hanja,'原子潛水艇',{experimentalHanja:true}],
+  [hanja,'元箴',{experimentalHanja:false}],[hanja,'원잠',{experimentalHanja:true}],
+  [loan,'game',{experimentalHanja:true}],[loan,'遊戲',{experimentalLoanword:true}],
+  [loan,'https://url.test',{experimentalLoanword:true}],
+  [loan,' game',{experimentalLoanword:true}],
+  [hanja,'原潛\nKEEP',{experimentalHanja:true}]
  ]){
-  const target=type==='hanja'?hanja:loan,answer=response([proposal(target.target_id,type,replacement)],[{target_id:target.target_id,choice_id:'x0'}]);
-  assert.equal(validateExperimentalChoices([target],answer,settings).unresolved.length,1,type+' '+replacement);
+  assert.equal(choose(target,raw,config).unresolved.length,1,JSON.stringify(raw));
  }
 });
 
-test('name, proper noun and partial-word targets never accept experimental proposal',()=>{
- const answer=response([proposal('t0','hanja','原潛')],[{target_id:'t0',choice_id:'x0'}]);
- for(const key of ['proper_noun','suspected_person_name','dictionary_person_name','dictionary_name_homograph','partial_word']){
-  assert.equal(validateExperimentalChoices([{...hanja,[key]:true}],answer,{experimentalHanja:true}).unresolved.length,1,key);
+test('never invent new origins for flagged proper names or incomplete source words',()=>{
+ for(const flag of ['proper_noun','suspected_person_name','dictionary_person_name','dictionary_name_homograph','partial_word']){
+  const t={...hanja,[flag]:true};
+  assert.equal(canProposeExperimentalOption(t),false);
+  assert.equal(choose(t,'原潛',{experimentalHanja:true}).unresolved.length,1,flag);
+  assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys are independent of literal filter');
  }
 });
 
-test('invalid experimental IDs, cross-batch proposals and duplicate slots cannot be used',()=>{
- for(const bad of [
-  response([proposal('cross-batch','hanja','原潛')],[{target_id:'t0',choice_id:'x0'}]),
-  response([proposal('t0','hanja','原潛'),proposal('t0','hanja','元潛')],[{target_id:'t0',choice_id:'x0'}]),
-  response([proposal('t0','hanja','原潛','def','x1')],[{target_id:'t0',choice_id:'x1'}]),
-  {results:[{target_id:'t0',choice_id:'x0'}]},
-  response([proposal('t0','hanja','原潛')],[{target_id:'t0',choice_id:'p0'}]),
-  response([proposal('t0','hanja','原潛')],[{target_id:'other',choice_id:'x0'}])
+test('cross-batch, duplicate, extra fields and obsolete experimental arrays are rejected',()=>{
+ for(const payload of [
+  {results:[{target_id:'foreign',choice_id:'原潛'}]},
+  {results:[{target_id:'t0',choice_id:'原潛'},{target_id:'t0',choice_id:'KEEP'}]},
+  {results:[{target_id:'t0',choice_id:'原潛',replacement:'evil'}]},
+  {results:[{target_id:'t0',choice_id:'x0'}],experimental_options:[]},
+  {results:[{target_id:'t0',choice_id:12}]}
  ]){
-  assert.equal(validateExperimentalChoices([hanja],bad,{experimentalHanja:true}).accepted.length,0,JSON.stringify(bad));
+  assert.equal(validateExperimentalChoices([hanja],payload,{experimentalHanja:true}).accepted.length,0,JSON.stringify(payload));
  }
- const fallback=validateExperimentalChoices([hanja],response([proposal('t0','hanja','原子潛水艇')],[{target_id:'t0',choice_id:'c0'}]),{experimentalHanja:true});
- assert.equal(fallback.accepted[0].option.choice_id,'c0','Malformed optional proposal must not discard a valid dictionary choice');
 });
 
-test('multiple proposals per target use target-local x0/x1 keys',()=>{
- const answer=response([proposal('t0','hanja','原潛'),proposal('t0','hanja','元潛','a second sense','x1')],[{target_id:'t0',choice_id:'x1'}]);
- const result=validateExperimentalChoices([hanja],answer,{experimentalHanja:true});
- assert.equal(result.experimentalProposed,2);assert.equal(result.accepted[0].option.replacement,'元潛');
+test('spaced Hanja phrase infers source-aligned segments while preserving the space',()=>{
+ const t={target_id:'t2',start:0,end:6,surface:'이산화 탄소',context:'이산화 탄소',options:[
+  {choice_id:'KEEP',type:'keep',replacement:'이산화 탄소',entry_id:null,definitions:[]}]};
+ const result=choose(t,'二酸化炭素',{experimentalHanja:true});
+ assert.equal(result.accepted.length,1);
+ assert.equal(result.accepted[0].option.replacement,'二酸化 炭素');
+ assert.deepEqual(projectAnnotation(t.context,{...t,...result.accepted[0].option}).map(a=>[a.surface,a.replacement]),
+  [['이산화','二酸化'],['탄소','炭素']]);
+ assert.equal(literalOriginOption(t,'二酸化',{experimentalHanja:true}),null);
 });
 
-test('manual and API prompts include experimental_modes and ordered single-reply schema',()=>{
- const prompt=buildManualPrompt(hanja.context,[hanja],'BATCH',{experimentalHanja:true});
- const payload=JSON.parse(prompt.split('\n').at(-1));
- assert.equal(payload.batch_id,'BATCH');assert.equal(payload.experimental_modes.hanja,true);
- assert.match(prompt,/"experimental_options":\[\]/);
- assert.ok(prompt.includes('experimental_options FIRST'));
- const ordinary=buildManualPrompt(hanja.context,[hanja],'BATCH2',{});
- assert.ok(!ordinary.includes('experimental_options FIRST'));
- assert.equal(JSON.parse(ordinary.split('\n').at(-1)).experimental_modes,undefined);
+test('manual and API prompt use only results; the input still advertises experimental modes',()=>{
+ const manual=buildManualPrompt(hanja.context,[hanja],'BATCH',{experimentalHanja:true});
+ assert.deepEqual(JSON.parse(manual.split('\n').at(-1)).experimental_modes,{hanja:true,loanword:false});
+ assert.ok(manual.includes('results'));
+ assert.ok(manual.includes('原潛'));
+ assert.ok(!manual.includes('"experimental_options":['));
+ const nonexperimental=buildManualPrompt(hanja.context,[hanja],'BATCH2',{});
+ assert.equal(JSON.parse(nonexperimental.split('\n').at(-1)).experimental_modes,undefined);
  const packed=buildReviewPayload(hanja.context,[hanja],{experimentalHanja:true}).payload;
- assert.equal(packed.format,'shared-pools-v3');assert.equal(packed.experimental_modes.hanja,true);
  assert.equal(packed.targets[0].options.c0,'p0');
+ assert.equal(packed.format,'shared-pools-v3');
 });
