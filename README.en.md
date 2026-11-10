@@ -67,6 +67,8 @@ When API review is enabled, relevant page text and dictionary candidates are sen
 
 **v1.1.68 partial review preview and compact results:** Generated origins need replacement or segments, not mandatory confidence or evidence. Dictionary choices require an authorized choice_id and no model-invented replacement. Valid manual answers appear as reversible previews while remaining IDs are repaired. Diagnostics distinguish conversion from no-op decisions and report detached page text. Preview does not complete a batch.
 
+**v1.1.69 single-candidate semantic risk:** A high lexical/POS score is not proof that a dictionary definition fits its sentence. Short, two-syllable words with exactly one dictionary candidate and no verified collocation/unit evidence are deferred to semantic review. The model can generate a missing etymology only when the experimental feature is enabled; otherwise KEEP preserves the source. Multi-entry and collocation-backed words retain their fast local path.
+
 ## 5. Troubleshooting
 
 - **Nothing happens:** Check that the dictionary was imported, reload the extension, and refresh the page.
