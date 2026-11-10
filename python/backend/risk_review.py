@@ -108,8 +108,10 @@ def weak_unique_candidate(segment, tokens):
     writings = {str(c['replacement']) for c in candidates}
     if len(writings) != 1:
         return False
-    chosen = next((c for c in candidates
-                   if c.get('entry_id') == segment.matched_entry_id), None)
+    matched_id = getattr(segment, 'matched_entry_id', None)
+    chosen = (next((c for c in candidates
+                    if c.get('entry_id') == matched_id), None)
+              if matched_id is not None else candidates[0])
     if chosen is None:
         return False
     reason = str(chosen.get('selection_reason') or '')
