@@ -97,13 +97,6 @@ const localAuditCopy={
  ko:['로컬 확정 변환도 모델로 재검토 (기본 켜짐)','모델 검토 시 로컬의 비변환 결정은 그대로 두고, 한자어/외래어로 확정된 변환은 바로 적용하지 않고 기존 사전 후보로 재검토합니다. 응답이 무효이거나 없으면 한글을 유지합니다. 모델 검토를 끄면 기존 로컬 동작이 유지됩니다.']
 };
 for(const [locale,labels] of Object.entries(localAuditCopy))Object.assign(copy[locale],{reviewLocalConversions:labels[0],reviewLocalConversionsHint:labels[1]});
-const importStages={
- 'zh-CN':{'import-upload':'读取文件并暂存…','import-read':'从存储读取词典…','dictionary':'启动 Pyodide 词典引擎…','import-parse':'核对或解析词典并构建数据库…','import-validate':'核验 DB 数据库结构与完整性…','import-serialize':'提取生成的 SQLite 数据库…','import-save':'持久化词典数据库…','import-done':'词典导入完成。'},
- 'zh-TW':{'import-upload':'讀取並暫存檔案…','import-read':'從儲存空間讀取詞典…','dictionary':'啟動 Pyodide 詞典引擎…','import-parse':'核對或解析詞典並建立資料庫…','import-validate':'檢查 DB 資料庫結構和完整性…','import-serialize':'擷取 SQLite 資料庫…','import-save':'儲存詞典資料庫…','import-done':'詞典匯入完成。'},
- en:{'import-upload':'Reading and staging file…','import-read':'Loading dictionary from storage…',dictionary:'Starting dictionary engine…','import-parse':'Checking or parsing the dictionary…','import-validate':'Validating DB structure and integrity…','import-serialize':'Exporting SQLite database…','import-save':'Saving dictionary database…','import-done':'Dictionary import complete.'},
- ja:{'import-upload':'ファイルを読み込み中…','import-read':'辞書をストレージから読み込み中…',dictionary:'辞書エンジンを起動中…','import-parse':'辞書を検証または解析中…','import-validate':'DB の構造と整合性を確認中…','import-serialize':'SQLite データベースを書き出し中…','import-save':'辞書データベースを保存中…','import-done':'辞書のインポートが完了しました。'},
- ko:{'import-upload':'파일을 읽고 저장하는 중…','import-read':'저장소에서 사전을 읽는 중…',dictionary:'사전 엔진을 시작하는 중…','import-parse':'사전을 확인하거나 분석하는 중…','import-validate':'DB 데이터베이스 구조와 무결성을 검증하는 중…','import-serialize':'SQLite 데이터베이스를 추출하는 중…','import-save':'사전 데이터베이스를 저장하는 중…','import-done':'사전 가져오기 완료.'}
-};
 const t=key=>(copy[$('uiLocale').value]||copy.en)[key];
 function translate(){for(const el of document.querySelectorAll('[data-engine-i18n]'))el.textContent=t(el.dataset.engineI18n);}
 async function save(changed){
@@ -117,20 +110,7 @@ function show(result){importedDictionary=result.imported;status.textContent=(dic
 async function refreshDictionaryStatus(){show(await readDictionaryInfo());}
 function busy(value){$('dictionaryProgress').hidden=!value;for(const id of ['importDictionary','clearDictionary','dictionaryFile'])$(id).disabled=value;}
 for(const key of ['enableModelReview','reviewAllCandidates','manualModelReview','experimentalHanja','experimentalLoanword','reviewLocalConversions','batchContextTier','nameProtection','reviewPosFilter','preloadEngineOnStartup'])$(key).addEventListener('change',()=>save(key).catch(e=>status.textContent=e.message));
-$('importDictionary').addEventListener('click',async()=>{
- const file=$('dictionaryFile').files?.[0];if(!file){status.textContent=t('missing');return;}
- busy(true);const started=Date.now();status.textContent=t('busy');
- try{
-  const result=await importBrowserDictionary(file,progress=>{
-   const locale=$('uiLocale').value;status.textContent=(importStages[locale]||importStages.en)[progress.stage]||t('busy');
-  });
-  await refreshDictionaryStatus();
-  const seconds=((Date.now()-started)/1000).toFixed(1);
-  const isChinese=$('uiLocale').value.startsWith('zh');
-  status.textContent=(result.reused?(isChinese?'词典内容未变，已跳过重复建库。':'Dictionary unchanged; skipped rebuilding.'):t('ready'))+' ('+seconds+' s)';
-  chrome.runtime.sendMessage({type:'KRA_PRELOAD_ENGINE'}).catch(()=>{});
- }catch(e){status.textContent=e.message;}finally{busy(false);}
-});
+$('importDictionary').addEventListener('click',async()=>{const file=$('dictionaryFile').files?.[0];if(!file){status.textContent=t('missing');return;}busy(true);status.textContent=t('busy');try{await importBrowserDictionary(file);await refreshDictionaryStatus();chrome.runtime.sendMessage({type:'KRA_PRELOAD_ENGINE'}).catch(()=>{});}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('clearDictionary').addEventListener('click',async()=>{busy(true);try{await clearBrowserDictionary();await refreshDictionaryStatus();}catch(e){status.textContent=e.message;}finally{busy(false);}});
 $('uiLocale').addEventListener('change',()=>{translate();show({imported:importedDictionary});});
 chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','experimentalHanja','experimentalLoanword','reviewLocalConversions','batchContextTier','nameProtection','reviewPosFilter','preloadEngineOnStartup','uiSettings']).then(async s=>{$('preloadEngineOnStartup').checked=s.preloadEngineOnStartup!==false;$('reviewPosFilter').checked=s.reviewPosFilter!==false;$('nameProtection').checked=s.nameProtection!==false;$('reviewAllCandidates').checked=s.reviewAllCandidates===true;$('manualModelReview').checked=s.manualModelReview===true;$('reviewLocalConversions').checked=s.reviewLocalConversions!==false;$('experimentalHanja').checked=s.experimentalHanja===true;$('experimentalLoanword').checked=s.experimentalLoanword===true;$('batchContextTier').value=normalizeBatchContextTier(s.batchContextTier);$('enableModelReview').checked=s.enableModelReview===true||s.reviewAllCandidates===true||s.manualModelReview===true||s.experimentalHanja===true||s.experimentalLoanword===true;if(s.enableModelReview===undefined)await chrome.storage.local.set({preloadEngineOnStartup:$('preloadEngineOnStartup').checked,reviewPosFilter:$('reviewPosFilter').checked,nameProtection:$('nameProtection').checked,enableModelReview:$('enableModelReview').checked});if(s.uiSettings?.uiLocale)$('uiLocale').value=s.uiSettings.uiLocale;translate();await refreshDictionaryStatus();}).catch(e=>status.textContent=e.message);translate();
