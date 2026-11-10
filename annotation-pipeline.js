@@ -12,7 +12,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const bypassCache=selectionReview || message.forceRegenerate;
  enabled=enabled || reviewAll;
  if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>5000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
- const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
+ const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false,filterDictionaryPeople:message.filterDictionaryPeople!==false};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
  const stats={local_determined:0,pending:0,model_resolved:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
