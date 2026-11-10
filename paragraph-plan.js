@@ -40,8 +40,28 @@ export function createParagraphPlan(entries,readSource,blockSelector){
   }
   return output;
  }
+ // Count source spans that no DOM member can display without
+ // destroying source alignment. These are not model formatting errors.
+ function projectionAudit(){
+  const audit={modelSourceSpans:0,modelCrossNodeDropped:0,modelUnownedSpans:0,
+   localSourceSpans:0,localCrossNodeDropped:0,localUnownedSpans:0};
+  for(const group of groups.values())for(const source of ['model','local']){
+   const data=group.results.get(source);
+   if(!data)continue;
+   for(const batch of data.values())for(const a of batch.annotations){
+    audit[source+'SourceSpans']++;
+    const members=group.members.filter(m=>a.start<m.end&&m.start<a.end);
+    if(!members.length){audit[source+'UnownedSpans']++;continue;}
+    const full=members.some(m=>m.start<=a.start&&a.end<=m.end);
+    if(!full&&(a.type!=='hanja'||Array.from(a.surface).length!==Array.from(a.replacement).length))
+     audit[source+'CrossNodeDropped']++;
+   }
+  }
+  return audit;
+ }
  return {
   sentences,
+  projectionAudit,
   context:[...groups.values()].map(g=>g.text).join('\n'),
   projectResult(item,{source='local',provisional=false}={}){
    const chunk=byId.get(item.id);if(!chunk)throw Error('未知段落结果。');const g=chunk.group;
