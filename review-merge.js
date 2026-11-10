@@ -1,3 +1,5 @@
+import {localBoundaryUnsafe} from './review-boundary.js';
+
 // Merge a raw-word model rescue with subordinate dictionary review targets.
 // No two model tasks may own intersecting source spans. Preserve the original
 // sense definitions as evidence, but choose a single whole-word outcome.
@@ -44,4 +46,64 @@ export function mergeResegmentationTargets(analysis,proposed){
  }
  return {targets:[...targets,...accepted].sort((a,b)=>a.start-b.start||a.end-b.end),
          added:accepted.length,removed,merged:accepted.length};
+}
+
+/**
+ * Only retry original dictionary senses when every sub-target has an
+ * independently verified lexical boundary. Otherwise retry the COMPLETE
+ * merged word with its preserved component dictionary evidence. Neither
+ * branch can silently reapply a local spelling that the model rejected.
+ *
+ * The callers submit these as a separate model/manual review batch, after
+ * the primary whole-word result is known, and validate every decision again.
+ */
+export function planSegmentationFallback(text,analysis,accepted=[],unresolved=[]){
+ const choices=new Map(accepted.map(a=>[a.target.target_id,a.option]));
+ const unresolvedIds=new Set(unresolved.map(t=>t.target_id));
+ const targets=[];let preserved=0,safeOriginals=0,wholeRechecks=0,unsafeComponents=0;
+ const eligible=original=>{
+  if(original.partial_word===true||original.boundary_unverified===true||
+    original.dictionary_person_name===true||original.suspected_person_name===true||
+    original.proper_noun===true)return false;
+  if(!Number.isInteger(original.start)||!Number.isInteger(original.end)||
+    original.start<0||original.end>text.length||original.start>=original.end||
+    text.slice(original.start,original.end)!==original.surface)return false;
+  return !localBoundaryUnsafe(text,original,analysis);
+ };
+ for(const whole of analysis.targets||[]){
+  const previous=choices.get(whole.target_id);
+  if(!whole.segmentation_review||!Array.isArray(whole.fallback_targets)||
+     (!unresolvedIds.has(whole.target_id)&&previous?.type!=='keep'))continue;
+  const originals=whole.fallback_targets.filter(t=>(t.options||[]).some(o=>
+    ['hanja','loanword','mixed'].includes(o.type)&&o.entry_id!=null));
+  if(!originals.length)continue;
+  preserved+=originals.length;
+  const safe=originals.filter(eligible);
+  unsafeComponents+=originals.length-safe.length;
+  if(safe.length===originals.length){
+   for(const original of safe){
+    targets.push({...original,context:whole.context||text,
+     ...(whole.adjacent_context?{adjacent_context:whole.adjacent_context}:{}),
+     fallback_dictionary_only:true,recovery_parent:whole.target_id,
+     review_reasons:[...new Set([...(original.review_reasons||[]),'fallback_original_dictionary_sense'])],
+     repair_feedback:'之前整词审核未得到有效转换。请在完整原文「'+whole.surface+
+      '」的语境中验证此独立词的真实语义与词界；只选确实匹配的原始词典选项，不得根据读音强行套用汉字。若不符返回 KEEP。'});
+    safeOriginals++;
+   }
+  }else{
+   // Unknown word-internal boundaries cannot be validated by individual
+   // dictionary senses; another whole-word answer is the only safe rescue.
+   targets.push({...whole,
+    recovery_parent:whole.target_id,
+    review_reasons:[...new Set([...(whole.review_reasons||[]),'fallback_complete_lexeme'])],
+    repair_feedback:'此前整词审核没有生成可用的完整词源。合并前保存了 '+originals.length+
+     ' 个词典子项，其中 '+(originals.length-safe.length)+
+     ' 个缺少可靠独立词界。请重新判断完整词干「'+whole.surface+
+     '」的语义，并逐一核对 component_candidates 的词典释义是否实际适用于此处。'+
+     '如果完整汉字词源确凿，优先返回一个覆盖完整词干的 GEN_SEGMENTS；真实混种词才分段。'+
+     '不得仅因为子项同音就套用汉字，不确定时继续 KEEP。'});
+   wholeRechecks++;
+  }
+ }
+ return {targets,preserved,safeOriginals,wholeRechecks,unsafeComponents};
 }
