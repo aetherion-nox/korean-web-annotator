@@ -6,7 +6,7 @@ separators, not letters to insert into the page or into Hanja alignments.
 Only exact indexed spelling variants are queried; no LIKE/REPLACE table scans.
 """
 import re
-from itertools import combinations, product
+from itertools import product
 
 HANGUL = re.compile(r'^[가-힣]+$')
 SEPARATORS = ' -^'
@@ -50,12 +50,9 @@ def headword_aliases(value):
     for boundary in range(1,len(clean)):
         for separator in ('^','-',' '):
             add(clean[:boundary]+separator+clean[boundary:])
-    # Two explicit separator boundaries cover short compound headwords
-    # without exponential expansion for long sentences.
-    if len(clean)<=7:
-        for a,b in combinations(range(1,len(clean)),2):
-            for x,y in product(('^','-',' '),repeat=2):
-                add(clean[:a]+x+clean[a:b]+y+clean[b:])
+    # Multi-separator matches are limited to observed boundaries above.
+    # Do not enumerate arbitrary two-/three-gap partitions for every token:
+    # that would turn ordinary local lookup into hundreds of SQL probes.
     return tuple(result)
 
 def aligned_hanja_alias(query,record):
