@@ -3,8 +3,8 @@ import {qwenRequestSettings} from './qwen-api.js';
 import {readModelContent,choicePreviewParser,experimentalChoicePreviewParser} from './model-stream.js';
 import {requestLogger} from './request-log.js';
 import './model-catalog.js';
-import {buildReviewPayload,REVIEW_INSTRUCTIONS} from './review-payload.js';
-import {EXPERIMENTAL_REVIEW_INSTRUCTIONS,literalOriginOption} from './experimental-options.js';
+import {buildReviewPayload,buildReviewInstructions} from './review-payload.js';
+import {literalOriginOption} from './experimental-options.js';
 import {normalizeOutputTokenLimit} from './batch-budget.js';
 export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
@@ -101,7 +101,7 @@ async function requestChoices(config,targets,signal){
  const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets,config);
  config.onDiagnostic?.({stage:'request',level:'info',message:`共享请求：${payloadStats.targets} 个词，${payloadStats.sentences} 份句子，${payloadStats.candidates} 个候选；用户输入 ${payloadStats.legacyUserBytes} → ${payloadStats.userBytes} 字节。`});
  let body={model:config.model,messages:[
-  {role:'system',content:REVIEW_INSTRUCTIONS+(config.experimentalHanja===true||config.experimentalLoanword===true?'\n'+EXPERIMENTAL_REVIEW_INSTRUCTIONS:'')},
+  {role:'system',content:buildReviewInstructions(config)},
   {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
  if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
  const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
@@ -134,7 +134,7 @@ async function requestChoices(config,targets,signal){
   const response=await fetch(config.endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:requestSignal});
   status=response.status;responseHeaders=Object.fromEntries(['content-type','x-request-id','request-id','retry-after'].map(name=>[name,response.headers.get(name)]).filter(([,v])=>v));
   if(!response.ok){const detail=await response.text();onRaw(detail);const error=Error(`模型 API HTTP ${response.status}`);error.detail=detail;error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
-  // Streaming previews start only after the entire proposal list has passed validation.
+  // Streamed literal origins are validated per complete result before preview.
   const preview=!config.onPreview?()=>{}:(config.experimentalHanja||config.experimentalLoanword)?experimentalChoicePreviewParser(targets,config,config.onPreview):choicePreviewParser(targets,config.onPreview);
   const content=await readModelContent(response,{protocol:responses?'responses':provider==='anthropic'?'anthropic':'chat',signal:requestSignal,maxContentChars:Math.min(16_000_000,Math.max(2_000_000,outputTokenLimit*8)),onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
   let result;try{if(typeof content!=='string'||!content.trim())throw Error('empty');result=JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}
