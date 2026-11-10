@@ -90,7 +90,7 @@ def align_mixed(surface, origin):
     return _align_origin(surface,origin) if CJK.search(origin) else _align_native_loanword(surface,origin)
 
 def candidate_spans(text,tokens,*,include_spaced=False):
-    """Exact possible dictionary spans, allowing at most two internal spaces.
+    """Exact possible dictionary spans, allowing at most three internal spaces.
 
     Spaced forms are used only when an actual dictionary entry matches;
     don't create arbitrary cross-sentence words or skip particles/punctuation.
@@ -103,12 +103,12 @@ def candidate_spans(text,tokens,*,include_spaced=False):
             if nxt.tag.split('-')[0] not in LEXICAL:break
             gap=text[end:nxt.start]
             if gap:
-                if not include_spaced or gap!=' ' or spaces>=2:break
+                if not include_spaced or gap!=' ' or spaces>=3:break
                 spaces+=1
             end=nxt.start+nxt.length
             word=text[start:end]
             letters=word.replace(' ','')
-            if len(letters)>16:break
+            if spaces and len(letters)>16:break
             if HANGUL.fullmatch(letters):spans.add((start,end,word))
     return sorted(spans,key=lambda r:(r[0],-r[1]))
 
