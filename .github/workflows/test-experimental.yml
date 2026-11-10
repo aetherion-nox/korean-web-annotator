@@ -47,3 +47,30 @@ jobs:
               assert bundle[key]==Path(path).read_text(), path
           print('bundled sources match')
           PY
+      - name: Package loadable extension ZIP
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, zipfile
+          from pathlib import Path
+          root=Path.cwd()
+          tracked=[Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if p]
+          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests'} and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          dest=root/'Korean-Web-Annotator-v1.1.55-selective-review-experimental.zip'
+          with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
+              for path in sorted(files):archive.write(root/path,'Korean-Web-Annotator/'+path.as_posix())
+          with zipfile.ZipFile(dest) as archive:
+              assert archive.testzip() is None
+              assert 'Korean-Web-Annotator/runtime/models/nounchr.mdl' in archive.namelist()
+              assert 'Korean-Web-Annotator/runtime/python-sources.json' in archive.namelist()
+              assert json.loads(archive.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.55'
+          print('Installable ZIP:',dest.name,dest.stat().st_size,'bytes')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Korean-Web-Annotator-Selective-Review-Test-Build
+          path: Korean-Web-Annotator-v1.1.55-selective-review-experimental.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
