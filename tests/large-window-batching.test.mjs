@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {contextReviewBatches,describeBatchBudget,normalizeOutputLimitTokens} from '../batch-budget.js';
+import {contextReviewBatches,describeBatchBudget,normalizeOutputLimitTokens,estimateTokenCount} from '../batch-budget.js';
 import {reviewTargets} from '../choice-review.js';
 const keep=(surface)=>({choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]});
 function dataset(count=418,{segments=false}={}){
@@ -84,4 +84,27 @@ test('API request passes the user-approved actual output ceiling to provider pay
   assert.equal(accepted.accepted.length,1);
   assert.equal(body.max_tokens,131072);
  }finally{globalThis.fetch=original;}
+});
+
+test('compact generated answer estimate excludes retired confidence and evidence fields',()=>{
+ const {context,item}=dataset(120,{segments:true});
+ const t=item.result.unresolved;
+ const cfg={tier:'512k',manual:true,allowModelSegmentation:true,allowModelHanja:true,manualOutputTokens:65536};
+ const result=describeBatchBudget(context,t,cfg);
+ const legacy={batch_id:'00000000',results:t.map((target,i)=>({
+  target_id:'t'+i,choice_id:'GEN_SEGMENTS',segments:[
+   {start:0,end:2,surface:'最高',type:'hanja',replacement:'最高'}
+  ],confidence:'high',evidence:'Detailed phonetic and etymological evidence supporting the proposed compound segmentation'
+ }))};
+ const extra=estimateTokenCount(JSON.stringify(legacy));
+ assert.ok(result.outputTokens>0);
+ // Estimation still accounts for multiple lexical segments; it should no
+ // longer reserve unsupported confidence/evidence strings per target.
+ assert.ok(result.outputTokens<extra*1.5);
+ const oldLikeCurrent=JSON.stringify({batch_id:'00000000',results:t.map((target,i)=>({
+  target_id:'t'+i,choice_id:'GEN_SEGMENTS',
+  segments:Array.from({length:4},(_,j)=>({start:j*2,end:j*2+2,surface:target.surface.slice(j*2,j*2+2),type:'hanja',replacement:'中中'})),
+  confidence:'high',evidence:'Detailed phonetic and etymological evidence supporting the proposed compound segmentation'
+ }))});
+ assert.ok(result.outputTokens<Math.ceil(estimateTokenCount(oldLikeCurrent)*1.1)+32);
 });
