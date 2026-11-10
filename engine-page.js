@@ -10,7 +10,7 @@ function getWorker(){
 function work(request,transfer=[]){return new Promise((resolve,reject)=>{const id=++number;pending.set(id,{resolve,reject,progressId:request.progressId});try{getWorker().postMessage({id,request},transfer);}catch(error){pending.delete(id);reject(error);}});}
 function reportProgress(progressId,progress){chrome.runtime.sendMessage({type:'BROWSER_ENGINE_PROGRESS',progressId,progress}).catch(()=>{});}
 async function dispatch(request){
- if(request.action==='clear'){resetWorker();await storage('delete','dictionary');return {ready:false,dictionary_loaded:false};}
+ if(request.action==='clear'){resetWorker();await storage('delete','dictionary');await storage('delete','dictionary-hash');return {ready:false,dictionary_loaded:false};}
  if(request.action==='warmup'&&pendingImports)return {ready:false,skipped:true,reason:'import-pending'};
  if(request.action==='warmup'&&preloaded)return {ready:true,preloaded:true};
  const missing='当前插件没有已保存的词典。请打开插件设置，选择 ZIP 或电脑预处理的 DB 文件并导入；重新安装插件或更换扩展身份后需要再次导入。';
@@ -21,9 +21,19 @@ async function dispatch(request){
   preloaded=false;
   if(request.progressId)reportProgress(request.progressId,{stage:'import-read'});
   const upload=await storage('get',request.upload);if(!upload)throw Error('Dictionary upload expired');
-  // A new worker does not yet have the previous database in its virtual FS.
-  // Load it only for ZIP reimports, so matching archives can skip full rebuild.
-  const saved=upload.kind==='zip'&&!hydrated?await storage('get','dictionary'):undefined;
+  // Do not copy the old multi-hundred-MB database into a fresh worker
+  // unless this ZIP actually matches its saved archive fingerprint.
+  let sameArchive=false;
+  if(upload.kind==='zip'){
+   const storedHash=await storage('get','dictionary-hash');
+   if(typeof storedHash==='string'&&/^[A-Fa-f0-9]{64}$/.test(storedHash)){
+    if(request.progressId)reportProgress(request.progressId,{stage:'import-check'});
+    const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',upload.bytes));
+    const hash=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+    sameArchive=hash===storedHash.toUpperCase();
+   }
+  }
+  const saved=sameArchive&&!hydrated?await storage('get','dictionary'):undefined;
   const workerRequest={action:upload.kind==='db'?'import-db':'import',filename:upload.name,bytes:upload.bytes,progressId:request.progressId,...(saved?{database:saved}:{})};
   const transferable=[upload.bytes,...(saved?[saved]:[])];
   try{
@@ -32,6 +42,7 @@ async function dispatch(request){
     if(request.progressId)reportProgress(request.progressId,{stage:'import-save'});
     if(!result.database)throw Error('Imported dictionary is missing SQLite bytes');
     await storage('put','dictionary',result.database);
+    if(typeof result.dictionary_fingerprint==='string')await storage('put','dictionary-hash',result.dictionary_fingerprint);
    }
    hydrated=true;dictionaryAvailable=true;delete result.database;
    if(request.progressId)reportProgress(request.progressId,{stage:'import-done',reused:result.reused===true});
