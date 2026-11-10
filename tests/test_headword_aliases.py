@@ -82,7 +82,13 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(r['id']==entry for r in (await dictionary.batch_lookup_entries([source]))[source]))
         result=await Engine(self.path,tokenizer=t).analyze(source,
             dict(hanja=True,loanword=False,nameProtection=False,filterDictionaryPeople=True))
-        self.assertEqual([(a['surface'],a['replacement']) for a in result['annotations']],
+        # The fixture already contains a second entry with identical phrase
+        # but missing POS; a competing entry correctly forces model review.
+        self.assertEqual(result['annotations'],[],result)
+        candidates=[o for t in result['targets'] for o in t['options']
+                    if o.get('entry_id')==entry and o.get('type')=='hanja']
+        self.assertEqual(len(candidates),1,result)
+        self.assertEqual([(p['surface'],p['replacement']) for p in candidates[0]['segments']],
             [('주','主'),('연료','燃料'),('차단','遮斷'),('장치','裝置')],result)
 
     async def test_aliases_do_not_resurrect_a_translation_or_cross_punctuation(self):
