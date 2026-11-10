@@ -46,7 +46,7 @@ async function dispatch(request){
    if(!result.reused){
     if(request.progressId)reportProgress(request.progressId,{stage:'import-save'});
     const databaseBytes=isDatabase?upload.bytes:result.database;
-    if(!(databaseBytes instanceof ArrayBuffer)||!databaseBytes.byteLength)throw Error('Imported dictionary is missing SQLite bytes');
+    if(!databaseBytes||!Number.isSafeInteger(databaseBytes.byteLength)||!databaseBytes.byteLength)throw Error('Imported dictionary is missing SQLite bytes');
     try{await storage('put','dictionary',databaseBytes);}
     catch(error){throw Error('浏览器存储数据库失败（可能是存储配额或内存不足）：'+(error.message||error));}
     if(typeof result.dictionary_fingerprint==='string')await storage('put','dictionary-hash',result.dictionary_fingerprint);
