@@ -40,7 +40,9 @@ export function validateSegmentationRepairs(targets,response,config={}){
      !old_target_ids.every(x=>typeof x==='string')||new Set(old_target_ids).size!==old_target_ids.length||
      !isInt(start)||!isInt(end)||start<0||end<=start||end>sentence.text.length||
      typeof surface!=='string'||sentence.text.slice(start,end)!==surface||
-     !HANGUL_SPAN.test(surface)||surface.length>90||typeof choice_id!=='string'){
+     !/[가-힣]/u.test(surface)||surface.length>300||
+     (choice_id!=='KEEP'&&(!HANGUL_SPAN.test(surface)||surface.length>90))||
+     typeof choice_id!=='string'){
    fail(index,'unknown sentence, invalid operation, source span, or choice',row);continue;
   }
   if(op==='add'?old_target_ids.length!==0:old_target_ids.length<1||old_target_ids.length>12){
