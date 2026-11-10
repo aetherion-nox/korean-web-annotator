@@ -70,11 +70,6 @@ export function createManualReviewSession({operationId,post,signal}={}){
     const ids=new Map(current.wireTargets.map((t,i)=>[t.target_id,current.targets[i].target_id]));
     const mapped={...(experimental?{experimental_options:response.experimental_options.map(row=>({...row,target_id:ids.get(row.target_id)}))}:{}),
       results:result.accepted.map(({target,option})=>({target_id:ids.get(target.target_id),choice_id:option.choice_id}))};
-    notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:rows.length});current.resolve(mapped);return true;
-    }
-    const result=validateChoices(current.wireTargets,response,{reviewPosFilter:current.reviewPosFilter});
-    if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果不完整，或包含重复/其他批次的 target_id、无效 choice_id。请完整复制本批结果，保留 ID 原样。');
-    const mapped={results:result.accepted.map(({target,option})=>({target_id:current.targets[current.wireTargets.indexOf(target)].target_id,choice_id:option.choice_id}))};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:result.accepted.length});current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
   }
