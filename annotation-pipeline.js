@@ -117,12 +117,21 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   if(experimental){
    const kept=firstReview.accepted.filter(a=>a.option.type==='keep').map(a=>a.target);
    if(kept.length){
-    const supplementConfig={...config,context:batch.context,operationId:message.operationId,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,timeoutMs:config.timeoutMs||120000,experimentalHanja:config.experimentalHanja===true&&modes.hanja,experimentalLoanword:config.experimentalLoanword===true&&modes.loanword};
-    const proposed=await requestExperimentalOptions(supplementConfig,kept,signal);
-    const expanded=appendExperimentalOptions(kept,proposed,supplementConfig);
-    diagnostic({stage:'experimental',level:'info',message:'原候选判为 KEEP '+kept.length+' 项，新增通过词界和词源格式校验的候选 '+expanded.length+' 项。'});
-    if(expanded.length){
-     await reviewTargets({...supplementConfig,experimentalPhase:'choose',manualPrepared:undefined,manualBindings:undefined,enableModelReview:true,stream:progressive?true:config.stream,
+    let proposedCount=0;
+    // The proposal answer is larger than a choice-id answer. Bound each
+    // supplemental round independently; never reuse the original output cap.
+    for(let offset=0;offset<kept.length;offset+=32){
+     const subset=kept.slice(offset,offset+32);
+     const supplementConfig={...config,context:[...new Set(subset.map(t=>t.context))].join('\n'),operationId:message.operationId,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:undefined,timeoutMs:config.timeoutMs||120000,experimentalHanja:config.experimentalHanja===true&&modes.hanja,experimentalLoanword:config.experimentalLoanword===true&&modes.loanword};
+     const proposed=await requestExperimentalOptions(supplementConfig,subset,signal);
+     const expanded=appendExperimentalOptions(subset,proposed,supplementConfig);
+     proposedCount+=expanded.length;
+     if(!expanded.length)continue;
+     const extraManualBindings=config.manualReview?expanded.map(target=>{
+      const owner=owners.get(target.target_id);
+      return {target_id:target.target_id,sentenceId:owner.item.sentence.id,start:owner.target.start,end:owner.target.end,surface:owner.target.surface,choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(owner.item.sentence.text,{...owner.target,...option}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};
+     }):undefined;
+     await reviewTargets({...supplementConfig,experimentalPhase:'choose',manualPrepared:undefined,manualBindings:extraManualBindings,enableModelReview:true,stream:progressive?true:config.stream,
       ...(progressive?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
       onAccepted:accepted=>{for(const a of accepted){
        const owner=owners.get(a.target.target_id);
@@ -134,6 +143,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
       }
      },expanded,signal);
     }
+    diagnostic({stage:'experimental',level:'info',message:'原候选判为 KEEP '+kept.length+' 项，新增通过词界和词源格式校验的候选 '+proposedCount+' 项。'});
    }
   }
   for(const item of batch.items){
