@@ -418,12 +418,11 @@ def main():
                     for entry in entries:
                         entry_id = entry.get('val', '?')
                         try:
-                            conn.execute('SAVEPOINT import_entry')
+                            # A failed entry aborts the entire JSON file and its
+                            # surrounding transaction. Per-entry SAVEPOINT/RELEASE
+                            # adds millions of redundant SQLite statements.
                             import_entry(conn, entry, stats, id_tracker)
-                            conn.execute('RELEASE SAVEPOINT import_entry')
                         except Exception as e:
-                            conn.execute('ROLLBACK TO SAVEPOINT import_entry')
-                            conn.execute('RELEASE SAVEPOINT import_entry')
                             stats['errors'] += 1
                             raise RuntimeError(f"entry {entry_id}: {e}") from e
                     
