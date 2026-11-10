@@ -212,3 +212,54 @@ test('automatic second attempt receives specific failure feedback and keeps vali
  assert.equal(result.accepted.find(a=>a.target.target_id==='orig').option.replacement,'公營');
  assert.equal(result.accepted.find(a=>a.target.target_id==='safe').option.choice_id,'KEEP');
 });
+
+test('unique exact subword offsets can be inferred and normalized before any rendering',()=>{
+ const t=target('word','공영을');
+ const row={target_id:'word',choice_id:'GEN_SEGMENTS',segments:[
+  {surface:'공영',type:'hanja',replacement:'公營'}]};
+ const accepted=validateGeneratedSegmentsRow(t,row,config);
+ assert.ok(accepted);
+ assert.equal(accepted.replacement,'公營을');
+ assert.deepEqual(accepted.segments.map(p=>[p.start,p.end]),[[0,2]]);
+ const checked=validateChoices([t],{results:[row]},config);
+ assert.equal(checked.accepted.length,1);
+ assert.equal(checked.accepted[0].option.segments[0].start,0);
+ assert.equal(checked.accepted[0].option.segments[0].end,2);
+ assert.match(reviewInstructions(config),/Omit BOTH start and end/);
+});
+
+test('repeated or partially specified segment offsets remain invalid, even when the characters are valid',()=>{
+ const t=target('repeated','학교학교');
+ const compact={target_id:'repeated',choice_id:'GEN_SEGMENTS',
+  segments:[{surface:'학교',type:'hanja',replacement:'學校'}]};
+ assert.equal(validateGeneratedSegmentsRow(t,compact,config),null);
+ assert.equal(validateChoices([t],{results:[compact]},config).accepted.length,0);
+ assert.equal(validateGeneratedSegmentsRow(t,{...compact,segments:[
+  {...compact.segments[0],start:2}
+ ]},config),null);
+ const exact={...compact,segments:[{...compact.segments[0],start:2,end:4}]};
+ const verified=validateGeneratedSegmentsRow(t,exact,config);
+ assert.ok(verified);
+ assert.equal(verified.replacement,'학교學校');
+ assert.equal(validateGeneratedSegmentsRow(t,{...compact,segments:[
+  {surface:'없는',type:'hanja',replacement:'學校'}
+ ]},config),null);
+});
+
+test('manual review normalizes optional offsets without relaxing same-batch ID authorization',async()=>{
+ const entry=target('original','공영을'),events=[];
+ const session=createManualReviewSession({operationId:'compact-offset',post:e=>events.push(e)});
+ const pending=session.request({...config,context:'공영을 운영하다.'},[entry]);
+ const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
+ const submitted={batch_id:request.requestId,results:[
+  {target_id:'t0',choice_id:'GEN_SEGMENTS',segments:[
+   {surface:'공영',type:'hanja',replacement:'公營'}
+  ]}
+ ]};
+ assert.equal(session.submit({operationId:'compact-offset',requestId:request.requestId,
+  text:JSON.stringify(submitted)}),true);
+ const result=await pending;
+ assert.deepEqual(result.results[0].segments,[{
+  start:0,end:2,surface:'공영',type:'hanja',replacement:'公營'
+ }]);
+});
