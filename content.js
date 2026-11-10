@@ -849,7 +849,8 @@
     const task = { operationId, port, entries, paragraphPlan, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges, operation:[], historyRecorded:false };
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
     task.paint=paint;
-    task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
+    task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!
+           [...model,...(entry.modelReviewedRanges||[])].some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
     const byId = new Map([...entries.values()].map(entry => [entry.id, entry]));
     currentTask = task;
     status('加载词典…');
@@ -893,6 +894,7 @@
         }
         if(result.source==='model'){
           entry.modelAnnotations=incoming;
+          entry.modelReviewedRanges=result.smartSegmentation===true?(item.reviewed||[]):[];
           entry.modelReviewed=Boolean(item.reviewed?.length||incoming.length);
           entry.hasPreview=item.hasPreview??result.provisional===true;
           entry.committedModelAnnotations=item.committedAnnotations??incoming;
