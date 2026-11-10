@@ -17,11 +17,11 @@ export function normalizeOutputTokenLimit(value,manual=false){
 // This is a multilingual byte heuristic, not any provider's exact tokenizer.
 export const estimateTokenCount=text=>Math.ceil(new TextEncoder().encode(text||'').length/3);
 const limits={'32k':32000,'128k':128000,'256k':256000,'512k':512000,'1m':1000000};
-export function describeBatchBudget(context,targets,{tier='32k',manual=false,wireIds=false,batchId='00000000',reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false,manualOutputTokenLimit=DEFAULT_MANUAL_OUTPUT_TOKENS,apiOutputTokenLimit=DEFAULT_API_OUTPUT_TOKENS}={}){
+export function describeBatchBudget(context,targets,{tier='32k',manual=false,wireIds=false,batchId='00000000',reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false,smartSegmentation=false,manualOutputTokenLimit=DEFAULT_MANUAL_OUTPUT_TOKENS,apiOutputTokenLimit=DEFAULT_API_OUTPUT_TOKENS}={}){
  tier=normalizeBatchContextTier(tier);
  const wire=wireIds?targets:targets.map((t,i)=>({...t,target_id:manual?'t'+i:'b0t'+i}));
  const experimental=experimentalHanja===true||experimentalLoanword===true;
- const config={reviewPosFilter,experimentalHanja,experimentalLoanword};
+ const config={reviewPosFilter,experimentalHanja,experimentalLoanword,smartSegmentation};
  const input=manual?buildManualPrompt(context,wire,batchId,config):buildReviewInstructions(config)+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
  // Model returns only results[].choice_id. Allow a plausible literal Hanja
  // spelling in that SAME field for eligible experimental targets. No separate
@@ -30,7 +30,10 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
   const longest=t.options.reduce((answer,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(answer).length?o.choice_id:answer,'KEEP');
   const proposed=experimental&&canProposeExperimentalOption(t)?'漢'.repeat(Math.min(24,Math.max(8,[...t.surface].length*2))):'';
   return {target_id:t.target_id,choice_id:JSON.stringify(proposed).length>JSON.stringify(longest).length?proposed:longest};
- })});
+ }),...(smartSegmentation?{repairs:wire.filter((t,i)=>i%4===0).slice(0,64).map(t=>({
+   sentence_id:'s0',op:t.scan_only?'add':'replace',old_target_ids:t.scan_only?[]:[t.target_id],
+   start:t.start,end:t.end,surface:t.surface.slice(0,24),choice_id:'漢字詞源'
+  }))}:{})});
  const contextTokens=limits[tier],inputTokens=estimateTokenCount(input)+(manual?0:64),outputTokens=Math.ceil(estimateTokenCount(reply)*1.1)+32;
  const safetyTokens=contextTokens?Math.ceil(contextTokens*.08)+1024:0,outputLimit=normalizeOutputTokenLimit(manual?manualOutputTokenLimit:apiOutputTokenLimit,manual);
  const reservedOutputTokens=manual?outputTokens:Math.max(outputTokens,outputLimit),totalTokens=inputTokens+reservedOutputTokens+safetyTokens;
@@ -46,7 +49,7 @@ export function contextReviewBatches(items,context='',{tier='128k',manual=false,
   const evaluate=count=>{
    if(memo.has(count))return memo.get(count);
    const group=rows.slice(start,start+count),ownContext=[...new Set(group.map(r=>r.target.context))].join('\n');
-   const budget=describeBatchBudget(ownContext,group.map(r=>r.target),{tier,manual,reviewPosFilter,experimentalHanja,experimentalLoanword,manualOutputTokenLimit,apiOutputTokenLimit}),value={rows:group,items:[...new Set(group.map(r=>r.item))],context:ownContext,budget};memo.set(count,value);return value;
+   const budget=describeBatchBudget(ownContext,group.map(r=>r.target),{tier,manual,reviewPosFilter,experimentalHanja,experimentalLoanword,smartSegmentation,manualOutputTokenLimit,apiOutputTokenLimit}),value={rows:group,items:[...new Set(group.map(r=>r.item))],context:ownContext,budget};memo.set(count,value);return value;
   };
   if(!fits(evaluate(1).budget))throw Error(`单个待选词及其完整上下文/释义超出 ${evaluate(1).budget.label} 输入或答案预算；请选更大档位或缩小文本范围。`);
   const remaining=rows.length-start;let low=1,high=remaining;
