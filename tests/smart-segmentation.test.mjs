@@ -156,7 +156,7 @@ test('manual mode returns normal target choices and repairs in a single response
 });
 
 test('pipeline uses exactly one model call and valid repair supersedes old dictionary result',async()=>{
- const text='게임',t=target('local0',text,0,2,'可'),events=[],calls=[];
+ const text='게임',t=target('local0',text,0,2,'可伊'),events=[],calls=[];
  const identity={engine_version:'repair-fixture',dictionary_fingerprint:'dict'};
  const result=await runSentencePipeline({operationId:'smart-one',sentences:[{id:'s1',text}],
   modes:{hanja:true,loanword:true},smartSegmentation:true},event=>events.push(event),{
