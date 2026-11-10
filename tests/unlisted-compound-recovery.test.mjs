@@ -265,3 +265,30 @@ test('manual whole-word fallback creates a second resumable manual batch',async(
  assert.equal(emitted.filter(e=>e.type==='MANUAL_REVIEW_PLAN').length,2);
  assert.equal(emitted.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1).results[0].annotations[0].replacement,'學校生活');
 });
+
+test('generated whole-word origins survive review caching without forbidden replacement fields',async()=>{
+ const {text,analyze,status,whole}=conservativeFixture();
+ const cache=new Map(),events=[],requests=[];
+ const modelConfig=async()=>({...config,provider:'fixture',model:'fixture',endpoint:'https://example.invalid',
+  request:async(_cfg,targets)=>{
+   requests.push(targets.length);
+   return {results:[{...whole,target_id:targets[0].target_id}]};
+  }});
+ const message={operationId:'cache-first',sentences:[{id:'s',text}],
+  modes:{hanja:true,loanword:false},experimentalSegmentation:true};
+ await runSentencePipeline(message,e=>events.push(e),{
+  enabled:true,analyze,status,modelConfig,cache});
+ assert.equal(requests.length,1);
+ const cached=[...cache.values()].find(v=>Array.isArray(v?.results)&&
+  v.results.some(row=>row.choice_id==='GEN_SEGMENTS'));
+ assert.ok(cached);
+ assert.equal(Object.hasOwn(cached.results[0],'replacement'),false);
+ assert.equal(Object.hasOwn(cached.results[0],'confidence'),false);
+ assert.equal(Object.hasOwn(cached.results[0],'evidence'),false);
+ const retry=[];
+ await runSentencePipeline({...message,operationId:'cache-second'},e=>retry.push(e),{
+  enabled:true,analyze,status,modelConfig,cache});
+ assert.equal(requests.length,1,'the second pass must use validated cached segments');
+ assert.deepEqual(retry.filter(e=>e.type==='RESULTS'&&e.source==='model').at(-1).results[0].annotations
+  .map(a=>a.replacement),['學校生活']);
+});
