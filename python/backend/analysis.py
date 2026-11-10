@@ -106,6 +106,9 @@ class Engine:
         if len(text)>20000:raise ValueError('Text exceeds 20,000 characters')
         await self.initialize()
         review_all=bool(modes.get('reviewAll',False))
+        # Selective audit: review positive local conversions, but do NOT resurrect
+        # locally rejected/nonconversion senses or turn unchanged words into targets.
+        review_conversions=review_all or bool(modes.get('reviewLocalConversions',False))
         # The original converter owns tokenization, lookup forms, scoring,
         # whole-word precedence and certainty. Do not rescan skipped compounds
         # for general conversion. Exact mixed/cross-origin words have a
@@ -134,7 +137,7 @@ class Engine:
         if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):
             from backend.mixed_origins import collect_mixed
             whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')]
-            mixed=await collect_mixed(self,text,tokens,modes,whole_word_ranges=whole_word_ranges,blocked_ranges=blocked_for_local,review_ranges=dictionary_names)
+            mixed=await collect_mixed(self,text,tokens,{**modes,'reviewAll':review_conversions},whole_word_ranges=whole_word_ranges,blocked_ranges=blocked_for_local,review_ranges=dictionary_names)
         annotations=list(mixed['annotations']); reviews=[]; occupied=list(mixed['ranges']); rejected=0
         def valid(start,end,surface):return isinstance(start,int) and isinstance(end,int) and 0<=start<end<=len(text) and text[start:end]==surface
         for s in segments:
@@ -142,7 +145,7 @@ class Engine:
             if s.status not in ('converted','ambiguous'):continue
             if any(s.start<b and a<s.end for a,b in mixed['ranges']):continue
             if not valid(s.start,s.end,s.original):rejected+=1;continue
-            if s.status=='converted' and not review_all and not overlaps_proper_noun(s.start,s.end,proper_ranges):
+            if s.status=='converted' and not review_conversions and not overlaps_proper_noun(s.start,s.end,proper_ranges):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
                 token=next((t for t in tokens if t.start==s.start and t.start+t.length==s.end),None)
@@ -158,7 +161,7 @@ class Engine:
             if any(start<b and a<end for a,b in occupied):continue
             for c in candidates:
                 replacement=c.get('replacement')
-                if (not review_all and not overlaps_proper_noun(start,end,proper_ranges) and not c.get('is_reliable')) or not safe_replacement(replacement):continue
+                if (not review_conversions and not overlaps_proper_noun(start,end,proper_ranges) and not c.get('is_reliable')) or not safe_replacement(replacement):continue
                 # Preserve inflected Korean suffixes using unchanged upstream display builder.
                 token=next((t for t in review_tokens if t.start==start and t.start+t.length==end),None)
                 if token is not None:
@@ -203,7 +206,7 @@ class Engine:
             entries=await self.lookup_entries([t.form for t in tokens])
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
-            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_all,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
+            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.
