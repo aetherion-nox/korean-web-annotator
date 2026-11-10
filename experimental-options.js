@@ -21,7 +21,7 @@ const CJK=/^[\p{Script=Han}]+$/u;
 const LOANWORD=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u;
 const RESERVED=/^(?:KEEP|[cnxp]\d+)$/i;
 export const canProposeExperimentalOption=t=>/[가-힣]/u.test(t?.surface||'')&&
- !(t.proper_noun===true||t.dictionary_person_name===true||t.dictionary_name_homograph===true||
+ !(t.scan_only===true||t.proper_noun===true||t.dictionary_person_name===true||t.dictionary_name_homograph===true||
    t.suspected_person_name===true||t.partial_word===true);
 
 function splitAlignedHanja(surface,origin){
