@@ -290,6 +290,16 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  if(stats.model_generated_hanja||stats.model_generated_loanword)diagnostic({stage:'experimental-generation',level:'warning',message:`实验性模型自拟词源：汉字词 ${stats.model_generated_hanja}，外来语 ${stats.model_generated_loanword}。已通过格式和对齐校验，但词源真实性仍需人工核查。`});
  while(cache.size>300)cache.delete(cache.keys().next().value);await persist(cache);
+ const examples={keep:[],nonconversion:[],unresolved:[]};
+ for(const item of work){
+  for(const a of item.result.accepted){
+   const bucket=a.option.type==='keep'?'keep':a.option.type==='nonconversion'?'nonconversion':null;
+   if(bucket&&examples[bucket].length<16)examples[bucket].push({
+    sentenceId:item.sentence.id,surface:a.target.surface,targetId:a.target.target_id});
+  }
+  for(const t of item.result.unresolved)if(examples.unresolved.length<16)
+   examples.unresolved.push({sentenceId:item.sentence.id,surface:t.surface,targetId:t.target_id});
+ }
  diagnostic({stage:'annotation-audit',level:'info',
   message:'标注决策审计：模型采纳 '+stats.model_review_accepted+' 个目标，实际可生成转换的决定 '+
    stats.model_review_conversion+' 个（对应 '+stats.model_annotation_spans+' 个原文标注片段），KEEP '+
@@ -302,7 +312,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    preservedBeforeMerge:stats.segmentation_preserved_targets,
    fallbackRetried:stats.segmentation_fallback_targets,
    fallbackRecovered:stats.segmentation_fallback_recovered,
-   unsafeSubwordsNotRestored:stats.segmentation_fallback_unsafe})});
+   unsafeSubwordsNotRestored:stats.segmentation_fallback_unsafe,examples})});
  emit('DONE');return stats;
 }
 
