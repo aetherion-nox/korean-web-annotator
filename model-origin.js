@@ -40,3 +40,24 @@ export function diagnoseGeneratedRow(target,row,config={}){
  return row.choice_id===GENERATED_SEGMENTS?
   core.validateGeneratedSegmentsRow(target,row,config):core.validateGeneratedRow(target,row,config);
 }
+
+/**
+ * Feedback for a rejected generated origin. Never manufactures a missing
+ * character or infers whether an unconverted suffix is lexical/native.
+ * The reviewer must resolve the complete lexical boundary from context.
+ */
+export function generatedRepairFeedback(target,row,config={}){
+ const diagnosis=diagnoseGeneratedRow(target,row,config);
+ if(diagnosis.ok)return '';
+ const prefix='['+diagnosis.code+'] '+diagnosis.message;
+ if(diagnosis.code==='ISOLATED_SYLLABLE'){
+  return prefix+'。重新判断完整目标「'+target.surface+'」的词义与词界：先区分词干和助词/词尾；若整个词干确为汉字词，返回覆盖完整词干的一条 GEN_SEGMENTS 汉字段，并使汉字数与音节数逐一对应；若是真实混种词，才拆成有依据的多个段。禁止为了通过检查随意把固有词汉字化；不确定时返回 KEEP。';
+ }
+ if(diagnosis.code==='HANJA_ALIGNMENT'||diagnosis.code==='SEGMENT_OFFSETS'){
+  return prefix+'。以完整目标「'+target.surface+'」重新计算 UTF-16 start/end、surface 和 replacement。优先返回整个汉字词干的单一完整片段；保留非汉字词干与助词/词尾，不能猜测缺失字形。';
+ }
+ if(diagnosis.code==='EVIDENCE_CONTRADICTION'){
+  return prefix+'。对整个词重新确定词源，并让转换的所有片段与实际原文一致；不能根据说明文字补造汉字。';
+ }
+ return prefix;
+}
