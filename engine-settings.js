@@ -46,11 +46,11 @@ const nameCopy={
 };
 for(const [locale,labels] of Object.entries(nameCopy))Object.assign(copy[locale],{nameProtection:labels[0],nameProtectionHint:labels[1]});
 const personFilterCopy={
- 'zh-CN':['过滤词典内的人名（默认开启）','按词典词条的“인명／人名／personal name”分类排除人名义项，不删除同形普通词义，不修改或重新导入 DB；对本地转换、API／手动送审均有效。与“姓名整段保护”互不替代。关闭后恢复原候选。'],
- 'zh-TW':['過濾詞典內的人名（預設開啟）','依詞典詞條「인명／人名／personal name」類別排除人名義項，保留同形一般詞義，無須修改或重新匯入 DB；本機轉換與 API／手動審核皆適用。與姓名整段保護互不取代。'],
- en:['Filter person names in the dictionary (on by default)','Exclude senses explicitly categorized as person names (인명 / 人名 / personal name). Keep ordinary senses of the same spelling. Applies to local conversion and API/manual review without changing or reimporting the DB. Independent of complete-name protection.'],
- ja:['辞書内の人名を除外（初期設定は有効）','辞書で人名と明示された語義をローカル変換とモデル審査の候補から除外します。同表記の一般語義は保持し、DB の再取込や書換えは不要です。姓名全体の保護とは別設定です。'],
- ko:['사전 내 인명 후보 제외 (기본 켜짐)','사전에 인명으로 명시된 뜻풀이를 로컬 변환과 API/수동 검토 후보에서 제외합니다. 동형 일반어 뜻은 유지하고 DB 재가져오기는 필요하지 않습니다. 전체 이름 보호와 별도 설정입니다.']
+ 'zh-CN':['过滤词典内的人名（默认开启）','过滤词典明确标为“人名”的义项；分类缺失时，仅对释义开头同时具有具体人物身份与生卒年代的明确传记词条进行保守过滤。同形普通词义照常保留，DB 不被修改、无需重新导入。与“姓名整段保护”独立。'],
+ 'zh-TW':['過濾詞典內的人名（預設開啟）','排除詞典明確標為人名的義項；若類別缺漏，僅在釋義開頭同時含有具體人物身分和生卒年代時保守辨識。保留同形普通詞義，不修改或重新匯入 DB；與姓名整段保護分開設定。'],
+ en:['Filter dictionary person names (on by default)','Exclude explicitly categorized personal-name senses; if category metadata is missing, also exclude clear biographical glosses combining a person role and lifespan. Ordinary homographs remain. Does not modify or reimport the DB; separate from complete-name protection.'],
+ ja:['辞書内の人名を除外（初期設定は有効）','人名として分類された語義を除外します。分類が欠ける場合は、人物の肩書と生没年を備えた明確な伝記語義のみ慎重に除外します。同形の普通語義は残り、DB の変更や再取込は不要です。'],
+ ko:['사전 내 인명 후보 제외 (기본 켜짐)','인명으로 분류된 뜻풀이를 제외합니다. 분류가 없을 때는 인물의 역할과 생몰년이 함께 나타나는 명백한 전기 뜻풀이만 보수적으로 제외합니다. 동형 일반어 뜻은 유지하고 DB를 수정하거나 다시 가져오지 않습니다.']
 };
 for(const [locale,labels] of Object.entries(personFilterCopy))Object.assign(copy[locale],{filterDictionaryPeople:labels[0],filterDictionaryPeopleHint:labels[1]});
 const reviewPosCopy={
