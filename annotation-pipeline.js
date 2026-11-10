@@ -275,6 +275,12 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  for(const {sentence,analysis,result} of work){
   const additions=annotationsFromAccepted(sentence.text,result.accepted);
+  stats.model_review_accepted+=result.accepted.length;
+  stats.model_review_keep+=result.accepted.filter(a=>a.option.type==='keep').length;
+  stats.model_review_nonconversion+=result.accepted.filter(a=>a.option.type==='nonconversion').length;
+  stats.model_review_conversion+=result.accepted.filter(a=>
+   a.option.type!=='keep'&&a.option.type!=='nonconversion').length;
+  stats.model_annotation_spans+=additions.length;
   stats.model_resolved+=result.accepted.filter(a=>a.option.type!=='keep').length;
   stats.model_generated_hanja+=result.accepted.filter(a=>a.option.generated&&a.option.type==='hanja').length+result.accepted.filter(a=>a.option.segmentationGenerated).flatMap(a=>a.option.segments).filter(s=>s.type==='hanja').length;
   stats.model_generated_loanword+=result.accepted.filter(a=>a.option.generated&&a.option.type==='loanword').length+result.accepted.filter(a=>a.option.segmentationGenerated).flatMap(a=>a.option.segments).filter(s=>s.type==='loanword').length;
@@ -284,6 +290,19 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  if(stats.model_generated_hanja||stats.model_generated_loanword)diagnostic({stage:'experimental-generation',level:'warning',message:`实验性模型自拟词源：汉字词 ${stats.model_generated_hanja}，外来语 ${stats.model_generated_loanword}。已通过格式和对齐校验，但词源真实性仍需人工核查。`});
  while(cache.size>300)cache.delete(cache.keys().next().value);await persist(cache);
+ diagnostic({stage:'annotation-audit',level:'info',
+  message:'标注决策审计：模型采纳 '+stats.model_review_accepted+' 个目标，实际可生成转换的决定 '+
+   stats.model_review_conversion+' 个（对应 '+stats.model_annotation_spans+' 个原文标注片段），KEEP '+
+   stats.model_review_keep+'、非转换词典义项 '+stats.model_review_nonconversion+'、未解决 '+
+   stats.unresolved+'。实验性回退安全恢复 '+stats.segmentation_fallback_recovered+
+   ' 个目标；以上是模型和原文层统计，网页 DOM 写入另行核对。',
+  detail:JSON.stringify({accepted:stats.model_review_accepted,convertedDecisions:stats.model_review_conversion,
+   conversionSpans:stats.model_annotation_spans,keep:stats.model_review_keep,
+   nonconversion:stats.model_review_nonconversion,unresolved:stats.unresolved,
+   preservedBeforeMerge:stats.segmentation_preserved_targets,
+   fallbackRetried:stats.segmentation_fallback_targets,
+   fallbackRecovered:stats.segmentation_fallback_recovered,
+   unsafeSubwordsNotRestored:stats.segmentation_fallback_unsafe})});
  emit('DONE');return stats;
 }
 
