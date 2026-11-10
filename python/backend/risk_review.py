@@ -83,38 +83,24 @@ async def uncertain_compounds(text, tokens, lookup, blocked=(), *, include_unlis
     return list(sorted(dedup.values(),key=lambda row:(row[0],row[1])))
 
 def weak_unique_candidate(segment, tokens):
-    """Require semantic review for uncorroborated short homophones.
+    """Review short words with a *single* uncorroborated dictionary candidate.
 
-    A high local score can mean only that the source spelling, part of speech,
-    or dictionary form matched. It cannot show that an unrelated dictionary
-    meaning fits this particular sentence. Several senses with the same origin
-    are still a *single spelling*, not independent semantic confirmation.
-
-    Keep the risk review narrow to 2-syllable words, and skip only when the
-    chosen reading has actual local collocation evidence or an attested
-    quantity-unit match. This is a generic rule, never a word whitelist.
+    Local reliability and a high POS/form score cannot prove contextual
+    meaning. A two-syllable homophone may have a completely different,
+    unlisted meaning in the article. Preserve existing fast local annotation
+    when there are several lexical records, or when explicit collocation /
+    quantity-unit evidence supports the chosen sense. This deliberately
+    trades recall for performance; it does not classify semantic meaning.
     """
     surface = segment.original
     if not HANGUL.fullmatch(surface) or len(surface) != 2:
         return False
-    if segment.status != 'converted' or not segment.candidates:
+    if segment.status != 'converted' or len(segment.candidates) != 1:
         return False
-    candidates = [c for c in segment.candidates
-                  if c.get('is_reliable') and c.get('replacement')]
-    if not candidates:
+    entry = segment.candidates[0]
+    if not entry.get('is_reliable') or not entry.get('replacement'):
         return False
-    # Synonymous dictionary records and multiple definitions of one written
-    # origin do not make that origin semantically verified in this context.
-    writings = {str(c['replacement']) for c in candidates}
-    if len(writings) != 1:
-        return False
-    matched_id = getattr(segment, 'matched_entry_id', None)
-    chosen = (next((c for c in candidates
-                    if c.get('entry_id') == matched_id), None)
-              if matched_id is not None else candidates[0])
-    if chosen is None:
-        return False
-    reason = str(chosen.get('selection_reason') or '')
+    reason = str(entry.get('selection_reason') or '')
     if any(marker in reason for marker in ('collocation_match(', 'quantity_unit_bonus')):
         return False
     if any(t.tag.split('-')[0] in {'NNP', 'VV', 'VA', 'VX', 'VCP'}
