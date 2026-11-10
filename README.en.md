@@ -71,6 +71,8 @@ When API review is enabled, relevant page text and dictionary candidates are sen
 
 **v1.1.70 whole-lexeme-first recovery:** Generated segments prefer one complete Hanja lexical stem where justified, respecting native roots and Korean particles. Isolated single-syllable origins remain rejected, but both API retries and manual repair prompts now include the failed target's concrete validation feedback. The model must re-evaluate the whole word; the verifier never guesses missing characters. Output estimates no longer reserve removed confidence/evidence fields.
 
+**v1.1.71 safe segmentation fallback and annotation audit:** Preserve dictionary choices displaced by experimental whole-word merging. When the merged review returns KEEP or fails, separately re-review only independently bounded dictionary senses; otherwise re-review the complete lexeme. Never restore unsafe subword conversions automatically. New decision/DOM auditing distinguishes KEEP, nonconversion, validated origins, failed projection and changed page nodes, with bounded examples. Repair incompatible cached GEN_SEGMENTS rows. start/end are optional only for subwords appearing uniquely in a target. Fallback may add model calls.
+
 ## 5. Troubleshooting
 
 - **Nothing happens:** Check that the dictionary was imported, reload the extension, and refresh the page.
