@@ -102,7 +102,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    const fingerprint=JSON.stringify([smartSegmentation?'id-review-v21-single-pass-segmentation-repair':experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
-   const cached=!experimental&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
+   const cached=!experimental&&!smartSegmentation&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
    if(cached){item.result=validateChoices(analysis.targets,cached,config);if(progressive)publishModel(item);stats.cacheHits++;diagnostic({stage:'cache',level:'info',message:'使用已验证的模型审核缓存；无需重复请求。'});}
    if(item.result.unresolved.length){pending.push(item);progress.modelTotal+=item.result.unresolved.length;}
   }
@@ -112,27 +112,61 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,manualOutputTokenLimit:config?.manualOutputTokenLimit,apiOutputTokenLimit:config?.apiOutputTokenLimit}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword}):sentenceReviewBatches(pending,context);
  const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
-  const targets=batch.rows?batch.rows.map(({item,target},i)=>{const id=`b0t${i}`;owners.set(id,{item,target});return {...target,target_id:id};}):batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>{
-   const id=`b${i}t${j}`;owners.set(id,{item,target});return {...target,target_id:id};
-  }));
+  const targetWire=(id,item,target)=>{
+   owners.set(id,{item,target});
+   return {...target,target_id:id,
+    ...(smartSegmentation?{
+     original_target_id:target.target_id,
+     repair_sentence_key:item.sentence.id,
+     repair_context:item.analysis.repair_context||{kiwi_tokens:[],protected_ranges:[]}
+    }:{})};
+  };
+  const targets=batch.rows?batch.rows.map(({item,target},i)=>targetWire(`b0t${i}`,item,target)):
+   batch.items.flatMap((item,i)=>item.result.unresolved.map((target,j)=>targetWire(`b${i}t${j}`,item,target)));
+  const repairScopes=new Map();
+  if(smartSegmentation)for(const [id,{item}] of owners){
+   repairScopes.set(id,{
+    text:item.sentence.text,
+    allTargets:item.analysis.targets.filter(t=>!t.scan_only),
+    localAnnotations:item.analysis.annotations,
+    protected_ranges:item.analysis.repair_context?.protected_ranges||[],
+    selected:message.restrictToSelection===true?item.sentence.selected||[]:null,
+    existingRepairs:item.repairs
+   });
+  }
   const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
   const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
-  return {owners,targets,manualBindings,manualPrepared};
+  return {owners,targets,repairScopes,manualBindings,manualPrepared};
  });
  if(config?.manualReview)emit('MANUAL_REVIEW_PLAN',{batches:preparedBatches.map(b=>b.manualPrepared)});
  for(const [batchIndex,batch] of batches.entries()){
   if(batch.budget)diagnostic({stage:'batch-budget',level:'info',message:`${batch.budget.label} 档批次：预估输入 ${batch.budget.inputTokens}、答案 ${batch.budget.outputTokens}、输出上限 ${batch.budget.outputLimit}、安全余量 ${batch.budget.safetyTokens} tokens。${batch.budget.limitReason==='output'?'本批受答案长度预算限制。':''}`,detail:JSON.stringify(batch.budget)});
-  const {owners,targets,manualBindings,manualPrepared}=preparedBatches[batchIndex];
-  const firstReview=await reviewTargets({...config,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||120000,enableModelReview:true,context:batch.context,
-   ...(progressive?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
-   onAccepted:accepted=>{for(const a of accepted){const owner=owners.get(a.target.target_id);owner.item.result.accepted.push({target:owner.target,option:a.option});}progress.modelCompleted+=accepted.length;reportProgress();for(const item of batch.items)if(progressive)publishModel(item);}
+  const {owners,targets,repairScopes,manualBindings,manualPrepared}=preparedBatches[batchIndex];
+  const firstReview=await reviewTargets({...config,repairScopes,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||120000,enableModelReview:true,context:batch.context,
+   ...(progressive&&!smartSegmentation?{onPreview:accepted=>{for(const item of batch.items){const previews=accepted.flatMap(a=>{const owner=owners.get(a.target.target_id);return owner?.item===item?[{target:owner.target,option:a.option}]:[];});publishModel(item,previews,previews.length>0);}}}:{}),
+   onAccepted:accepted=>{
+    for(const a of accepted){
+     const owner=owners.get(a.target.target_id);
+     if(owner)owner.item.result.accepted.push({target:owner.target,option:a.option});
+    }
+    progress.modelCompleted+=accepted.length;reportProgress();
+    if(!smartSegmentation)for(const item of batch.items)if(progressive)publishModel(item);
+   },
+   ...(smartSegmentation?{onRepairs:repairs=>{
+    for(const repair of repairs){
+     const owner=[...owners.values()].find(({item})=>item.sentence.id===repair.sentenceKey);
+     if(owner){owner.item.repairs.push(repair);stats.repair_applied++;}
+     else{stats.repair_rejected++;diagnostic({stage:'segmentation',level:'warning',message:'修复对应的原文段落已变化，安全跳过。'});}
+    }
+    if(progressive)for(const item of batch.items)publishModel(item);
+   }}:{})
   },targets,signal);
 
   for(const item of batch.items){
    const answered=new Set(item.result.accepted.map(a=>a.target.target_id));
    item.result.unresolved=item.analysis.targets.filter(t=>!answered.has(t.target_id));
    const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,item.analysis.targets,batch.context]);
-   if(!experimental&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id}))});
+   if(!experimental&&!smartSegmentation&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id}))});
   }
   await persist(cache);
  }
