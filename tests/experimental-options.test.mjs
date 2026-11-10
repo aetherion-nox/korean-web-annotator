@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {literalOriginOption,canProposeExperimentalOption} from '../experimental-options.js';
-import {buildReviewPayload,buildManualPrompt} from '../review-payload.js';
+import {buildReviewPayload,buildManualPrompt,buildReviewInstructions,REVIEW_INSTRUCTIONS} from '../review-payload.js';
 import {validateExperimentalChoices,validateChoices} from '../choice-review.js';
 import {projectAnnotation} from '../local-engine.js';
 
@@ -88,15 +88,38 @@ test('spaced Hanja phrase infers source-aligned segments while preserving the sp
  assert.equal(literalOriginOption(t,'二酸化',{experimentalHanja:true}),null);
 });
 
-test('manual and API prompt use only results; the input still advertises experimental modes',()=>{
- const manual=buildManualPrompt(hanja.context,[hanja],'BATCH',{experimentalHanja:true});
- assert.deepEqual(JSON.parse(manual.split('\n').at(-1)).experimental_modes,{hanja:true,loanword:false});
- assert.ok(manual.includes('results'));
- assert.ok(manual.includes('原潛'));
- assert.ok(!manual.includes('"experimental_options":['));
- const nonexperimental=buildManualPrompt(hanja.context,[hanja],'BATCH2',{});
- assert.equal(JSON.parse(nonexperimental.split('\n').at(-1)).experimental_modes,undefined);
+test('only the enabled experimental origin rule is included in each manual/API prompt',()=>{
+ const common=buildReviewInstructions({});
+ const hanjaOnly=buildReviewInstructions({experimentalHanja:true});
+ const loanOnly=buildReviewInstructions({experimentalLoanword:true});
+ const both=buildReviewInstructions({experimentalHanja:true,experimentalLoanword:true});
+ const hanjaRule='genuine Sino-Korean origin',loanRule='genuine borrowed spelling';
+ assert.equal(common,REVIEW_INSTRUCTIONS);
+ assert.ok(!common.includes(hanjaRule)&&!common.includes(loanRule));
+ assert.ok(hanjaOnly.includes(hanjaRule)&&!hanjaOnly.includes(loanRule));
+ assert.ok(loanOnly.includes(loanRule)&&!loanOnly.includes(hanjaRule));
+ assert.ok(both.includes(hanjaRule)&&both.includes(loanRule));
+ for(const instructions of [common,hanjaOnly,loanOnly,both]){
+  assert.ok(instructions.includes('dictionary nonconversion senses')||instructions.includes('Dictionary nonconversion senses'));
+  assert.ok(instructions.includes('KEEP'));
+  assert.ok(instructions.includes('dictionary_name_homograph'));
+  assert.ok(instructions.includes('partial_word'));
+  assert.ok(instructions.includes('sentence_id'));
+  assert.ok(!/experimental_options|experimental_modes|x0|开启的实验类型|only if.*enabled/i.test(instructions));
+ }
+ for(const config of [{},{experimentalHanja:true},{experimentalLoanword:true},{experimentalHanja:true,experimentalLoanword:true}]){
+  const prompt=buildManualPrompt(hanja.context,[hanja],'BATCH',config);
+  const payload=JSON.parse(prompt.split('\n').at(-1));
+  assert.equal(payload.batch_id,'BATCH');
+  assert.equal(payload.experimental_modes,undefined);
+  assert.ok(prompt.startsWith(buildReviewInstructions(config)));
+  assert.ok(prompt.includes('Copy batch_id'));
+  assert.ok(prompt.includes('"results"'));
+  assert.ok(!prompt.includes('"experimental_options":['));
+ }
  const packed=buildReviewPayload(hanja.context,[hanja],{experimentalHanja:true}).payload;
  assert.equal(packed.targets[0].options.c0,'p0');
  assert.equal(packed.format,'shared-pools-v3');
+ assert.equal(packed.experimental_modes,undefined);
+ assert.ok(hanjaOnly.length<common.length+500,'the additional rule should be short');
 });
