@@ -40,9 +40,9 @@ test('accepted batch remains available before later model events arrive',()=>{
  assert.equal(task.manualRequest,'batch2');assert.equal(entry.annotations.length,1);
 });
 
-test('page-only recovery rejects unverified x0 experimental replacement without changing annotations',()=>{
+test('page-only recovery rejects direct unverified Hanja string without changing annotations',()=>{
  const {context,task,entry}=environment();
- const proposed={batch_id:'batch1',experimental_options:[{target_id:'t0',choice_id:'x0',type:'hanja',replacement:'可',definition:'unsupported'}],results:[{target_id:'t0',choice_id:'x0'}]};
+ const proposed={batch_id:'batch1',results:[{target_id:'t0',choice_id:'可'}]};
  assert.throws(()=>context.applyManualRecovery(task,JSON.stringify(proposed)),/后台校验/);
  assert.equal(entry.annotations.length,0);
  assert.equal(task.manualRequest,'batch1');
