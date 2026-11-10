@@ -1,5 +1,6 @@
 import {filterReviewTargets,canTrimReviewMorphology} from './review-pos.js';
 import {buildExperimentalOriginInstructions} from './experimental-options.js';
+import {SMART_SEGMENTATION_INSTRUCTIONS} from './smart-segmentation-prompt.js';
 
 // Concise common rules. The optional origin clauses are separate and conditional.
 export const REVIEW_INSTRUCTIONS = [
@@ -14,7 +15,8 @@ export const REVIEW_INSTRUCTIONS = [
 
 export function buildReviewInstructions(config={}){
  const experimental=buildExperimentalOriginInstructions(config);
- return experimental?REVIEW_INSTRUCTIONS+"\n"+experimental:REVIEW_INSTRUCTIONS;
+ return [REVIEW_INSTRUCTIONS,...(experimental?[experimental]:[]),
+ ...(config.smartSegmentation===true?[SMART_SEGMENTATION_INSTRUCTIONS]:[])].join("\n");
 }
 
 export function buildManualPrompt(context,targets,batchId,config={}){
@@ -35,8 +37,8 @@ export function buildReviewPayload(context,targets,config={}){
  const packedTargets=targets.map(target=>{
   const text=target.context;
   const adjacent_context=target.adjacent_context;
-  const sentenceKey=JSON.stringify([text,adjacent_context?.before||'',adjacent_context?.after||'']);
-  if(!sentenceIds.has(sentenceKey)){const sentence_id=`s${sentences.length}`;sentenceIds.set(sentenceKey,sentence_id);sentences.push({sentence_id,text,...(adjacent_context?{adjacent_context}:{})});}
+  const sentenceKey=JSON.stringify([text,adjacent_context?.before||'',adjacent_context?.after||'',...(config.smartSegmentation===true?[target.repair_sentence_key||'']:[])]);
+  if(!sentenceIds.has(sentenceKey)){const sentence_id=`s${sentences.length}`;sentenceIds.set(sentenceKey,sentence_id);sentences.push({sentence_id,text,...(adjacent_context?{adjacent_context}:{}),...(config.smartSegmentation===true?{kiwi_tokens:target.repair_context?.kiwi_tokens||[],protected_ranges:target.repair_context?.protected_ranges||[]}: {})});}
   const options=Object.fromEntries(target.options.map(option=>{
    if(option.type==='keep')return ['KEEP',null];
    const {choice_id,...meaning}=option;
@@ -44,7 +46,7 @@ export function buildReviewPayload(context,targets,config={}){
    if(!candidateIds.has(key)){const candidate_id=`p${candidates.length}`;candidateIds.set(key,candidate_id);candidates.push({candidate_id,...meaning});}
    return [choice_id,candidateIds.get(key)];
   }));
-  const {context:unused,adjacent_context:unusedAdjacent,options:oldOptions,...occurrence}=target;
+  const {context:unused,adjacent_context:unusedAdjacent,options:oldOptions,repair_context:unusedRepair,repair_sentence_key:unusedKey,original_target_id:unusedOriginal,...occurrence}=target;
   // The local POS filter has already checked these tags. Preserve unknown/conflicting evidence.
   if(canTrimReviewMorphology(target,config)){
    if(target.morphology.length===1&&target.morphology[0].form===target.surface&&target.morphology[0].start===target.start&&target.morphology[0].end===target.end){
