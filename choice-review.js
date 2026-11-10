@@ -5,6 +5,7 @@ import {requestLogger} from './request-log.js';
 import './model-catalog.js';
 import {buildReviewPayload,buildReviewInstructions} from './review-payload.js';
 import {literalOriginOption} from './experimental-options.js';
+import {validateSegmentationRepairs} from './segmentation-repairs.js';
 import {normalizeOutputTokenLimit} from './batch-budget.js';
 export function validateChoices(targets,response,config={}) {
  const accepted=[],unresolved=[];
@@ -64,22 +65,33 @@ export function safeDetail(value,config={}){
  return text.replace(/Bearer\s+[^\s"'<>]+/gi,'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,3000);
 }
 export function modelTargets(targets,config={}){
- return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),...(t.dictionary_person_name===true?{dictionary_person_name:true}:{}),...(t.dictionary_name_homograph===true?{dictionary_name_homograph:true}:{}),...(t.suspected_person_name===true?{suspected_person_name:true}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(o.subject_category?{subject_category:o.subject_category}:{}),...(o.semantic_category?{semantic_category:o.semantic_category}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
+ return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.partial_word?{partial_word:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),...(t.dictionary_person_name===true?{dictionary_person_name:true}:{}),...(t.dictionary_name_homograph===true?{dictionary_name_homograph:true}:{}),...(t.suspected_person_name===true?{suspected_person_name:true}:{}),...(config.smartSegmentation===true?{repair_context:t.repair_context,repair_sentence_key:t.repair_sentence_key,original_target_id:t.original_target_id,...(t.scan_only?{scan_only:true}:{})}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(o.subject_category?{subject_category:o.subject_category}:{}),...(o.semantic_category?{semantic_category:o.semantic_category}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
 }
 export async function reviewTargets(config,targets,signal){
  if(!config.enableModelReview || !targets.length)return {accepted:[],unresolved:targets,errors:[]};
  let pending=targets,accepted=[],errors=[];
  const notify=event=>config.onDiagnostic?.({...event,message:safeDetail(event.message,config),detail:safeDetail(event.detail,config)});
  const thinking=thinkingSettings(config);
- for(let attempt=0;attempt<2 && pending.length;attempt++){
+ for(let attempt=0;attempt<(config.smartSegmentation===true?1:2) && pending.length;attempt++){
   signal?.throwIfAborted();
   config.onPreview?.([]);
   notify({stage:'request',level:'info',attempt:attempt+1,model:config.model,thinking:thinking.label,message:`正在请求模型审核：${pending.length} 个候选；${thinking.label}`});
   try {
-   const response=await (config.request || requestChoices)({...config,attempt:attempt+1},modelTargets(pending,config),signal);
+   const current=pending;
+   const wire=modelTargets(current,config);
+   const response=await (config.request || requestChoices)({...config,attempt:attempt+1},wire,signal);
    const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
-   const result=experimental?validateExperimentalChoices(pending,response,config):validateChoices(pending,response,config);
-   accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);config.onPreview?.([]);
+   const result=experimental?validateExperimentalChoices(current,response,config):validateChoices(current,response,config);
+   accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);
+   if(config.smartSegmentation===true){
+    const repair=validateSegmentationRepairs(wire,response,config);
+    config.onRepairs?.(repair.accepted);
+    if(repair.accepted.length||repair.rejected.length)
+     notify({stage:'segmentation',level:repair.rejected.length?'warning':'info',
+      message:`本批分词修复：采纳 ${repair.accepted.length} 项，安全拒绝 ${repair.rejected.length} 项。`,
+      detail:repair.rejected.length?JSON.stringify(repair.rejected.slice(0,30)):''});
+   }
+   config.onPreview?.([]);
    if(experimental)notify({stage:'experimental',level:result.experimentalRejected?'warning':'info',message:`单次回复：直接词源标注 ${result.experimentalAccepted} 项、拒绝无效直接词源 ${result.experimentalRejected} 项。`});
    notify({stage:'response',level:pending.length?'warning':'info',message:`模型返回：采纳 ${result.accepted.length} 项，未解决 ${pending.length} 项`,detail:pending.length?JSON.stringify(response):''});
   }catch(error){
