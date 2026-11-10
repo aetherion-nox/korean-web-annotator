@@ -1,6 +1,6 @@
 import {buildManualPrompt} from './review-payload.js';
 export {buildManualPrompt} from './review-payload.js';
-import {validateChoices} from './choice-review.js';
+import {validateChoices,reviewRepairFeedback} from './choice-review.js';
 import {diagnoseGeneratedRow} from './model-origin.js';
 import {describeBatchBudget} from './batch-budget.js';
 
@@ -59,7 +59,7 @@ function explainRejectedManualResult(targets,rows,config){
     if(p.type==='hanja'&&typeof p.replacement==='string'&&Array.from(p.replacement).length!==Array.from(p.surface||'').length)
      return preface+'第 '+(i+1)+' 段的汉字数量与韩文字音节数不一致。';
    }
-   return preface+'词源字符、模式开关、高置信度、字段或子词段结构未通过校验。';
+   return preface+'词源字符、模式开关、字段或子词段结构未通过校验，请重新分析完整词干。';
   }
   if(row.choice_id==='GEN_HANJA'||row.choice_id==='GEN_LOANWORD'){
    const reason=diagnoseGeneratedRow(target,row,config);
@@ -108,7 +108,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
     const validationConfig={reviewPosFilter:current.reviewPosFilter,allowModelHanja:current.allowModelHanja,
      allowModelLoanword:current.allowModelLoanword,allowModelSegmentation:current.allowModelSegmentation};
     const known=new Map(current.wireTargets.map(t=>[t.target_id,t]));
-    const grouped=new Map(),failures=[];
+    const grouped=new Map(),failures=[],repairReasons=new Map();
     for(const row of response.results){
      if(!row||!known.has(row.target_id)){
       failures.push('跨批或未知 target_id：'+String(row?.target_id??'(缺失)'));
@@ -120,6 +120,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
     for(const [id,rows] of grouped){
      if(rows.length!==1){
       failures.push('重复 target_id：'+id+'（本次 '+rows.length+' 条，已忽略）');
+      repairReasons.set(id,reviewRepairFeedback(known.get(id),rows,validationConfig));
       continue;
      }
      // Never overwrite a decision accepted in an earlier submission.
@@ -128,6 +129,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
      const outcome=validateChoices([target],{results:[row]},validationConfig);
      if(outcome.accepted.length!==1){
       failures.push(explainRejectedManualResult([target],[row],validationConfig));
+      repairReasons.set(id,reviewRepairFeedback(target,[row],validationConfig));
       continue;
      }
      const option=outcome.accepted[0].option;
@@ -140,10 +142,14 @@ export function createManualReviewSession({operationId,post,signal}={}){
     const remaining=current.wireTargets.filter(t=>!current.acceptedRows.has(t.target_id));
     if(remaining.length){
      const ids=remaining.map(t=>t.target_id);
+     const repairTargets=remaining.map(target=>({...target,
+      repair_feedback:repairReasons.get(target.target_id)||
+       '此前尚未收到该 target_id 的有效结果。请判断整个词而不是只补单个音节。'}));
      const repairPrompt='只修复以下 '+remaining.length+' 个未通过校验的 target_id。之前已通过的 '+current.acceptedRows.size+
       ' 条答案已保存，无需重新生成。必须保留原 batch_id '+current.requestId+
-      '；results 只包含下列目标，严格检查 GEN_SEGMENTS 的 surface 与 UTF-16 start/end。\n\n'+
-      buildManualPrompt(current.config.context,remaining,current.requestId,current.config);
+      '；results 只包含下列目标。请读取每个目标的 repair_feedback，重新判断完整词干与助词/词尾。'+
+      '完整汉字词优先使用覆盖整个词干的一条 GEN_SEGMENTS，不要只返回孤立单音节；不能确定词源时选择 KEEP，严禁编造缺失的汉字。\n\n'+
+      buildManualPrompt(current.config.context,repairTargets,current.requestId,current.config);
      notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,
       error:'已保存 '+current.acceptedRows.size+'/'+current.wireTargets.length+' 条有效答案；还有 '+remaining.length+
        ' 条需修复：'+ids.slice(0,24).join('、')+(ids.length>24?'…':'')+'。'+failures.slice(0,3).join('；')+(failures.length>3?'；还有 '+(failures.length-3)+' 条错误':'')+
