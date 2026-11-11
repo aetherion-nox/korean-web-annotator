@@ -5,10 +5,10 @@ import {describeBatchBudget} from './batch-budget.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
 // Keep an oversized single dictionary entry intact rather than losing senses.
-export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000,reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false}={}){
+export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000,reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false,smartSegmentation=false}={}){
  const groups=[];let rows=[];
  const ownContext=group=>[...new Set(group.map(r=>r.target.context))].join('\n');
- const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000',{reviewPosFilter,experimentalHanja,experimentalLoanword});
+ const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000',{reviewPosFilter,experimentalHanja,experimentalLoanword,smartSegmentation});
  const size=group=>prompt(ownContext(group),group).length;
  for(const item of items)for(const target of item.result.unresolved){
   const row={item,target};
