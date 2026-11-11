@@ -1,4 +1,5 @@
 import {projectAnnotation} from './local-engine.js';
+import {validateModelHanjaReadings} from './hanja-reading-check.js';
 
 // Only describe origins the user actually enabled. This rule states the
 // decision priority rather than suggesting a rarely-used optional feature.
@@ -58,11 +59,12 @@ export function literalOriginOption(target,choiceId,config={}){
  if(target.options?.some(o=>o.type===type&&o.replacement===(aligned?.replacement||choiceId)))return null;
  const option={choice_id:choiceId,type,
   replacement:aligned?.replacement||choiceId,entry_id:'experimental:'+type,
-  definitions:['实验性模型词源：未经词典核实'],written_form:target.surface,
+  definitions:['实验性模型词源：未经词典核实'],written_form:target.surface,origin_source:'model-unverified',
   ...(aligned?{segments:aligned.segments}:{})};
  try{
   const projected=projectAnnotation(target.context,{...target,...option});
   if(!projected.length||projected.some(a=>a.start<target.start||a.end>target.end))return null;
+  if(type==='hanja'&&validateModelHanjaReadings(target.context,projected).status==='mismatch')return null;
  }catch{return null;}
  return option;
 }
