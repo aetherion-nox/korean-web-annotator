@@ -61,7 +61,11 @@ export function createManualReviewSession({operationId,post,signal}={}){
    const current=pending;
    try{
     const response=parseAnswer(message.text);
-    if(response.batch_id!==current.requestId)throw Error('batch_id 缺失或不属于当前批次，请保留提示词中的 batch_id 原样。');
+    // A missing batch_id is acceptable only when every target ID and choice
+    // passes the existing one-to-one validation below. A supplied but wrong
+    // batch_id must still be rejected rather than silently applied.
+    if(Object.hasOwn(response,'batch_id')&&response.batch_id!==current.requestId)
+      throw Error('batch_id 与当前批次不一致，请检查是否粘贴了其他批次的答案。');
     const experimental=current.experimentalHanja||current.experimentalLoanword;
     const choicesConfig={reviewPosFilter:current.reviewPosFilter,experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword};
     if(Object.prototype.hasOwnProperty.call(response,'experimental_options'))throw Error('新版协议只需要 results；请重新复制当前批次提示词，不要 experimental_options。');
