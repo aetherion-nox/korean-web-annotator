@@ -53,7 +53,7 @@ export function prepareManualRequest(config,targets){
   }
   recovery={targets:targetsForRecovery,scopeGroups,
    experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,
-   smartSegmentation:config.smartSegmentation===true,
+   smartSegmentation:config.smartSegmentation===true,reviewPosFilter:config.reviewPosFilter!==false,
    repairModes:{hanja:config.repairModes?.hanja===true,loanword:config.repairModes?.loanword===true}};
  }
  return {requestId,bindings,...(recovery?{recovery}:{}),batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
