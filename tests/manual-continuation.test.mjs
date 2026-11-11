@@ -47,3 +47,21 @@ test('page-only recovery rejects direct unverified Hanja string without changing
  assert.equal(entry.annotations.length,0);
  assert.equal(task.manualRequest,'batch1');
 });
+
+test('disconnected page recovery accepts missing batch_id only with matching IDs and count',()=>{
+ const {context,task,entry}=environment();
+ assert.throws(()=>context.applyManualRecovery(task,JSON.stringify({results:[]})),/不完整/);
+ assert.throws(()=>context.applyManualRecovery(task,JSON.stringify({results:[{target_id:'other',choice_id:'c0'}]})),/target_id/);
+ assert.throws(()=>context.applyManualRecovery(task,JSON.stringify({batch_id:'wrong',results:[{target_id:'t0',choice_id:'c0'}]})),/batch_id/);
+ assert.equal(task.manualRequest,'batch1');assert.equal(entry.annotations.length,0);
+ context.applyManualRecovery(task,JSON.stringify({results:[{target_id:'t0',choice_id:'c0'}]}));
+ assert.equal(task.manualRequest,'batch2');
+ context.applyManualRecovery(task,JSON.stringify({results:[{target_id:'t0',choice_id:'KEEP'}]}));
+ assert.equal(task.completed,true);assert.equal(entry.annotations.length,1);
+});
+test('missing batch_id never permits raw model origins in disconnected page recovery',()=>{
+ const {context,task,entry}=environment();
+ assert.throws(()=>context.applyManualRecovery(task,JSON.stringify({results:[{target_id:'t0',choice_id:'可'}]})),/后台校验/);
+ assert.equal(task.manualRequest,'batch1');
+ assert.equal(entry.annotations.length,0);
+});
