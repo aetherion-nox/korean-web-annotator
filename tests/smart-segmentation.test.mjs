@@ -208,10 +208,21 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
  assert.equal(off.sentences[0].kiwi_tokens,undefined);
  assert.deepEqual(on.sentences[0].kiwi_tokens,[]);
  assert.ok(!buildReviewInstructions({}).includes('repairs'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Kiwi tokenization'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Actively audit EVERY original sentence'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('You SHOULD submit repairs for EVERY genuine, well-supported'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('never invent repairs to reach a quota'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('optional repairs for genuine segmentation errors'));
+ assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('no explanations or extra fields'));
+ assert.ok(!buildReviewInstructions({}).includes('Actively audit EVERY original sentence'));
+ assert.ok(!buildReviewInstructions({}).includes('you SHOULD write that origin'));
  assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('genuine Hanja spelling'));
  assert.ok(buildManualPrompt(text,[t],'batch',{smartSegmentation:true}).includes('repairs'));
  assert.ok(!buildManualPrompt(text,[t],'batch',{}).includes('repairs'));
+ const combined=buildReviewInstructions({smartSegmentation:true,experimentalHanja:true,experimentalLoanword:true});
+ assert.ok(combined.includes('Actively audit EVERY original sentence'));
+ assert.ok(combined.includes('you SHOULD write that origin directly as choice_id'));
+ assert.equal((combined.match(/You SHOULD submit repairs/g)||[]).length,1);
+ assert.equal((combined.match(/you SHOULD write/g)||[]).length,1);
 });
 
 test('manual mode returns normal target choices and repairs in a single response',async()=>{
