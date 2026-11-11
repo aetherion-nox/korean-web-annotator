@@ -53,6 +53,7 @@ jobs:
                   output.write(root/path,'Korean-Web-Annotator/'+path.as_posix())
           with zipfile.ZipFile(dest) as zipped:
               assert not zipped.testzip()
+              assert not any(name.startswith('Korean-Web-Annotator/distribution/') for name in zipped.namelist()), 'Nested distribution cache found in package'
               assert json.loads(zipped.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.55.5'
               assert 'Korean-Web-Annotator/offline-manual-recovery.js' in zipped.namelist()
               assert 'Korean-Web-Annotator/runtime/python-sources.json' in zipped.namelist()
