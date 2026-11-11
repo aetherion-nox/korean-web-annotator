@@ -33,7 +33,30 @@ export function prepareManualRequest(config,targets){
  const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join('');
  const wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
  const bindings=config.manualBindings?.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};});
- return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
+ // Keep the minimum information needed to run the SAME origin/repair validators
+ // on the page if the MV3 worker disconnects. Never trust a raw model spelling
+ // merely because it is present in the recovered JSON.
+ const needsRecovery=config.experimentalHanja===true||config.experimentalLoanword===true||config.smartSegmentation===true;
+ let recovery;
+ if(needsRecovery){
+  const targetsForRecovery=wireTargets.map(target=>{
+   const {context,repair_context,options,...fields}=target;
+   return {...fields,options:(options||[]).map(({choice_id,type,replacement})=>({choice_id,type,replacement}))};
+  });
+  const scopeGroups=[],seenSentences=new Set();
+  if(config.smartSegmentation===true)for(let i=0;i<targets.length;i++){
+   const key=wireTargets[i].repair_sentence_key;
+   if(typeof key!=='string'||seenSentences.has(key))continue;
+   seenSentences.add(key);
+   const scope=config.repairScopes?.get(targets[i].target_id);
+   if(scope)scopeGroups.push({sentenceKey:key,scope});
+  }
+  recovery={targets:targetsForRecovery,scopeGroups,
+   experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,
+   smartSegmentation:config.smartSegmentation===true,
+   repairModes:{hanja:config.repairModes?.hanja===true,loanword:config.repairModes?.loanword===true}};
+ }
+ return {requestId,bindings,...(recovery?{recovery}:{}),batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
 }
 
 export function createManualReviewSession({operationId,post,signal}={}){
