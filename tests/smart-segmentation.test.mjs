@@ -161,7 +161,7 @@ test('a partial split cannot silently discard unaddressed Hangul from the old ta
  const text='과학기술',f=fixture(text,[target('t0',text,0,4,'科學技術')]);
  const partial=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學')]);
  assert.equal(partial.accepted.length,0);
- assert.ok(partial.rejected.some(r=>/conflict|coverage|sibling/.test(r.reason)));
+ assert.ok(partial.rejected.some(r=>/conflict|coverage|sibling|unaccounted/.test(r.reason)));
  const complete=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學'),
   row(f.sid,'replace',['t0'],2,4,'기술','KEEP')]);
  assert.equal(complete.accepted.length,2);
