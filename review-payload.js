@@ -15,7 +15,13 @@ export const REVIEW_INSTRUCTIONS = [
 
 export function buildReviewInstructions(config={}){
  const experimental=buildExperimentalOriginInstructions(config);
- return [REVIEW_INSTRUCTIONS,...(experimental?[experimental]:[]),
+ // The ordinary results-only schema must not contradict optional repairs.
+ const base=config.smartSegmentation===true
+  ?REVIEW_INSTRUCTIONS.replace(
+    'Return only JSON {"results":[{"target_id":"...","choice_id":"..."}]} with exactly one result for every target. Keep target_id unchanged; no explanations or extra fields.',
+    'Return one JSON object with results containing exactly one {target_id,choice_id} per original target, plus optional repairs for genuine segmentation errors. Keep target_id unchanged. No explanations or unrelated fields.')
+  :REVIEW_INSTRUCTIONS;
+ return [base,...(experimental?[experimental]:[]),
  ...(config.smartSegmentation===true?[SMART_SEGMENTATION_INSTRUCTIONS]:[])].join("\n");
 }
 
