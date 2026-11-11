@@ -77,3 +77,6 @@ html[data-kra-copy-mode="annotation"] .kra-ruby > rt { user-select:text; }
 .kra-manual-reopen { display:block !important;position:fixed !important;top:12px !important;right:12px !important;z-index:2147483647 !important;min-height:40px !important;padding:8px 14px !important;border:1px solid #72809a !important;border-radius:8px !important;background:#172033 !important;color:#fff !important;font:14px/1.5 system-ui,sans-serif !important;cursor:pointer !important; }
 .kra-manual-reopen[hidden] { display:none !important; }
 .kra-manual-review .kra-manual-file[hidden] { display:none !important; }
+
+/* Deliberately subtle: model-origin annotations are not dictionary attestations. */
+ruby.kra-ruby[data-kra-source="model-unverified"] { text-decoration-line:underline !important;text-decoration-style:dotted !important;text-decoration-color:#b57928 !important;text-underline-offset:3px !important; }
