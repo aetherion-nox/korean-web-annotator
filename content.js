@@ -786,7 +786,7 @@
       task.offlineRepairs ||= new Map();
       for(const repair of verified.repairs){
         if(!task.offlineRepairs.has(repair.sentenceKey))task.offlineRepairs.set(repair.sentenceKey,[]);
-        task.offlineRepairs.get(repair.sentenceKey).push(repair);
+        task.offlineRepairs.get(repair.sentenceKey).push({...repair,old_target_ids:[...repair.source_target_ids]});
       }
     }
     (task.manualApplied ||= new Set()).add(backup.requestId);
