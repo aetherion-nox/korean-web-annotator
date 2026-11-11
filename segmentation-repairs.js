@@ -141,7 +141,7 @@ export function validateSegmentationRepairs(targets,response,config={}){
  }
  // A malformed sibling must never cause a partial split to consume the
  // original target. Conflicting rows invalidate the entire connected group.
- const bad=new Set();
+ const bad=new Set(),badReasons=new Map();
  for(let i=0;i<prepared.length;i++)for(let j=i+1;j<prepared.length;j++){
   const a=prepared[i],b=prepared[j];
   if(a.sentence_id!==b.sentence_id)continue;
@@ -171,7 +171,7 @@ export function validateSegmentationRepairs(targets,response,config={}){
    if(!oldTarget)continue;
    for(let pos=oldTarget.start;pos<oldTarget.end;pos++){
     if(/[가-힣]/u.test(text[pos]||'')&&!component.some(r=>pos>=r.start&&pos<r.end)){
-     for(const part of component)bad.add(part.index);
+     for(const part of component){bad.add(part.index);badReasons.set(part.index,'replacement leaves original Hangul unaccounted for');}
      break;
     }
    }
@@ -189,7 +189,7 @@ export function validateSegmentationRepairs(targets,response,config={}){
   }
  }
  for(const r of prepared){
-  if(bad.has(r.index)){fail(r.index,'repair conflicts with a sibling or shares a malformed split',r);continue;}
+  if(bad.has(r.index)){fail(r.index,badReasons.get(r.index)||'repair conflicts with a sibling or shares a malformed split',r);continue;}
   accepted.push(r);
  }
  return {accepted,rejected};
