@@ -1,0 +1,80 @@
+name: Publish v1.1.55.4 experimental Release
+
+on:
+  push:
+    branches: [experimental-sense-options-from-v1.1.55]
+    paths:
+      - '.github/workflows/publish-experimental-v1.1.55.4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-experimental-v1.1.55.4
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the already-tested experimental package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 42983064098 \
+            --repo "${{ github.repository }}" \
+            --name "Korean-Web-Annotator-Selective-Review-Test-Build" \
+            --dir release-asset
+          ls -lah release-asset
+
+      - name: Validate package matches v1.1.55.4
+        run: |
+          python3 - <<'PY'
+          import json,zipfile
+          from pathlib import Path
+          p=Path('release-asset/Korean-Web-Annotator-v1.1.55.4-smart-segmentation-experimental.zip')
+          assert p.exists(), 'Missing installable ZIP inside Actions artifact'
+          assert p.stat().st_size > 90_000_000, 'Runtime model assets may be missing'
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None, 'Corrupted ZIP'
+              root='Korean-Web-Annotator/'
+              manifest=json.loads(z.read(root+'manifest.json'))
+              assert manifest['version']=='1.1.55.4', manifest['version']
+              for required in ('runtime/models/nounchr.mdl','experimental-options.js',
+                               'smart-segmentation-prompt.js','segmentation-repairs.js',
+                               'hanja-reading-data.js','review-payload.js'):
+                  assert root+required in z.namelist(), required
+          print('Verified package:',p.name,p.stat().st_size,'bytes')
+          PY
+
+      - name: Publish as an experimental pre-release, keeping stable releases intact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v1.1.55.4"
+          ASSET="release-asset/Korean-Web-Annotator-v1.1.55.4-smart-segmentation-experimental.zip"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Pre-existing release: adding validated package"
+            gh release upload "$TAG" "$ASSET" --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "$TAG" "$ASSET" \
+              --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" \
+              --title "Korean Web Annotator v1.1.55.4 — Experimental" \
+              --prerelease \
+              --notes-file "CHANGELOG-1.1.55.4.md"
+          fi
+
+      - name: Confirm public download asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v1.1.55.4 \
+            --repo "${{ github.repository }}" \
+            --json url,isPrerelease,assets \
+            --jq '{url: .url, isPrerelease: .isPrerelease, assets: [.assets[] | {name: .name, size: .size, url: .url}]}'
