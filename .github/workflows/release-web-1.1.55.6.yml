@@ -1,0 +1,77 @@
+name: Build Web v1.1.55.6 maintenance release
+on:
+  push:
+    branches: ['fix/offline-review-v1.1.55.6']
+    paths:
+      - '.github/workflows/release-web-1.1.55.6.yml'
+      - 'manifest.json'
+      - 'content.js'
+      - 'service-worker.js'
+      - 'manual-review.js'
+      - 'offline-manual-recovery.js'
+      - 'tests/offline-manual-recovery.test.mjs'
+      - 'tests/extension-module-manifest.test.mjs'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test offline recovery and syntax
+        run: |
+          node --check content.js
+          node --check service-worker.js
+          node --check manual-review.js
+          node --check offline-manual-recovery.js
+          node --test tests/extension-module-manifest.test.mjs tests/offline-manual-recovery.test.mjs tests/review-pos.test.mjs tests/name-homograph-payload.test.mjs
+      - name: Restore extension runtime
+        run: python3 restore_distribution.py
+      - name: Package verified extension
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, subprocess, zipfile, hashlib
+          root=Path.cwd()
+          bundle=root/'runtime/python-sources.json'
+          sources=json.loads(bundle.read_text())
+          for key in list(sources):
+              if not key.startswith('/project/'):
+                  continue
+              local=root/'python'/key[len('/project/'):]
+              if local.is_file():
+                  sources[key]=local.read_text()
+          bundle.write_text(json.dumps(sources,ensure_ascii=False,separators=(',',':')))
+          files={Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split(chr(0)) if p}
+          files={p for p in files if p.parts[0] not in {'.github','distribution'} and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          dest=root/'Korean-Web-Annotator-v1.1.55.6.zip'
+          with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as output:
+              for path in sorted(files):
+                  output.write(root/path,'Korean-Web-Annotator/'+path.as_posix())
+          with zipfile.ZipFile(dest) as zipped:
+              assert not zipped.testzip()
+              assert not any(name.startswith('Korean-Web-Annotator/distribution/') for name in zipped.namelist()), 'Nested distribution cache found in package'
+              assert json.loads(zipped.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.55.6'
+              assert 'Korean-Web-Annotator/offline-manual-recovery.js' in zipped.namelist()
+              assert 'Korean-Web-Annotator/paragraph-plan.js' in zipped.namelist()
+              assert 'Korean-Web-Annotator/text-chunks.js' in zipped.namelist()
+              assert not json.loads(zipped.read('Korean-Web-Annotator/manifest.json'))['web_accessible_resources'][0].get('use_dynamic_url',False)
+              assert 'Korean-Web-Annotator/runtime/python-sources.json' in zipped.namelist()
+          print(dest, dest.stat().st_size,hashlib.sha256(dest.read_bytes()).hexdigest())
+          PY
+      - name: Publish maintenance release (not latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.1.55.6 >/dev/null 2>&1; then
+            gh release upload v1.1.55.6 Korean-Web-Annotator-v1.1.55.6.zip --clobber
+          else
+            gh release create v1.1.55.6 Korean-Web-Annotator-v1.1.55.6.zip \
+              --target "$GITHUB_SHA" \
+              --title "Korean Web Annotator v1.1.55.6 — offline recovery fix" \
+              --notes-file CHANGELOG-1.1.55.6.md --latest=false
+          fi
