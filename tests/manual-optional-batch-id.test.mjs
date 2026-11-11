@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createManualReviewSession} from '../manual-review.js';
+
+const makeTarget=(id,surface)=>({target_id:id,start:0,end:surface.length,surface,context:surface,
+ options:[
+  {choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]},
+  {choice_id:'c0',type:'hanja',replacement:'漢字',entry_id:1,definitions:['sample dictionary sense']}
+ ]});
+const targets=[makeTarget('local-a','한국'),makeTarget('local-b','정부')];
+const rows=()=>[{target_id:'t0',choice_id:'KEEP'},{target_id:'t1',choice_id:'c0'}];
+
+function begin(name,options={}){
+ const events=[],session=createManualReviewSession({operationId:name,post:event=>events.push(event)});
+ const pending=session.request({context:'한국 정부',...options},targets);
+ const request=events.find(event=>event.type==='MANUAL_REVIEW_REQUEST');
+ const submit=answer=>session.submit({operationId:name,requestId:request.requestId,text:JSON.stringify(answer)});
+ return {events,session,request,pending,submit};
+}
+
+test('missing batch_id is accepted for an exact one-to-one target and choice match',async()=>{
+ const batch=begin('optional-id');
+ assert.equal(batch.submit({results:rows()}),true);
+ const result=await batch.pending;
+ assert.deepEqual(result.results,[{target_id:'local-a',choice_id:'KEEP'},{target_id:'local-b',choice_id:'c0'}]);
+ assert.equal(batch.events.filter(event=>event.type==='MANUAL_REVIEW_ACCEPTED').length,1);
+});
+
+test('explicit wrong batch_id is rejected even when count and target IDs match',async()=>{
+ const batch=begin('wrong-id');
+ assert.equal(batch.submit({batch_id:'other-batch',results:rows()}),false);
+ assert.equal(batch.submit({batch_id:null,results:rows()}),false);
+ assert.equal(batch.submit({batch_id:batch.request.requestId,results:rows()}),true);
+ await batch.pending;
+ assert.equal(batch.events.filter(event=>event.type==='MANUAL_REVIEW_ERROR').length,2);
+});
+
+test('missing ID never relaxes count, duplicate target, foreign target or option validation',async()=>{
+ const batch=begin('strict-no-id');
+ for(const invalid of [
+  [{target_id:'t0',choice_id:'KEEP'}],
+  [{target_id:'t0',choice_id:'KEEP'},{target_id:'t0',choice_id:'c0'}],
+  [{target_id:'t0',choice_id:'KEEP'},{target_id:'t9',choice_id:'c0'}],
+  [{target_id:'t0',choice_id:'KEEP'},{target_id:'t1',choice_id:'missing'}]
+ ]){
+  assert.equal(batch.submit({results:invalid}),false,JSON.stringify(invalid));
+ }
+ assert.equal(batch.submit({results:rows()}),true);
+ await batch.pending;
+ assert.equal(batch.events.filter(event=>event.type==='MANUAL_REVIEW_ERROR').length,4);
+});
+
+test('single submission with segmentation repairs also accepts omitted batch_id',async()=>{
+ const batch=begin('optional-repairs',{smartSegmentation:true});
+ const answer={results:rows(),repairs:[{
+  sentence_id:'s0',op:'replace',old_target_ids:['t0'],start:0,end:2,surface:'한국',choice_id:'韓國'
+ }]};
+ assert.equal(batch.submit(answer),true);
+ const result=await batch.pending;
+ assert.equal(result.repairs.length,1);
+ assert.deepEqual(result.repairs[0].old_target_ids,['local-a']);
+});
