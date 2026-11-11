@@ -109,8 +109,10 @@ test('delete and KEEP may safely suppress malformed spans containing punctuation
 test('UTF-16 source indices, wrong offsets, missing/duplicate IDs and unsafe formats fail individually',()=>{
  const text='😀게임',f=fixture(text,[{...target('scan',text,0,text.length),scan_only:true,options:[keep(text)]}]);
  const good=row(f.sid,'add',[],2,4,'게임','game');
+ const repaired=validate(f,[row(f.sid,'add',[],1,3,'게임','game')]);
+ assert.equal(repaired.accepted.length,1,'unique nearby UTF16 offset should be corrected');
+ assert.equal(repaired.accepted[0].offset_corrected,true);
  const invalid=[
-  row(f.sid,'add',[],1,3,'게임','game'),
   row('other','add',[],2,4,'게임','game'),
   row(f.sid,'replace',['unlisted'],2,4,'게임','game'),
   {...good,extra:true},
@@ -147,9 +149,9 @@ test('cannot overlap a different target, a locally certain annotation, or a prio
 });
 
 test('selected text confinement, person-names and no second lookup for repaired terms',()=>{
- const text='가나다라마바사',f=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{selected:[{start:2,end:5}]});
+ const text='가나다나마바사',f=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{selected:[{start:2,end:5}]});
  assert.equal(validate(f,[row(f.sid,'add',[],0,2,'가나','可那')]).accepted.length,0);
- assert.equal(validate(f,[row(f.sid,'add',[],2,4,'다라','多羅')]).accepted.length,1);
+ assert.equal(validate(f,[row(f.sid,'add',[],2,4,'다나','多羅')]).accepted.length,1);
  const f2=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{protected_ranges:[[2,4]]});
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','多羅')]).accepted.length,0);
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','KEEP')]).accepted.length,1);
