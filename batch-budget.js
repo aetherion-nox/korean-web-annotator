@@ -63,7 +63,7 @@ export function contextReviewBatches(items,context='',{tier='128k',manual=false,
   batch.budget.limitReason=next?(next.outputTokens>next.outputLimit?'output':'context'):'end';
   // Page-wide context is optional; every occurrence's actual sentence is mandatory.
   if(context&&context.length<=batch.budget.contextTokens*3){
-   const full=describeBatchBudget(context,batch.rows.map(r=>r.target),{tier,manual,reviewPosFilter,experimentalHanja,experimentalLoanword,manualOutputTokenLimit,apiOutputTokenLimit});
+   const full=describeBatchBudget(context,batch.rows.map(r=>r.target),{tier,manual,reviewPosFilter,experimentalHanja,experimentalLoanword,smartSegmentation,manualOutputTokenLimit,apiOutputTokenLimit});
    if(fits(full)){batch.context=context;batch.budget={...full,limitReason:batch.budget.limitReason};}
   }
   batches.push(batch);start+=low;
