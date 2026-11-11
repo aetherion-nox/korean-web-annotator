@@ -157,6 +157,50 @@ test('selected text confinement, person-names and no second lookup for repaired 
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다나','KEEP')]).accepted.length,1);
 });
 
+test('a partial split cannot silently discard unaddressed Hangul from the old target',()=>{
+ const text='과학기술',f=fixture(text,[target('t0',text,0,4,'科學技術')]);
+ const partial=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學')]);
+ assert.equal(partial.accepted.length,0);
+ assert.ok(partial.rejected.some(r=>/conflict|coverage|sibling/.test(r.reason)));
+ const complete=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學'),
+  row(f.sid,'replace',['t0'],2,4,'기술','KEEP')]);
+ assert.equal(complete.accepted.length,2);
+ assert.deepEqual(complete.accepted.flatMap(r=>r.annotations.map(a=>a.replacement)),['科學']);
+});
+
+test('KEEP cannot consume unrelated text outside referenced old target',()=>{
+ const text='한국 정부',f=fixture(text,[target('t0',text,0,2,'韓國')]);
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,5,text,'KEEP')]).accepted.length,0);
+ assert.equal(validate(f,[row(f.sid,'delete',['t0'],0,2,'한국','KEEP')]).accepted.length,1);
+});
+
+test('nearby offset correction accepts only unique source substring',()=>{
+ const text='가 가',t={...target('scan',text,0,text.length),scan_only:true,options:[keep(text)]};
+ const f=fixture(text,[t]);
+ assert.equal(validate(f,[row(f.sid,'add',[],1,2,'가','KEEP')]).accepted.length,0);
+ const selected=validate(f,[row(f.sid,'add',[],2,3,'가','KEEP')]);
+ assert.equal(selected.accepted.length,0,'multiple matches in tolerance window must be rejected');
+});
+
+test('more than 48 repairs preserves the safe prefix rather than discarding the batch',()=>{
+ const text='가'.repeat(49),scan={...target('scan',text,0,text.length),scan_only:true,options:[keep(text)]};
+ const f=fixture(text,[scan]);
+ const rows=Array.from({length:49},(_,i)=>row(f.sid,'add',[],i,i+1,'가','KEEP'));
+ const result=validate(f,rows);
+ assert.equal(result.accepted.length,48);
+ assert.equal(result.rejected.length,1);
+ assert.equal(result.rejected[0].index,48);
+});
+
+test('repair Hanja is checked phonetically but ordinary dictionary choices stay unchanged',()=>{
+ const bad=fixture('사과',[target('t0','사과',0,2,'韓國')]);
+ assert.equal(validate(bad,[row(bad.sid,'replace',['t0'],0,2,'사과','韓國')]).accepted.length,0);
+ const good=fixture('한국',[target('t0','한국',0,2,'韓國')]);
+ const resolved=validate(good,[row(good.sid,'replace',['t0'],0,2,'한국','韓國')]);
+ assert.equal(resolved.accepted.length,1);
+ assert.equal(resolved.accepted[0].annotations[0].origin_source,'model-unverified');
+});
+
 test('the feature toggle controls prompt and input without enabling ordinary experimental modes',()=>{
  const text='게임',t=target('t0',text,0,2);
  const off=buildReviewPayload(text,[t],{}).payload;
