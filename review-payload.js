@@ -38,7 +38,11 @@ export function buildReviewPayload(context,targets,config={}){
   const text=target.context;
   const adjacent_context=target.adjacent_context;
   const sentenceKey=JSON.stringify([text,adjacent_context?.before||'',adjacent_context?.after||'',...(config.smartSegmentation===true?[target.repair_sentence_key||'']:[])]);
-  if(!sentenceIds.has(sentenceKey)){const sentence_id=`s${sentences.length}`;sentenceIds.set(sentenceKey,sentence_id);sentences.push({sentence_id,text,...(adjacent_context?{adjacent_context}:{}),...(config.smartSegmentation===true?{kiwi_tokens:target.repair_context?.kiwi_tokens||[],protected_ranges:target.repair_context?.protected_ranges||[]}: {})});}
+  if(!sentenceIds.has(sentenceKey)){const sentence_id=`s${sentences.length}`;sentenceIds.set(sentenceKey,sentence_id);sentences.push({sentence_id,text,...(adjacent_context?{adjacent_context}:{}),...(config.smartSegmentation===true?{
+   // Shared once per sentence, compact tuples rather than repeating field names.
+   kiwi_tokens:(target.repair_context?.kiwi_tokens||[]).map(t=>[t.form,t.tag,t.start,t.end]),
+   protected_ranges:target.repair_context?.protected_ranges||[]
+  }: {})});}
   const options=Object.fromEntries(target.options.map(option=>{
    if(option.type==='keep')return ['KEEP',null];
    const {choice_id,...meaning}=option;
@@ -47,6 +51,7 @@ export function buildReviewPayload(context,targets,config={}){
    return [choice_id,candidateIds.get(key)];
   }));
   const {context:unused,adjacent_context:unusedAdjacent,options:oldOptions,repair_context:unusedRepair,repair_sentence_key:unusedKey,original_target_id:unusedOriginal,...occurrence}=target;
+  if(config.smartSegmentation===true&&target.scan_only===true)delete occurrence.surface;
   // The local POS filter has already checked these tags. Preserve unknown/conflicting evidence.
   if(canTrimReviewMorphology(target,config)){
    if(target.morphology.length===1&&target.morphology[0].form===target.surface&&target.morphology[0].start===target.start&&target.morphology[0].end===target.end){
@@ -57,7 +62,7 @@ export function buildReviewPayload(context,targets,config={}){
   }
   return {...occurrence,sentence_id:sentenceIds.get(sentenceKey),options};
  });
- const payload={format:'shared-pools-v3',context,sentences,candidates,targets:packedTargets};
+ const payload={format:'shared-pools-v3',...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
  const userBytes=bytes(payload),legacyUserBytes=bytes({context,targets});
  const stats={posFilteredOptions:originalOptionCount-targets.reduce((n,t)=>n+t.options.length,0),posConflictTargets:targets.filter(t=>t.pos_conflict).length,format:payload.format,targets:targets.length,sentences:sentences.length,candidates:candidates.length,userBytes,legacyUserBytes,savedPercent:Math.round((1-userBytes/legacyUserBytes)*1000)/10};
