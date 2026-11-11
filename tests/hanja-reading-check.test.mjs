@@ -28,7 +28,8 @@ test('model-supplied Hanja is rejected when pronunciation contradicts the source
 test('word-initial Korean phonology is applied without changing inner-syllable readings',()=>{
  const initial=validateModelHanjaReadings('여자',[annotation('여자','女子')]);
  assert.equal(initial.status,'matched');
- const nonInitial=validateModelHanjaReadings('가이',[annotation('가이','可李')]);
+ assert.equal(validateModelHanjaReadings('양',[annotation('양','両')]).status,'matched');
+ const nonInitial=validateModelHanjaReadings('가양',[annotation('가양','可両')]);
  assert.equal(nonInitial.status,'mismatch');
  assert.equal(validateModelHanjaReadings('이',[annotation('이','李')]).status,'matched');
 });
