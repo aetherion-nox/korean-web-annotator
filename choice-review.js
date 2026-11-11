@@ -87,9 +87,11 @@ export async function reviewTargets(config,targets,signal){
     const repair=validateSegmentationRepairs(wire,response,config);
     config.onRepairs?.(repair.accepted);
     config.onRepairRejected?.(repair.rejected.length);
+    const corrected=repair.accepted.filter(r=>r.offset_corrected===true).length;
+    config.onRepairOffsetCorrected?.(corrected);
     if(repair.accepted.length||repair.rejected.length)
      notify({stage:'segmentation',level:repair.rejected.length?'warning':'info',
-      message:`本批分词修复：采纳 ${repair.accepted.length} 项，安全拒绝 ${repair.rejected.length} 项。`,
+      message:`本批分词修复：采纳 ${repair.accepted.length} 项，安全拒绝 ${repair.rejected.length} 项；唯一匹配纠正偏移 ${corrected} 项。`,
       detail:repair.rejected.length?JSON.stringify(repair.rejected.slice(0,30)):''});
    }
    config.onPreview?.([]);
