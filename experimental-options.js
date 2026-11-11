@@ -55,7 +55,7 @@ export function literalOriginOption(target,choiceId,config={}){
  // Existing dictionary spellings must be selected by their supplied c/n key.
  // A literal spelling must not bypass sense/POS competition or make an
  // already-known etymology look like independent model evidence.
- if(target.options.some(o=>o.type===type&&o.replacement===(aligned?.replacement||choiceId)))return null;
+ if(target.options?.some(o=>o.type===type&&o.replacement===(aligned?.replacement||choiceId)))return null;
  const option={choice_id:choiceId,type,
   replacement:aligned?.replacement||choiceId,entry_id:'experimental:'+type,
   definitions:['实验性模型词源：未经词典核实'],written_form:target.surface,
