@@ -179,7 +179,7 @@ test('nearby offset correction accepts only unique source substring',()=>{
  const f=fixture(text,[t]);
  assert.equal(validate(f,[row(f.sid,'add',[],1,2,'가','KEEP')]).accepted.length,0);
  const selected=validate(f,[row(f.sid,'add',[],2,3,'가','KEEP')]);
- assert.equal(selected.accepted.length,0,'multiple matches in tolerance window must be rejected');
+ assert.equal(selected.accepted.length,1,'an exact offset remains valid even when the surface occurs elsewhere');
 });
 
 test('more than 48 repairs preserves the safe prefix rather than discarding the batch',()=>{
