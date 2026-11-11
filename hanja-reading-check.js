@@ -4,7 +4,7 @@ import {primaryHangulReading} from './hanja-reading-data.js';
 // the right word in context; every model-authored origin stays unverified.
 // The source table contains primary readings, so unknown/polyphonic values
 // are fail-closed for automatic output without affecting dictionary entries.
-const HAN=/\\p{Script=Han}/u;
+const HAN=/\p{Script=Han}/u;
 const HANGUL=/^[가-힣]$/u;
 const DOUBLE_VOWELS=new Set([2,6,7,12,17,20]); // ㅑ ㅕ ㅖ ㅛ ㅠ ㅣ
 function initialVariants(reading){
