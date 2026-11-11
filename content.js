@@ -513,7 +513,10 @@
       const reading = annotation.type === 'hanja' ? annotation.surface : loanwordDisplay(annotation.replacement);
       if (annotation.type === 'loanword' && !reading) continue;
       value += escapeHTML(entry.text.slice(cursor, annotation.start));
-      value += `<ruby class="kra-ruby" kra-annotated="true" data-kra-type="${annotation.type}" data-kra-original="${escapeHTML(annotation.surface)}">${escapeHTML(base)}<rt class="kra-annotation kra-unselectable">${escapeHTML(reading)}</rt></ruby>`;
+      const unverified=annotation.origin_source==='model-unverified'||String(annotation.entry_id||'').startsWith('experimental:');
+      const source=unverified?'model-unverified':'dictionary';
+      const info=unverified?' title="模型提供的词源，尚未经词典核实"':'';
+      value += `<ruby class="kra-ruby" kra-annotated="true" data-kra-type="${annotation.type}" data-kra-source="${source}"${info} data-kra-original="${escapeHTML(annotation.surface)}">${escapeHTML(base)}<rt class="kra-annotation kra-unselectable">${escapeHTML(reading)}</rt></ruby>`;
       cursor = annotation.end;
     }
     return value + escapeHTML(entry.text.slice(cursor));
