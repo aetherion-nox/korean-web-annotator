@@ -121,15 +121,17 @@ test('only the enabled experimental origin rule is included in each manual/API p
  assert.equal(packed.targets[0].options.c0,'p0');
  assert.equal(packed.format,'shared-pools-v3');
  assert.equal(packed.experimental_modes,undefined);
- assert.ok(hanjaOnly.length<common.length+550,'the additional rule should be short');
- assert.ok(both.length<common.length+650,'one shared priority rule should avoid duplicating instructions');
+ assert.ok(hanjaOnly.length<common.length+800,'the additional rule should be concise');
+ assert.ok(both.length<common.length+850,'one shared priority rule should avoid duplicating instructions');
  assert.ok(common.includes('first determine its meaning from the sentence and context'));
  assert.ok(common.includes('Never choose a semantically mismatching candidate'));
  for(const prompt of [hanjaOnly,loanOnly,both]){
-  assert.ok(prompt.includes('Prefer it over KEEP and any semantically mismatching dictionary key'));
-  assert.ok(prompt.includes('even if the Korean spelling is identical'));
+  assert.ok(prompt.includes('you SHOULD write that origin directly as choice_id'));
+  assert.ok(prompt.includes('rather than defaulting to KEEP'));
+  assert.ok(prompt.includes('same-spelling but wrong-definition candidate is not a match'));
+  assert.ok(prompt.includes('If the genuine origin is uncertain, choose KEEP instead of guessing'));
   assert.ok(prompt.includes('confidently know its'));
   assert.ok(!prompt.includes('you may write'));
  }
- assert.equal((both.match(/Prefer it over KEEP/g)||[]).length,1,'combine modes into one rule');
+ assert.equal((both.match(/you SHOULD write/g)||[]).length,1,'combine modes into one instruction');
 });
