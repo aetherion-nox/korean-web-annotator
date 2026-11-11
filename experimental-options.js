@@ -14,8 +14,8 @@ export function buildExperimentalOriginInstructions(config={}){
   ?'Preserve source word boundaries and Hanja-to-syllable alignment; do not translate, romanize, or guess personal names or uncertain origins.'
   :hanja?'Preserve source word boundaries and Hanja-to-syllable alignment; never guess personal-name Hanja or uncertain origins.'
          :'Use the actual borrowed spelling, not a translation or Korean romanization; preserve source word boundaries and never guess names or uncertain origins.';
- return 'If no supplied dictionary sense matches the meaning of this occurrence but you confidently know its '+origin+
-  ', write that origin directly as choice_id. Prefer it over KEEP and any semantically mismatching dictionary key, even if the Korean spelling is identical. '+caution;
+ return 'Actively check whether the dictionary actually covers the meaning of EACH occurrence; a same-spelling but wrong-definition candidate is not a match. If no supplied sense fits and you confidently know its '+origin+
+  ', you SHOULD write that origin directly as choice_id, rather than defaulting to KEEP or selecting a semantically mismatching dictionary key. Use a matching dictionary key when one exists. If the genuine origin is uncertain, choose KEEP instead of guessing. '+caution;
 }
 
 const CJK=/^[\p{Script=Han}]+$/u;
