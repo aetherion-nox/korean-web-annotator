@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.55.5';
+  const VERSION = '1.1.55.6';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -918,8 +918,22 @@
   let paragraphModule;
   function startAnnotation(message) {
     if(!createParagraphPlan){
-      paragraphModule ||= import(chrome.runtime.getURL('paragraph-plan.js'));
-      return paragraphModule.then(module=>{createParagraphPlan=module.createParagraphPlan;return startAnnotation(message);}).catch(error=>{status('无法加载段落分析模块，请刷新网页重试');return {ok:false,error:error.message};});
+      paragraphModule ||= import(chrome.runtime.getURL('paragraph-plan.js')).catch(error=>{
+        // A failed dynamic import must not permanently poison all subsequent
+        // attempts in this tab. The previous version cached rejected promises.
+        paragraphModule=null;
+        throw error;
+      });
+      return paragraphModule.then(module=>{
+        if(typeof module.createParagraphPlan!=='function')throw Error('paragraph-plan.js 缺少 createParagraphPlan');
+        createParagraphPlan=module.createParagraphPlan;
+        return startAnnotation(message);
+      }).catch(error=>{
+        const detail=String(error?.message||error||'unknown error').slice(0,280);
+        addDiagnostic({stage:'module',level:'error',message:'无法加载段落分析模块',detail});
+        status('无法加载段落分析模块：'+detail+'。请检查扩展文件是否完整，再重新加载扩展。');
+        return {ok:false,error:detail};
+      });
     }
     const modes = { hanja: message.modes?.hanja ?? true, loanword: message.modes?.loanword ?? true };
     if (!modes.hanja && !modes.loanword) return { ok: false, error: '请至少启用一种标注模式。' };
