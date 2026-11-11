@@ -154,7 +154,7 @@ test('selected text confinement, person-names and no second lookup for repaired 
  assert.equal(validate(f,[row(f.sid,'add',[],2,4,'다나','多羅')]).accepted.length,1);
  const f2=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{protected_ranges:[[2,4]]});
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','多羅')]).accepted.length,0);
- assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','KEEP')]).accepted.length,1);
+ assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다나','KEEP')]).accepted.length,1);
 });
 
 test('the feature toggle controls prompt and input without enabling ordinary experimental modes',()=>{
