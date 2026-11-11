@@ -107,11 +107,11 @@ const experimentalCopy={
 };
 for(const [locale,labels] of Object.entries(experimentalCopy))Object.assign(copy[locale],labels);
 const segmentationCopy={
- 'zh-CN':['实验性：LLM 智能分词修复（默认关闭）','在一次模型审核中同时核对 Kiwi 词界、词性和漏标。只有确认错误时才提交可校验的 repairs；修复或新增词可直接填写词源或 KEEP。会扩大送审范围，但不增加每批请求轮次。关闭后完全保留原流程。'],
- 'zh-TW':['實驗性：LLM 智慧斷詞修復（預設關閉）','同一次模型審查中檢查 Kiwi 斷詞、詞性與漏標。只有確實發現錯誤才提交 repairs，修復詞可直接填詞源或 KEEP。會擴大審查範圍，但不會增加每批請求次數。'],
- en:['Experimental: LLM segmentation repair (off by default)','In the same review request, inspect Kiwi boundaries, POS and missing words. Return optional locally validated repairs only for genuine errors; repaired words may use literal origins or KEEP. Reviews more text without an extra request round.'],
- ja:['実験：LLM による分かち書き修正（初期設定は無効）','同じモデル審査で Kiwi の語境界・品詞・漏れを確認し、必要な場合のみ検証可能な repairs を返します。修正語は原綴りや KEEP を選択可能で、再リクエストは不要です。'],
- ko:['실험: LLM 지능형 형태소 경계 수정 (기본 꺼짐)','한 번의 모델 요청에서 Kiwi 분절, 품사 및 누락된 단어를 검토합니다. 실제 오류가 있을 때만 검증 가능한 repairs 를 반환하고 원어 또는 KEEP 를 직접 지정합니다. 추가 요청 단계는 없습니다.']
+ 'zh-CN':['实验性：LLM 智能分词修复（默认关闭）','开启后，完整韩语句子、Kiwi 分词线索和已由本地确定的词也会提交至你选择的模型服务，可能明显增加费用。模型在同一轮审核中检查错分与漏词；仅通过本地校验的修复会生效。模型自行提供的未核实词源会用虚线标记。'],
+ 'zh-TW':['實驗性：LLM 智慧斷詞修復（預設關閉）','開啟時會把完整韓語句子、Kiwi 斷詞線索及本地已確定的詞送交指定模型，可能增加費用。一次請求同時校正斷詞與漏詞，修復須通過本地驗證；模型自寫的未核實詞源會有虛線標記。'],
+ en:['Experimental: LLM segmentation repair (off by default)','When enabled, complete Korean sentences, Kiwi token hints and locally decided words are also sent to your chosen model provider, potentially increasing costs. The same request checks incorrect boundaries and missing words; only locally validated repairs apply. Unverified model-origin spellings are visibly marked.'],
+ ja:['実験：LLM による分かち書き修正（初期設定は無効）','有効にすると、韓国語の全文、Kiwi の解析情報、ローカルで確定した語も指定先モデルに送信され、費用が増える場合があります。同じリクエストで語境界や漏れを確認し、検証済みの修正のみ適用します。未確認のモデル語源は区別して表示します。'],
+ ko:['실험: LLM 지능형 형태소 경계 수정 (기본 꺼짐)','활성화하면 한국어 원문 전체, Kiwi 형태소 정보 및 로컬에서 결정된 단어도 선택한 모델 제공업체에 전송되므로 비용이 늘 수 있습니다. 한 번의 요청으로 분절·누락을 검사하고 검증된 수정만 적용합니다. 모델이 생성한 미확인 어원은 따로 표시합니다.']
 };
 for(const [locale,labels] of Object.entries(segmentationCopy))Object.assign(copy[locale],{smartSegmentation:labels[0],smartSegmentationHint:labels[1]});
 const localAuditCopy={
