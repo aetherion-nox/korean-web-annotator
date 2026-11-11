@@ -5,9 +5,9 @@ import {literalOriginOption} from './experimental-options.js';
 import {projectAnnotation} from './local-engine.js';
 import {validateSegmentationRepairs} from './segmentation-repairs.js';
 
-function sourceTarget(binding,recovery,entries){
+function sourceTarget(binding,recovery,sentences){
  const snapshot=recovery.targets?.find(t=>t.target_id===binding.target_id);
- const entry=entries.get(binding.sentenceId);
+ const entry=sentences.get(binding.sentenceId);
  if(!snapshot||!entry||!Number.isInteger(binding.start)||!Number.isInteger(binding.end)||
     entry.text.slice(binding.start,binding.end)!==binding.surface||
     snapshot.start!==binding.start||snapshot.end!==binding.end||snapshot.surface!==binding.surface)
@@ -15,7 +15,7 @@ function sourceTarget(binding,recovery,entries){
  return {...snapshot,context:entry.text};
 }
 
-export function validateOfflineManualAnswer(backup,response,entries,priorRepairs=new Map()){
+export function validateOfflineManualAnswer(backup,response,sentences,priorRepairs=new Map()){
  const recovery=backup?.recovery;
  if(!recovery||!Array.isArray(recovery.targets)||!Array.isArray(backup.bindings))
   throw Error('断线备份缺少模型词源及分词校验资料，请用新版本重新生成手动批次。');
@@ -38,7 +38,7 @@ export function validateOfflineManualAnswer(backup,response,entries,priorRepairs
    throw Error('实验性结果只能包含 target_id 与 choice_id。');
   let choice=binding.choices.find(o=>o.choice_id===row.choice_id);
   if(!choice){
-   const target=sourceTarget(binding,recovery,entries);
+   const target=sourceTarget(binding,recovery,sentences);
    const origin=literalOriginOption(target,row.choice_id,{
     experimentalHanja:recovery.experimentalHanja===true,
     experimentalLoanword:recovery.experimentalLoanword===true
@@ -58,7 +58,7 @@ export function validateOfflineManualAnswer(backup,response,entries,priorRepairs
   const targets=recovery.targets.map(t=>{
    const binding=bindings.get(t.target_id);
    if(!binding)throw Error('断线分词校验目标缺失。');
-   return sourceTarget(binding,recovery,entries);
+   return sourceTarget(binding,recovery,sentences);
   });
   const groupScopes=new Map((recovery.scopeGroups||[]).map(g=>[g.sentenceKey,g.scope]));
   const scopes=new Map(targets.map(t=>{
