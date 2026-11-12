@@ -51,7 +51,13 @@ test('missing ID never relaxes count, duplicate target, foreign target or option
 });
 
 test('single submission with segmentation repairs also accepts omitted batch_id',async()=>{
- const batch=begin('optional-repairs',{smartSegmentation:true});
+ const batch=begin('optional-repairs',{smartSegmentation:true,
+  repairModes:{hanja:true,loanword:false},
+  repairScopes:new Map([['local-a',{text:'한국',allTargets:[targets[0]],
+    localAnnotations:[],protected_ranges:[],selected:null,existingRepairs:[]}],
+    ['local-b',{text:'정부',allTargets:[targets[1]],
+    localAnnotations:[],protected_ranges:[],selected:null,existingRepairs:[]}]])
+ });
  const answer={results:rows(),repairs:[{
   sentence_id:'s0',op:'replace',old_target_ids:['t0'],start:0,end:2,surface:'한국',choice_id:'韓國'
  }]};
