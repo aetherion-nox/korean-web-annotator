@@ -35,7 +35,7 @@ jobs:
         run: |
           python3 restore_distribution.py
           git restore runtime/python-sources.json
-      - name: Run focused regressions
+      - name: Run focused and full regressions
         run: |
           npm install --no-audit --no-fund --ignore-scripts
           node --test tests/manual-continuation.test.mjs tests/manual-partial-review.test.mjs tests/experimental-options.test.mjs
