@@ -943,7 +943,8 @@
     // text-node IDs (0, 1...). Resolve literal origins against the original
     // sentence before projectBinding maps verified spans back into DOM nodes.
     const sourceSentences=new Map((task.paragraphPlan?.sentences||[]).map(sentence=>[sentence.id,sentence]));
-    const repairResult=await validatePageManualRepairs(task,response);
+    const repairResult=backup.smartSegmentation?
+      await validatePageManualRepairs(task,response):{accepted:[],rejected:[]};
     const stage=stagePageRepairs(task,repairResult.accepted,entries);
     const {retired,groups}=stage;
     const reasons=new Map(stage.reasons),unknown=[];
