@@ -20,10 +20,13 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,...(smartSegmentation?{smartSegmentation:true}:{}),engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
  const loading=progress=>emit('LOCAL_PROGRESS',progress);
  loading({stage:'dictionary'});
- identity=await status(signal,loading);const work=[];
+ identity=await status(signal,loading);
+ const dictionaryFree=identity.dictionary_free===true;
+ if(dictionaryFree&&!enabled)throw Error('无词典模式必须启用模型审核与实验性汉字词或外来语补全。');
+ const work=[];
  const diagnostic=d=>emit('DIAGNOSTIC',{diagnostic:d});
  const dictionary=identity.dictionary_metadata||{};
- diagnostic({stage:'dictionary',level:'info',message:'当前使用的本机词典与引擎。',detail:JSON.stringify({source_filename:dictionary.source_filename||'未知',data_version:dictionary.data_version||'未知',total_entries:dictionary.total_entries??'未知',total_senses:dictionary.total_senses??'未知',engine_version:identity.engine_version,dictionary_fingerprint:identity.dictionary_fingerprint})});
+ diagnostic({stage:'dictionary',level:'info',message:dictionaryFree?'未导入外部词典：Kiwi 生成待审核词，由实验性 LLM 补全词源；本地不自动转换。':'当前使用的本机词典与引擎。',detail:JSON.stringify({source_filename:dictionary.source_filename||'未知',data_version:dictionary.data_version||'未知',total_entries:dictionary.total_entries??'未知',total_senses:dictionary.total_senses??'未知',engine_version:identity.engine_version,dictionary_fingerprint:identity.dictionary_fingerprint})});
  let hasOriginalCounts=false;
  for(const sentence of sentences){
   signal?.throwIfAborted();
@@ -79,7 +82,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
 
  const experimental=!!(config?.experimentalHanja&&modes.hanja||config?.experimentalLoanword&&modes.loanword);
- if(config)config={...config,smartSegmentation:smartSegmentation&&config.smartSegmentation===true,experimentalHanja:experimental&&config.experimentalHanja===true&&modes.hanja,experimentalLoanword:experimental&&config.experimentalLoanword===true&&modes.loanword,repairModes:{hanja:modes.hanja,loanword:modes.loanword}};
+ if(config)config={...config,smartSegmentation:smartSegmentation&&config.smartSegmentation===true,experimentalHanja:experimental&&config.experimentalHanja===true&&modes.hanja,experimentalLoanword:experimental&&config.experimentalLoanword===true&&modes.loanword,dictionaryFree,repairModes:{hanja:modes.hanja,loanword:modes.loanword}};
  const context=message.context || sentences.map(s=>s.text).join('\n');
  const progressive=message.progressiveAnnotation===true;
  const lastPublished=new Map();
@@ -113,7 +116,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  }
  reportProgress();
  const tier=normalizeBatchContextTier(config?.batchContextTier);
- const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,smartSegmentation:config?.smartSegmentation,manualOutputTokenLimit:config?.manualOutputTokenLimit,apiOutputTokenLimit:config?.apiOutputTokenLimit}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,smartSegmentation:config?.smartSegmentation}):sentenceReviewBatches(pending,context);
+ const batches=tier!=='current'?contextReviewBatches(pending,context,{tier,manual:config?.manualReview===true,reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,dictionaryFree,smartSegmentation:config?.smartSegmentation,manualOutputTokenLimit:config?.manualOutputTokenLimit,apiOutputTokenLimit:config?.apiOutputTokenLimit}):config?.manualReview?manualReviewBatches(pending,context,{reviewPosFilter:config?.reviewPosFilter,experimentalHanja:config?.experimentalHanja,experimentalLoanword:config?.experimentalLoanword,dictionaryFree,smartSegmentation:config?.smartSegmentation}):sentenceReviewBatches(pending,context);
  const preparedBatches=batches.map((batch,batchIndex)=>{
   const owners=new Map();
   const targetWire=(id,item,target)=>{
