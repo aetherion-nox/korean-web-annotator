@@ -16,12 +16,20 @@ export const REVIEW_INSTRUCTIONS = [
 export function buildReviewInstructions(config={}){
  const experimental=buildExperimentalOriginInstructions(config);
  // The ordinary results-only schema must not contradict optional repairs.
- const base=config.smartSegmentation===true
+ const dictionaryFree=config.dictionaryFree===true;
+ const dictionaryFreeInstructions=[
+   'No external dictionary has been imported. Kiwi supplies tentative Korean word boundaries and POS hints only; they are NOT dictionary senses or etymological evidence.',
+   'Each target has KEEP but no dictionary candidate. If you confidently recognize a genuine Korean Sino-word origin and Hanja is enabled, write its actual Hanja characters directly in choice_id. If you confidently recognize the original Latin-script loanword spelling and loanword mode is enabled, write that original spelling. Never fabricate dictionary option IDs.',
+   'If the word is native Korean, is not a target language type, is a person/place name without identity evidence, or its origin is uncertain, choose KEEP. Do not translate or romanize Korean words into arbitrary English/Latin or convert a semantically related character word. Be conservative.',
+   'Use the sentence and adjacent context to interpret each occurrence. Kiwi segmentation may be wrong; avoid arbitrary pieces, names and overlapping spans. Hanja must align with the actual Hangul syllables. Keep target_id exactly as given.',
+   'Input uses pooled sentences and targets; options.KEEP=null. Return only JSON with results containing exactly one {target_id,choice_id} per target; do not return input metadata.'
+ ].join('\n');
+ const base=dictionaryFree?dictionaryFreeInstructions:config.smartSegmentation===true
   ?REVIEW_INSTRUCTIONS.replace(
     'Return only JSON {"results":[{"target_id":"...","choice_id":"..."}]} with exactly one result for every target. Keep target_id unchanged; no explanations or extra fields.',
     'Return one JSON object with results containing exactly one {target_id,choice_id} per original target, plus optional repairs for genuine segmentation errors. Keep target_id unchanged. No explanations or unrelated fields.')
   :REVIEW_INSTRUCTIONS;
- return [base,...(experimental?[experimental]:[]),
+ return [base,...(experimental&&!dictionaryFree?[experimental]:[]),
  ...(config.smartSegmentation===true?[SMART_SEGMENTATION_INSTRUCTIONS]:[])].join("\n");
 }
 
@@ -32,7 +40,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
   'Output JSON only: top-level batch_id and results'+(config.smartSegmentation===true?' (plus optional repairs).':'.'),
   'The input format marker shared-pools-v3 is NOT a response field; do not copy format, sentences, candidates, targets, or context into the output.',
   'Return EXACTLY ONE {target_id,choice_id} for EACH target_id in the current request. Copy IDs character-for-character, never renumber, invent or repeat IDs.',
-  'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
+  config.dictionaryFree===true?'There are no dictionary senses in this batch: choice_id may be KEEP or a verified-by-model Hanja/Latin spelling permitted by the enabled experiment. If uncertain use KEEP.':'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
   'Copy batch_id from the input unchanged into the top level of the answer. Before finishing, internally verify no IDs are omitted or duplicated. Do not add commentary.',
   ''
  ].join('\n');
