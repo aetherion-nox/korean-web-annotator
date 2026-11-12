@@ -935,16 +935,25 @@
     if(response&&Object.hasOwn(response,'batch_id')&&response.batch_id!==backup.requestId)
       throw Error('batch_id 与当前批次不一致，未应用任何答案。');
     if(!Array.isArray(response?.results))throw Error('结果缺少 results 数组。');
-    const repairsSkipped=response.repairs!==undefined&&(!Array.isArray(response.repairs)||response.repairs.length>0);
-    // repairs require the worker's sentence/overlap protection. Keep valid
-    // result choices usable offline, but explicitly state repairs were skipped.
+    if(response.repairs!==undefined&&!Array.isArray(response.repairs))
+      throw Error('repairs 必须是数组。');
     const bindings=new Map(backup.bindings.map(b=>[b.target_id,b]));
     const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry]));
     // Manual bindings use paragraph/chunk IDs (p0, p1c0...), NOT DOM
     // text-node IDs (0, 1...). Resolve literal origins against the original
     // sentence before projectBinding maps verified spans back into DOM nodes.
     const sourceSentences=new Map((task.paragraphPlan?.sentences||[]).map(sentence=>[sentence.id,sentence]));
-    const incoming=new Map(),reasons=new Map(),unknown=[];
+    const repairResult=await validatePageManualRepairs(task,response);
+    const stage=stagePageRepairs(task,repairResult.accepted,entries);
+    const {retired,groups}=stage;
+    const reasons=new Map(stage.reasons),unknown=[];
+    for(const item of repairResult.rejected)for(const id of item.old_target_ids||[])
+      if(!retired.has(id))reasons.set(id,'分词修复校验失败：'+item.reason);
+    task.manualRecoveryRepairs=stage.applied.map(r=>({
+      sentence_id:r.sentence_id,op:r.op,old_target_ids:r.old_target_ids,
+      start:r.start,end:r.end,surface:r.surface,choice_id:r.choice_id
+    }));
+    const incoming=new Map();
     for(const row of response.results){
       if(!bindings.has(row?.target_id)){
         unknown.push(String(row?.target_id??'(缺失)'));continue;
@@ -971,10 +980,11 @@
     }
     if(task.finished||currentTask!==task||task.manualBackup!==backup||task.manualRequest!==backup.requestId)
       throw Error('当前审核批次已取消或改变，未应用过期答案。');
-    const verified=new Map(),groups=new Map();
+    const verified=new Map();
     // Validate each original span independently so one invalid DOM position
     // does not invalidate unrelated choices. Do not write before validation.
     for(const [id,{binding,choice}] of saved){
+      if(retired.has(id))continue;
       try{
         const projected=task.paragraphPlan?task.paragraphPlan.projectBinding(binding,choice):
           [{...binding,annotations:choice.annotations}];
@@ -1008,7 +1018,9 @@
       }catch(error){reasons.set(id,'原文结构无法安全对应：'+error.message);}
     }
     task.manualRecoveryAccepted=verified;
-    const missing=backup.bindings.filter(b=>!verified.has(b.target_id));
+    const scanOnly=new Set((backup.repairValidation?.targets||[]).filter(t=>t.scan_only).map(t=>t.target_id));
+    const missing=backup.bindings.filter(b=>!verified.has(b.target_id)&&
+      !retired.has(b.target_id)&&!scanOnly.has(b.target_id));
     if(missing.length){
       // Preview only, never commit or finish until all targets are verified.
       const prepared=[...groups].map(([entry,group])=>{
@@ -1026,14 +1038,14 @@
       if(panel){
         panel.querySelector('.kra-manual-prompt').value=manualRetryPrompt(task,missing,reasons);
         panel.querySelector('.kra-manual-summary').textContent+=
-          '\n已保存 '+verified.size+'/'+bindings.size+' 条；仅需补交 '+missing.length+' 条。';
+          '\n已保存 '+(verified.size+retired.size)+'/'+bindings.size+' 条；仅需补交 '+missing.length+' 条。';
       }
       const details=missing.slice(0,8).map(b=>b.target_id+'（'+(reasons.get(b.target_id)||'未提交')+'）').join('；');
-      const message='本批结果不完整：已验证 '+verified.size+'/'+bindings.size+' 条，页面已预览 '+count+
+      const message='本批结果不完整：已验证 '+(verified.size+retired.size)+'/'+bindings.size+' 条，页面已预览 '+count+
         ' 个标注；剩余 '+missing.length+' 条待补交：'+details+
         (missing.length>8?'；其余见补交提示词':'')+
         (unknown.length?'。已忽略未知或跨批 target_id '+unknown.slice(0,4).join('、'):'')+
-        (repairsSkipped?'。注意：断线状态下未应用 repairs':'')+
+        (repairResult.rejected.length?'。已安全拒绝 '+repairResult.rejected.length+' 条无效修复':'')+
         '。请只提交新提示词中的目标。';
       if(count)status('已预览 '+count+' 个标注，仍有 '+missing.length+' 个目标待补交');
       throw Error(message);
