@@ -34,7 +34,7 @@ export function buildReviewInstructions(config={}){
  const base=dictionaryFree?dictionaryFreeInstructions:config.smartSegmentation===true
   ?REVIEW_INSTRUCTIONS.replace(
     'Return only JSON {"results":[{"target_id":"...","choice_id":"..."}]} with exactly one result for every target. Keep target_id unchanged; no explanations or extra fields.',
-    'Return one JSON object with results containing exactly one {target_id,choice_id} per original target, plus optional repairs for genuine segmentation errors. Keep target_id unchanged. No explanations or unrelated fields.')
+    'Return one JSON object with results for each original target NOT superseded by a validated repair (omit scan_only placeholders), plus optional repairs. A valid repair replaces its old target choices atomically; invalid repairs leave those old choices required. Keep IDs unchanged. No explanations or unrelated fields.')
   :REVIEW_INSTRUCTIONS;
  // Lead with independent origin assessment only in the experimental
  // dictionary-backed mode. Ordinary dictionary review remains unchanged.
@@ -49,7 +49,9 @@ export function buildManualPrompt(context,targets,batchId,config={}){
  const batchInstruction=batchId===undefined?'':[
   'Output JSON only: top-level batch_id and results'+(config.smartSegmentation===true?' (plus optional repairs).':'.'),
   'The input format marker shared-pools-v3 is NOT a response field; do not copy format, sentences, candidates, targets, or context into the output.',
-  'Return EXACTLY ONE {target_id,choice_id} for EACH target_id in the current request. Copy IDs character-for-character, never renumber, invent or repeat IDs.',
+  config.smartSegmentation===true?
+   'Return exactly one {target_id,choice_id} for each original target you have NOT replaced or deleted via a valid repair; omit results for retired targets and scan_only placeholders. If unsure the repair is valid, retain the original choice as fallback. Never duplicate, invent or renumber IDs.':
+   'Return EXACTLY ONE {target_id,choice_id} for EACH target_id in the current request. Copy IDs character-for-character, never renumber, invent or repeat IDs.',
   config.dictionaryFree===true?'OPEN-ENDED answer: options.KEEP is only a fallback, NOT the complete list. For each reliably identified word you SHOULD write the actual Hanja or Latin origin directly as choice_id (only enabled origin types). Choose KEEP for native or genuinely uncertain origins. Never invent c0/n0/p0.':
    experimental?'OPEN-ENDED origin audit: FIRST judge meaning and authentic origin independently, THEN compare dictionary senses. For a matching dictionary sense use its target-specific c/n key. If ALL senses mismatch and the authentic enabled Hanja/Latin origin is reliable, write that original spelling directly as choice_id; KEEP only when unresolved. Options is NOT the complete set; NEVER return shared candidate p IDs.':
    'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
