@@ -22,7 +22,7 @@ export function buildReviewInstructions(config={}){
    ...(config.experimentalLoanword===true?['actual Latin-script original of a borrowed word']:[])
  ];
  const dictionaryFreeInstructions=[
-   'OPEN-ENDED KOREAN WORD ORIGIN ANNOTATION. There is NO imported dictionary, so the input lists only KEEP. This does NOT mean KEEP is the only valid choice_id.',
+   'OPEN-ENDED KOREAN WORD ORIGIN ANNOTATION. No external dictionary has been imported, so the input lists only KEEP. This does NOT mean KEEP is the only valid choice_id.',
    'For EACH target, actively determine whether its occurrence is a Sino-Korean word or a borrowed word from the actual sentence, then infer the authentic source spelling. When the origin is reliably known, write the source spelling DIRECTLY as results[].choice_id; do not default to KEEP because the spelling is missing from options.',
    'Permitted generated source types in THIS batch: '+(allowedOrigins.join(' OR ')||'none')+'. Do not output source types that are not enabled.',
    'For Hanja, use the genuine etymological Chinese characters whose Korean readings align with the original syllables. For Latin-script loans, use the genuine borrowed spelling, NOT a free translation, invented English expression, or Korean romanization.',
