@@ -4,6 +4,7 @@ import {validateChoices,validateExperimentalChoices} from './choice-review.js';
 import {filterReviewTarget} from './review-pos.js';
 import {explainLiteralOriginRejection} from './experimental-options.js';
 import {describeBatchBudget} from './batch-budget.js';
+import {validateSegmentationRepairs} from './segmentation-repairs.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
 // Keep an oversized single dictionary entry intact rather than losing senses.
@@ -77,6 +78,8 @@ export function createManualReviewSession({operationId,post,signal}={}){
     pending={requestId,targets,wireTargets,originalPrompt:prepared.text,acceptedRows:new Map(),savedRepairs:[],
       experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,hanjaReadingCheck:config.hanjaReadingCheck!==false,
       reviewPosFilter:config.reviewPosFilter,smartSegmentation:config.smartSegmentation===true,
+      repairContext:config.context,repairModes:config.repairModes,
+      repairScopes:new Map(targets.map((target,i)=>[wireTargets[i].target_id,config.repairScopes?.get(target.target_id)])),
       resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
     try{notify('MANUAL_REVIEW_REQUEST',prepared);}catch(error){clear();reject(error);}
@@ -109,8 +112,40 @@ export function createManualReviewSession({operationId,post,signal}={}){
       if(!incoming.has(row.target_id))incoming.set(row.target_id,[]);
       incoming.get(row.target_id).push(row);
     }
+    // Repair validation must happen before missing-result detection. The same
+    // original sentence scopes, names, selections and conflict rules used by
+    // the worker determine whether an old target is genuinely superseded.
+    let validRepairs=[];
+    if(current.smartSegmentation){
+      const check=rows=>validateSegmentationRepairs(current.wireTargets,{repairs:rows},{
+        smartSegmentation:true,context:current.repairContext,repairModes:current.repairModes,
+        hanjaReadingCheck:current.hanjaReadingCheck,repairScopes:current.repairScopes,
+        reviewPosFilter:current.reviewPosFilter,
+        experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword
+      });
+      const seen=new Set(current.savedRepairs.map(r=>JSON.stringify(r)));
+      const additions=Array.isArray(response.repairs)?response.repairs.filter(r=>{
+        const str=JSON.stringify(r);
+        if(!str||seen.has(str))return false;
+        seen.add(str);return true;
+      }):[];
+      // Previous valid repairs cannot be revoked by a new conflicting retry.
+      const previous=check(current.savedRepairs);
+      const stable=previous.accepted.map(r=>current.savedRepairs[r.index]);
+      const proposed=[...stable,...additions];
+      const checked=check(proposed);
+      validRepairs=checked.accepted;
+      current.savedRepairs=validRepairs.map(r=>({
+        sentence_id:r.sentence_id,op:r.op,old_target_ids:r.old_target_ids,
+        start:r.start,end:r.end,surface:r.surface,choice_id:r.choice_id
+      }));
+      if(checked.rejected.length)for(const issue of checked.rejected){
+        for(const id of issue.old_target_ids||[])reasons.set(id,'修复未通过安全校验：'+issue.reason);
+      }
+    }
+    const retired=new Set(validRepairs.flatMap(r=>r.old_target_ids));
     for(const [id,rows] of incoming){
-      if(current.acceptedRows.has(id))continue; // Already validated, never overwrite.
+      if(current.acceptedRows.has(id)||retired.has(id))continue; // Old answers never override a verified repair.
       if(rows.length!==1){
         reasons.set(id,'重复 target_id（本次 '+rows.length+' 条），请只返回一条');continue;
       }
@@ -125,14 +160,9 @@ export function createManualReviewSession({operationId,post,signal}={}){
       }
       current.acceptedRows.set(id,{target_id:id,choice_id:selected.accepted[0].option.choice_id});
     }
-    if(current.smartSegmentation&&Array.isArray(response.repairs)){
-      for(const repair of response.repairs){
-        const serialized=JSON.stringify(repair);
-        if(serialized&&!current.savedRepairs.some(old=>JSON.stringify(old)===serialized))
-          current.savedRepairs.push(repair);
-      }
-    }
-    const missing=current.wireTargets.filter(t=>!current.acceptedRows.has(t.target_id));
+    const missing=current.wireTargets.filter(t=>
+      !current.acceptedRows.has(t.target_id)&&!retired.has(t.target_id)&&
+      !(current.smartSegmentation&&t.scan_only===true));
     if(missing.length){
       const retry=manualRetryPrompt(current.originalPrompt,current.requestId,missing,reasons,current.acceptedRows.size);
       const detail=missing.slice(0,12).map(t=>t.target_id+'（'+(reasons.get(t.target_id)||'未提交')+'）').join('；');
@@ -142,21 +172,25 @@ export function createManualReviewSession({operationId,post,signal}={}){
           (missing.length>12?'；其余见补交提示词':'')+
           (unknown.length?'。已忽略 '+unknown.length+' 条未知或跨批 target_id':'')+
           '。请复制新的补交提示词，只回答剩余目标。',
-        acceptedCount:current.acceptedRows.size,
-        acceptedRows:[...current.acceptedRows.values()],invalidTargetIds:missing.map(t=>t.target_id),
+        acceptedCount:current.acceptedRows.size+retired.size,
+        acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)),
+        acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired],
+        invalidTargetIds:missing.map(t=>t.target_id),
         repairPrompt:retry});
       return false;
     }
     const ids=new Map(current.wireTargets.map((t,i)=>[t.target_id,current.targets[i].target_id]));
     const proposed=current.smartSegmentation&&current.savedRepairs.length?{
-      repairs:current.savedRepairs.map(row=>row&&typeof row==='object'&&Array.isArray(row.old_target_ids)?
-        {...row,old_target_ids:row.old_target_ids.map(id=>ids.get(id)||id)}:row)
+      repairs:current.savedRepairs.map(row=>({...row,
+        old_target_ids:row.old_target_ids.map(id=>ids.get(id)||id)}))
     }:{};
-    const mapped={results:[...current.acceptedRows.values()].map(row=>({
+    const mapped={results:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)).map(row=>({
       target_id:ids.get(row.target_id),choice_id:row.choice_id
     })),...proposed};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,
-      targetCount:current.wireTargets.length,acceptedRows:[...current.acceptedRows.values()]});
+      targetCount:current.wireTargets.length,
+      acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)),
+      acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired]});
     current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
   }
