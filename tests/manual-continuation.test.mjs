@@ -111,3 +111,38 @@ test('disconnected Latin origin preserves the existing alphanumeric suffix',asyn
  assert.equal(entry.annotations[0].surface,'가나');
  assert.equal(entry.annotations[0].start,0);assert.equal(entry.annotations[0].end,2);
 });
+
+test('partial page results preview valid rows, preserve them and complete after small retry',async()=>{
+ const {context,task,entry,panel}=environment();
+ const other={target_id:'t1',sentenceId:'s',start:1,end:2,surface:'나',
+   choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{start:1,end:2,surface:'나',replacement:'那',type:'hanja'}]}]};
+ task.manualBackup.bindings.push(other);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({
+   batch_id:'batch1',results:[{target_id:'t0',choice_id:'c0'},{target_id:'t1',choice_id:'invalid'}]
+ })),/已验证 1\/2/);
+ assert.equal(task.manualRequest,'batch1');
+ assert.equal(task.manualRecoveryAccepted.size,1);
+ assert.equal(entry.annotations.length,1);
+ assert.equal(entry.hasPreview,true);
+ assert.match(panel.querySelector('.kra-manual-prompt').value,/t1/);
+ await context.applyManualRecovery(task,JSON.stringify({
+   batch_id:'batch1',results:[{target_id:'t1',choice_id:'c0'}]
+ }));
+ assert.equal(task.manualRequest,'batch2');
+ assert.equal(entry.annotations.length,2);
+ assert.equal(entry.hasPreview,false);
+});
+
+test('duplicate or extra target IDs cannot discard independent valid decisions',async()=>{
+ const {context,task,entry}=environment();
+ task.manualBackup.bindings.push({target_id:'t1',sentenceId:'s',start:1,end:2,surface:'나',
+   choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{start:1,end:2,surface:'나',replacement:'那',type:'hanja'}]}]});
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({
+   results:[{target_id:'t0',choice_id:'c0'},{target_id:'t1',choice_id:'KEEP'},
+     {target_id:'t1',choice_id:'c0'},{target_id:'other',choice_id:'c0'}]
+ })),/重复 target_id/);
+ assert.equal(task.manualRecoveryAccepted.size,1);
+ assert.equal(entry.annotations.length,1);
+ await context.applyManualRecovery(task,JSON.stringify({results:[{target_id:'t1',choice_id:'KEEP'}]}));
+ assert.equal(task.manualRequest,'batch2');
+});
