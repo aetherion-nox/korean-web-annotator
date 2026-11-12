@@ -9,19 +9,19 @@ const copy={
 };
 const $=id=>document.getElementById(id),status=$('engineStatus');
 const reviewCopy={
- 'zh-CN':['全部交给大模型审核（默认关闭）','开启后，本地只查词和定位，所有可标注的汉字词、外来语和混种词候选均由模型选义，也可保留韩文。自动启用模型审核，需配置 API；未返回有效结果的词保留韩文。仍需导入词典，未收录词不生成标注。请求量、费用和等待时间可能增加；下一次标注生效。'],
- 'zh-TW':['全部交給大模型審核（預設關閉）','開啟後，本機只查詞和定位，所有可標註的漢字詞、外來語和混種詞候選均由模型選義，也可保留韓文。自動啟用模型審核，需設定 API；無有效結果時保留韓文。仍需匯入詞典，未收錄詞不產生標註。請求量、費用及等待時間可能增加；下次標註生效。'],
- en:['Review all candidates with the model (off by default)','Local processing only looks up and locates words; the model decides every eligible Hanja, loanword and mixed-origin candidate, including KEEP. Automatically enables model review and requires API configuration. Missing or invalid answers leave Korean unchanged. A dictionary is still required; unknown words are not annotated. Requests, cost and waiting time may increase. Applies to new tasks.'],
- ja:['すべての候補をモデルで審査（初期設定は無効）','ローカル処理は辞書検索と位置特定のみ行い、漢字語・外来語・混種語の全候補をモデルが判断します。韓国語のまま保持する選択も可能です。モデル審査を自動で有効化し、API設定と辞書が必要です。無効な回答や未収録語は韓国語のまま保持します。通信量・費用・待ち時間が増える場合があります。次の処理から適用。'],
- ko:['모든 후보를 모델로 검토 (기본 꺼짐)','로컬에서는 사전 검색과 위치 확인만 하며, 모든 한자어·외래어·혼종어 후보의 뜻을 모델이 선택하거나 한글로 유지합니다. 모델 검토가 자동 활성화되며 API 설정과 사전이 필요합니다. 유효한 답이 없거나 사전에 없는 단어는 한글로 유지합니다. 요청량·비용·대기 시간이 늘어날 수 있습니다. 새 작업부터 적용됩니다.']
+ 'zh-CN':['全部交给大模型审核（默认关闭）','开启后，本地只查词和定位，所有可标注的汉字词、外来语和混种词候选均由模型选义，也可保留韩文。自动启用模型审核，需配置 API；未返回有效结果的词保留韩文。词典已导入时继续使用词典候选；未导入词典时必须打开实验性词源补全，此时由 Kiwi 提取待审核词。请求量、费用和等待时间可能增加；下一次标注生效。'],
+ 'zh-TW':['全部交給大模型審核（預設關閉）','開啟後，本機只查詞和定位，所有可標註的漢字詞、外來語和混種詞候選均由模型選義，也可保留韓文。自動啟用模型審核，需設定 API；無有效結果時保留韓文。已匯入詞典時使用原有詞典候選；無詞典時需啟用實驗性詞源補全，由 Kiwi 擷取候選詞。請求量、費用及等待時間可能增加；下次標註生效。'],
+ en:['Review all candidates with the model (off by default)','Local processing only looks up and locates words; the model decides every eligible Hanja, loanword and mixed-origin candidate, including KEEP. Automatically enables model review and requires API configuration. Missing or invalid answers leave Korean unchanged. Imported dictionaries use the original candidate workflow; without one, experimental origin completion is required and Kiwi supplies the targets. Requests, cost and waiting time may increase. Applies to new tasks.'],
+ ja:['すべての候補をモデルで審査（初期設定は無効）','ローカル処理は辞書検索と位置特定のみ行い、漢字語・外来語・混種語の全候補をモデルが判断します。韓国語のまま保持する選択も可能です。モデル審査を自動で有効化し、API設定が必要です。辞書がない場合、実験的な語源補完機能を有効にする必要があります。無効な回答や未収録語は韓国語のまま保持します。通信量・費用・待ち時間が増える場合があります。次の処理から適用。'],
+ ko:['모든 후보를 모델로 검토 (기본 꺼짐)','로컬에서는 사전 검색과 위치 확인만 하며, 모든 한자어·외래어·혼종어 후보의 뜻을 모델이 선택하거나 한글로 유지합니다. 모델 검토가 자동 활성화되며 API 설정이 필요합니다. 사전이 없으면 실험적 어원 보완을 켜야 합니다. 유효한 답이 없거나 사전에 없는 단어는 한글로 유지합니다. 요청량·비용·대기 시간이 늘어날 수 있습니다. 새 작업부터 적용됩니다.']
 };
 for(const [locale,labels] of Object.entries(reviewCopy)){copy[locale].reviewAll=labels[0];copy[locale].reviewAllHint=labels[1];}
 const manualCopy={
- 'zh-CN':['手动聊天审核（复制提示词／粘贴结果）','默认关闭。开启后自动启用审核，并用网页上的手动面板代替 API：复制或下载提示词给聊天模型，再把完整 JSON 结果粘贴回来。不需要 API Key；仍需词典。可与“全部交给大模型审核”一起使用，否则仅处理待消歧候选。较多内容会分批，等待回填不限 API 超时时间；刷新或离开网页会取消任务。下一次标注生效。'],
- 'zh-TW':['手動聊天審核（複製提示詞／貼上結果）','預設關閉。開啟後自動啟用審核，以網頁手動面板代替 API：複製或下載提示詞給聊天模型，再貼回完整 JSON。無需 API Key，仍需詞典。可搭配全部審核，否則只處理歧義候選。內容較多時分批；等候回填無 API 逾時限制，重新整理或離開頁面會取消。下次標註生效。'],
- en:['Manual chat review (copy prompt / paste result)','Off by default. Enables review and replaces API calls with an on-page panel: copy or download the prompt for a chat model, then paste its complete JSON answer. No API key is needed; a dictionary is required. Combine with Review all candidates to review locally certain words too. Larger tasks are split into batches. Waiting has no API timeout; reloading or leaving the page cancels the task. Applies to new tasks.'],
- ja:['手動チャット審査（プロンプトをコピー／結果を貼り付け）','初期設定は無効。審査を自動で有効化し、APIの代わりにページのパネルでプロンプトをコピー・保存してチャットモデルへ送り、完全なJSON結果を貼り付けます。APIキーは不要ですが辞書は必要です。全候補審査との併用も可能。多い場合は分割し、入力待ちにAPIのタイムアウトはありません。ページを離れるか再読み込みすると中止します。次の処理から適用。'],
- ko:['수동 채팅 검토 (프롬프트 복사 / 결과 붙여넣기)','기본 꺼짐. 검토를 자동 활성화하고 API 대신 페이지 패널에서 프롬프트를 복사·다운로드해 채팅 모델에 전달한 뒤 전체 JSON 결과를 붙여넣습니다. API 키는 필요 없지만 사전은 필요합니다. 모든 후보 검토와 함께 쓸 수 있습니다. 큰 작업은 나누며 입력 대기에 API 시간 제한은 없습니다. 페이지를 떠나거나 새로고침하면 취소됩니다. 새 작업부터 적용됩니다.']
+ 'zh-CN':['手动聊天审核（复制提示词／粘贴结果）','默认关闭。开启后自动启用审核，并用网页上的手动面板代替 API：复制或下载提示词给聊天模型，再把完整 JSON 结果粘贴回来。不需要 API Key；未导入词典时需要打开实验性汉字词或外来语 LLM 补充选项。可与“全部交给大模型审核”一起使用，否则仅处理待消歧候选。较多内容会分批，等待回填不限 API 超时时间；刷新或离开网页会取消任务。下一次标注生效。'],
+ 'zh-TW':['手動聊天審核（複製提示詞／貼上結果）','預設關閉。開啟後自動啟用審核，以網頁手動面板代替 API：複製或下載提示詞給聊天模型，再貼回完整 JSON。無需 API Key；若未匯入詞典，必須啟用實驗性漢字詞或外來語 LLM 補全。可搭配全部審核，否則只處理歧義候選。內容較多時分批；等候回填無 API 逾時限制，重新整理或離開頁面會取消。下次標註生效。'],
+ en:['Manual chat review (copy prompt / paste result)','Off by default. Enables review and replaces API calls with an on-page panel: copy or download the prompt for a chat model, then paste its complete JSON answer. No API key is needed; without an imported dictionary, enable experimental Hanja or loanword origins. Combine with Review all candidates to review locally certain words too. Larger tasks are split into batches. Waiting has no API timeout; reloading or leaving the page cancels the task. Applies to new tasks.'],
+ ja:['手動チャット審査（プロンプトをコピー／結果を貼り付け）','初期設定は無効。審査を自動で有効化し、APIの代わりにページのパネルでプロンプトをコピー・保存してチャットモデルへ送り、完全なJSON結果を貼り付けます。APIキーは不要です。辞書がない場合は、実験的な漢字または外来語の補完機能を有効にしてください。全候補審査との併用も可能。多い場合は分割し、入力待ちにAPIのタイムアウトはありません。ページを離れるか再読み込みすると中止します。次の処理から適用。'],
+ ko:['수동 채팅 검토 (프롬프트 복사 / 결과 붙여넣기)','기본 꺼짐. 검토를 자동 활성화하고 API 대신 페이지 패널에서 프롬프트를 복사·다운로드해 채팅 모델에 전달한 뒤 전체 JSON 결과를 붙여넣습니다. API 키는 필요 없습니다. 사전이 없다면 실험적 한자어 또는 외래어 보완 기능을 켜세요. 모든 후보 검토와 함께 쓸 수 있습니다. 큰 작업은 나누며 입력 대기에 API 시간 제한은 없습니다. 페이지를 떠나거나 새로고침하면 취소됩니다. 새 작업부터 적용됩니다.']
 };
 for(const [locale,labels] of Object.entries(manualCopy)){copy[locale].manual=labels[0];copy[locale].manualHint=labels[1];}
 const capacityCopy={
@@ -135,8 +135,15 @@ async function save(changed){
  await chrome.storage.local.set({preloadEngineOnStartup:$('preloadEngineOnStartup').checked,reviewPosFilter:$('reviewPosFilter').checked,nameProtection:$('nameProtection').checked,filterDictionaryPeople:$('filterDictionaryPeople').checked,enableModelReview:$('enableModelReview').checked,reviewAllCandidates:$('reviewAllCandidates').checked,manualModelReview:$('manualModelReview').checked,reviewLocalConversions:$('reviewLocalConversions').checked,experimentalHanja:$('experimentalHanja').checked,experimentalLoanword:$('experimentalLoanword').checked,smartSegmentation:$('smartSegmentation').checked,batchContextTier:normalizeBatchContextTier($('batchContextTier').value),apiOutputTokenLimit:apiLimit,manualOutputTokenLimit:manualLimit});status.textContent=t('saved');
 }
 const dictionaryLabels={en:['Dictionary imported','Dictionary not imported'],'zh-CN':['词典已导入','词典未导入，请选择 ZIP 或 DB 文件。'],'zh-TW':['詞典已匯入','詞典未匯入，請選擇 ZIP 或 DB 檔案。'],ja:['辞書を取り込み済み','辞書は未取り込みです。JSON ZIP を選択してください。'],ko:['사전 가져오기 완료','사전이 없습니다. JSON ZIP을 가져오세요.']};
+const dictionaryFreeLabels={
+ en:['No imported dictionary: Kiwi + experimental LLM origin completion is available. Native words and uncertain origins remain unannotated.','No dictionary imported. Import a dictionary, or enable model review plus experimental Hanja and/or loanword origin completion.'],
+ 'zh-CN':['未导入词典：可使用 Kiwi + 实验性 LLM 词源补全。固有词与不确定词保持原文。','未导入词典：请先导入词典，或者开启模型审核并至少开启一项实验性汉字词／外来语 LLM 补充选项。'],
+ 'zh-TW':['未匯入詞典：可使用 Kiwi + 實驗性 LLM 詞源補全，固有詞及不確定詞保留原文。','未匯入詞典：請先匯入詞典，或啟用模型審核及至少一項實驗性漢字詞／外來語補全。'],
+ ja:['辞書なし：Kiwi + 実験的LLM語源補完が使用可能。確証のない語は保持します。','辞書なし：辞書を読み込むか、モデル審査と実験的漢字／外来語の語源補完を有効にしてください。'],
+ ko:['사전 없음: Kiwi + 실험적 LLM 어원 보완을 사용할 수 있습니다. 불확실한 단어는 유지합니다.','사전 없음: 사전을 가져오거나 모델 검토와 실험적 한자어/외래어 보완을 켜세요.']
+};
 let importedDictionary=false;
-function show(result){importedDictionary=result.imported;status.textContent=(dictionaryLabels[$('uiLocale').value]||dictionaryLabels.en)[importedDictionary?0:1];}
+function show(result){importedDictionary=result.imported;const locale=$('uiLocale').value;if(importedDictionary){status.textContent=(dictionaryLabels[locale]||dictionaryLabels.en)[0];return;}const allowed=$('enableModelReview').checked&&($('experimentalHanja').checked||$('experimentalLoanword').checked);status.textContent=(dictionaryFreeLabels[locale]||dictionaryFreeLabels.en)[allowed?0:1];}
 async function refreshDictionaryStatus(){show(await readDictionaryInfo());}
 function busy(value){$('dictionaryProgress').hidden=!value;for(const id of ['importDictionary','clearDictionary','dictionaryFile'])$(id).disabled=value;}
 for(const key of ['enableModelReview','reviewAllCandidates','manualModelReview','experimentalHanja','experimentalLoanword','smartSegmentation','reviewLocalConversions','batchContextTier','apiOutputTokenLimit','manualOutputTokenLimit','nameProtection','filterDictionaryPeople','reviewPosFilter','preloadEngineOnStartup'])$(key).addEventListener('change',()=>save(key).catch(e=>status.textContent=e.message));
