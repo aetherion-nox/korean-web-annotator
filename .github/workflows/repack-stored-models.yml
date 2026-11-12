@@ -1,0 +1,106 @@
+name: Build compatibility ZIP (stored Kiwi models)
+on:
+  push:
+    branches:
+      - fix/v1.1.55.4-partial-manual-recovery
+    paths:
+      - .github/workflows/repack-stored-models.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: repack-stored-models-v1-1-55-4
+  cancel-in-progress: false
+jobs:
+  repack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified original Release archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p input
+          gh release download 'v1.1.55.4-partial-manual-recovery.1' \
+            --repo 'aetherion-nox/korean-web-annotator' \
+            --pattern 'Korean-Web-Annotator-v1.1.55.4-partial-manual-recovery.zip' \
+            --dir input
+      - name: Repackage without compressing Kiwi MDL models
+        run: |
+          python3 - <<'PY'
+          import zipfile,hashlib
+          from pathlib import Path
+          source=Path('input/Korean-Web-Annotator-v1.1.55.4-partial-manual-recovery.zip')
+          expected='fb61a3316caed4194e3853f1a6fe171bcad95f3e1189318df5d3b4a36cde9084'
+          assert hashlib.sha256(source.read_bytes()).hexdigest()==expected, 'Original release SHA mismatch'
+          target=Path('Korean-Web-Annotator-v1.1.55.4-partial-manual-recovery-compatible.zip')
+          sha={}
+          with zipfile.ZipFile(source) as src:
+              assert src.testzip() is None, 'Original ZIP CRC failure'
+              members=src.infolist()
+              with zipfile.ZipFile(target,'w',allowZip64=True) as dst:
+                  for item in members:
+                      # No compression for large model assets: simpler Windows extraction
+                      mode=zipfile.ZIP_STORED if item.filename.lower().endswith('.mdl') else zipfile.ZIP_DEFLATED
+                      data=src.read(item.filename)
+                      dst.writestr(item, data, compress_type=mode, compresslevel=6 if mode==zipfile.ZIP_DEFLATED else None)
+                      if item.filename.lower().endswith('.mdl'):
+                          sha[item.filename]=hashlib.sha256(data).hexdigest()
+          with zipfile.ZipFile(target) as archive:
+              assert archive.testzip() is None, 'Repacked ZIP CRC failure'
+              assert len(archive.namelist())==len(members)
+              models=[x for x in archive.infolist() if x.filename.lower().endswith('.mdl')]
+              assert any(x.filename.endswith('/cong.mdl') and x.compress_type==zipfile.ZIP_STORED for x in models)
+              assert all(hashlib.sha256(archive.read(k)).hexdigest()==v for k,v in sha.items())
+          print('Original:',source.stat().st_size,'bytes')
+          print('Compatible:',target.stat().st_size,'bytes')
+          print('Compatible SHA256:',hashlib.sha256(target.read_bytes()).hexdigest())
+          print('Kiwi models stored:', len(models))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compatible-zip
+          path: Korean-Web-Annotator-v1.1.55.4-partial-manual-recovery-compatible.zip
+          compression-level: 0
+          if-no-files-found: error
+  windows-verify:
+    runs-on: windows-latest
+    needs: repack
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: compatible-zip
+          path: prepared
+      - name: Windows PowerShell and 7-Zip extraction test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $zip=(Get-ChildItem -Path prepared -Filter '*.zip' | Select-Object -First 1).FullName
+          if(-not $zip) {throw 'Missing ZIP'}
+          $dest=Join-Path $env:RUNNER_TEMP 'unpacked'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force -ErrorAction Stop
+          $mdl=Get-ChildItem $dest -File -Filter 'cong.mdl' -Recurse | Select-Object -First 1
+          if(-not $mdl){throw 'cong.mdl missing after unpack'}
+          if($mdl.Length -ne 75854705){throw "Unexpected cong.mdl size: $($mdl.Length)"}
+          Write-Host "Windows Expand-Archive succeeded: $($mdl.Length) bytes"
+          $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if(Test-Path $sevenZip){
+            & $sevenZip t $zip
+            if($LASTEXITCODE -ne 0){throw "7-Zip test failed: $LASTEXITCODE"}
+            Write-Host '7-Zip CRC test succeeded'
+          } else {Write-Host '7-Zip not installed; PowerShell test passed'}
+      - name: Publish independent compatibility Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='v1.1.55.4-partial-manual-recovery-compatible.1'
+          $zip=(Get-ChildItem -Path prepared -Filter '*.zip' | Select-Object -First 1).FullName
+          gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
+          if($LASTEXITCODE -eq 0){
+            gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
+          } else {
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 partial manual recovery — compatibility ZIP' --prerelease --notes 'Same extension content as the earlier partial-recovery build. Only packaging differs: Kiwi .mdl files use ZIP STORE (no compression). Archive checked for CRC and extracted on Windows. Existing Releases unchanged.'
+          }
+          if($LASTEXITCODE -ne 0){throw 'Release publication failed'}
+          Write-Host "Release tag $tag"
