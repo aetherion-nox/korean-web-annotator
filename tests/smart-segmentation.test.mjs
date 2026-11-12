@@ -76,7 +76,7 @@ test('omitted word with no existing target can be added in a one-pass scan-only 
  assert.equal(r.accepted.length,1);assert.equal(r.accepted[0].annotations[0].replacement,'game');
  assert.equal(validate(f,[row(f.sid,'replace',['scan'],0,2,text,'game')]).accepted.length,0);
  const unknown=validate(f,[row(f.sid,'add',[],0,2,text,'KEEP')]);
- assert.equal(unknown.accepted.length,1);assert.deepEqual(unknown.accepted[0].annotations,[]);
+ assert.equal(unknown.accepted.length,0,'native text must not be added as an artificial KEEP repair');
 });
 
 test('a dictionary flagged as a person cannot be re-originated but can be kept',()=>{
@@ -154,14 +154,14 @@ test('selected text confinement, person-names and no second lookup for repaired 
  assert.equal(validate(f,[row(f.sid,'add',[],2,4,'다나','多羅')]).accepted.length,1);
  const f2=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{protected_ranges:[[2,4]]});
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','多羅')]).accepted.length,0);
- assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다나','KEEP')]).accepted.length,1);
+ assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다나','KEEP')]).accepted.length,0);
 });
 
-test('a partial split cannot silently discard unaddressed Hangul from the old target',()=>{
+test('a partial split safely retires the old target while leaving unmatched native text in Korean',()=>{
  const text='과학기술',f=fixture(text,[target('t0',text,0,4,'科學技術')]);
  const partial=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學')]);
- assert.equal(partial.accepted.length,0);
- assert.ok(partial.rejected.some(r=>/conflict|coverage|sibling|unaccounted/.test(r.reason)));
+ assert.equal(partial.accepted.length,1);
+ assert.deepEqual(partial.accepted[0].annotations.map(a=>a.replacement),['科學']);
  const complete=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學'),
   row(f.sid,'replace',['t0'],2,4,'기술','KEEP')]);
  assert.equal(complete.accepted.length,2);
@@ -177,15 +177,15 @@ test('KEEP cannot consume unrelated text outside referenced old target',()=>{
 test('nearby offset correction accepts only unique source substring',()=>{
  const text='가 가',t={...target('scan',text,0,text.length),scan_only:true,options:[keep(text)]};
  const f=fixture(text,[t]);
- assert.equal(validate(f,[row(f.sid,'add',[],1,2,'가','KEEP')]).accepted.length,0);
- const selected=validate(f,[row(f.sid,'add',[],2,3,'가','KEEP')]);
+ assert.equal(validate(f,[row(f.sid,'add',[],1,2,'가','可')]).accepted.length,0);
+ const selected=validate(f,[row(f.sid,'add',[],2,3,'가','可')]);
  assert.equal(selected.accepted.length,1,'an exact offset remains valid even when the surface occurs elsewhere');
 });
 
 test('more than 48 repairs preserves the safe prefix rather than discarding the batch',()=>{
  const text='가'.repeat(49),scan={...target('scan',text,0,text.length),scan_only:true,options:[keep(text)]};
  const f=fixture(text,[scan]);
- const rows=Array.from({length:49},(_,i)=>row(f.sid,'add',[],i,i+1,'가','KEEP'));
+ const rows=Array.from({length:49},(_,i)=>row(f.sid,'add',[],i,i+1,'가','可'));
  const result=validate(f,rows);
  assert.equal(result.accepted.length,48);
  assert.equal(result.rejected.length,1);
@@ -211,7 +211,7 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
  assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Actively audit EVERY original sentence'));
  assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('You SHOULD submit repairs for EVERY genuine, well-supported'));
  assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('never invent repairs to reach a quota'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('optional repairs for genuine segmentation errors'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('plus optional repairs'));
  assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('no explanations or extra fields'));
  assert.ok(!buildReviewInstructions({}).includes('Actively audit EVERY original sentence'));
  assert.ok(!buildReviewInstructions({}).includes('you SHOULD write that origin'));
@@ -229,13 +229,14 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
 test('manual mode returns normal target choices and repairs in a single response',async()=>{
  const text='게임',t=target('local',text,0,2,'可'),events=[];
  const session=createManualReviewSession({operationId:'manual-repair',post:x=>events.push(x)});
- const awaiting=session.request({context:text,smartSegmentation:true},[t]);
+ const f=fixture(text,[t]);
+ const awaiting=session.request(f.config,[t]);
  const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
  const message={batch_id:request.requestId,results:[{target_id:'t0',choice_id:'c0'}],
   repairs:[row('s0','replace',['t0'],0,2,text,'game')]};
  assert.equal(session.submit({operationId:'manual-repair',requestId:request.requestId,text:JSON.stringify(message)}),true);
  const resolved=await awaiting;
- assert.deepEqual(resolved.results,[{target_id:'local',choice_id:'c0'}]);
+ assert.deepEqual(resolved.results,[],'a validated repair supersedes the old dictionary choice');
  assert.equal(resolved.repairs[0].old_target_ids[0],'local');
  assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_REQUEST').length,1);
 });
