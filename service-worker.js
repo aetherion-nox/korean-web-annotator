@@ -458,7 +458,7 @@ async function loadCache(){
 async function runModern(message,post,signal,manualSession){
  await loadCache();const config=await engineConfig();
  if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
- const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,smartSegmentation:config.smartSegmentation});
+ const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,hanjaReadingCheck:config.hanjaReadingCheck,smartSegmentation:config.smartSegmentation});
   const allowNoDictionary=config.enableModelReview&&(
    config.experimentalHanja===true&&message.modes?.hanja===true||
    config.experimentalLoanword===true&&message.modes?.loanword===true);
