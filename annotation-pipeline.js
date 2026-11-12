@@ -82,7 +82,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
 
  const experimental=!!(config?.experimentalHanja&&modes.hanja||config?.experimentalLoanword&&modes.loanword);
- if(config)config={...config,smartSegmentation:smartSegmentation&&config.smartSegmentation===true,experimentalHanja:experimental&&config.experimentalHanja===true&&modes.hanja,experimentalLoanword:experimental&&config.experimentalLoanword===true&&modes.loanword,dictionaryFree,repairModes:{hanja:modes.hanja,loanword:modes.loanword}};
+ if(config)config={...config,smartSegmentation:smartSegmentation&&config.smartSegmentation===true,experimentalHanja:experimental&&config.experimentalHanja===true&&modes.hanja,experimentalLoanword:experimental&&config.experimentalLoanword===true&&modes.loanword,hanjaReadingCheck:config.hanjaReadingCheck!==false,dictionaryFree,repairModes:{hanja:modes.hanja,loanword:modes.loanword}};
  const context=message.context || sentences.map(s=>s.text).join('\n');
  const progressive=message.progressiveAnnotation===true;
  const lastPublished=new Map();
@@ -106,7 +106,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify([smartSegmentation?'id-review-v21-single-pass-segmentation-repair':experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
+   const fingerprint=JSON.stringify([config.hanjaReadingCheck!==false,smartSegmentation?'id-review-v21-single-pass-segmentation-repair':experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
    const cached=!experimental&&!smartSegmentation&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
@@ -149,7 +149,8 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     ...((config.experimentalHanja===true||config.experimentalLoanword===true)?{literalOrigin:{
      hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true,
      eligible:canProposeExperimentalOption(target),
-     known:options.filter(o=>o.type==='hanja'||o.type==='loanword').map(o=>({type:o.type,replacement:o.replacement}))
+     known:options.filter(o=>o.type==='hanja'||o.type==='loanword').map(o=>({type:o.type,replacement:o.replacement})),
+      morphology:target.morphology||[]
     }}:{})};
   }):undefined;
   const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
