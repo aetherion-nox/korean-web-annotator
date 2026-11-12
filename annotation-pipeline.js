@@ -96,7 +96,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     {start:r.start,end:r.end,surface:r.surface}
    ])];
   const signature=JSON.stringify([additions,reviewed,provisional]);
-  if(lastPublished.get(item)===signature||(!accepted.length&&!lastPublished.has(item)))return;lastPublished.set(item,signature);
+  if(lastPublished.get(item)===signature||(!accepted.length&&!item.repairs?.length&&!lastPublished.has(item)))return;lastPublished.set(item,signature);
   emit('RESULTS',{source:'model',replaceModel:true,provisional,results:[{id:item.sentence.id,annotations:additions,reviewed}]});
  };
  const pending=[];
@@ -185,7 +185,9 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
 
   for(const item of batch.items){
    const answered=new Set(item.result.accepted.map(a=>a.target.target_id));
-   item.result.unresolved=item.analysis.targets.filter(t=>!answered.has(t.target_id));
+   const retired=new Set((item.repairs||[]).flatMap(r=>r.source_target_ids));
+   item.result.unresolved=item.analysis.targets.filter(t=>
+     !answered.has(t.target_id)&&!retired.has(t.target_id)&&!t.scan_only);
    const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,item.analysis.targets,batch.context]);
    if(!experimental&&!smartSegmentation&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id}))});
   }
