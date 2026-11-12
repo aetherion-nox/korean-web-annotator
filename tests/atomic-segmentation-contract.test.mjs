@@ -96,7 +96,9 @@ test('manual partial answer retries only the unrepaired original and retains suc
  assert.deepEqual(problem.retiredTargetIds,['t0']);
  assert.equal(problem.acceptedRepairs.length,1);
  assert.match(problem.repairPrompt,/t1/);
- const retry={batch_id:event.requestId,results:[{target_id:'t1',choice_id:'KEEP'}]};
+ const retry={batch_id:event.requestId,results:[{target_id:'t1',choice_id:'KEEP'}],
+  // The earlier valid fragment cannot be undone by a later conflicting edit.
+  repairs:[replace('s0','t0',0,2,'과학','韓國')]};
  assert.equal(session.submit({operationId:'atomic-retry',requestId:event.requestId,text:JSON.stringify(retry)}),true);
  const final=await pending;
  assert.deepEqual(final.results,[{target_id:'second',choice_id:'KEEP'}]);
