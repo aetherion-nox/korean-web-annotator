@@ -55,3 +55,11 @@ python python/backend/upstream/scripts/import_dictionary.py "词典.zip"
 - **手动审核分批未完成：** 保持当前网页打开，逐批提交并校验 JSON；不要在任务完成前刷新页面。
 
 [查看版本更新与安装包（Releases）](https://github.com/aetherion-nox/korean-web-annotator/releases) · [隐私政策](PRIVACY.md) · [第三方声明](THIRD_PARTY_NOTICES.md)
+
+## 无词典模式的词源审查与读音校验
+
+- **汉字词源读音校验默认开启**（引擎 / API 设置中可独立关闭）。开启时检查已知多音字和词首音变；关闭只跳过模型汉字与韩文的读音比较，不关闭字形、词界、位置或姓名保护。
+- 现有汉字读音表尚不完备，默认开启仍可能有合法词源被误拒；关闭后也可能接受错读的汉字。模型词源始终标记为“未经词典核实”。
+- 无词典模式不再盲目合并相邻普通名词；明确标记的 XSN/XSM 派生后缀可以跟随词干。模型填写可靠的汉字词干时，后缀仍显示为韩文。
+- 分词修复的 add 必须指定空 old_target_ids，replace 应指定已有目标。空 ID 的 replace 仅在不与任何已有目标、姓名、标注或选择范围冲突时，才规范化为 add。
+- 日志现在区分直接词源拒绝原因；网页完成时报告审核数、KEEP、有效直接词源、投射标注和当前连接的 DOM 标注数。
