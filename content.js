@@ -613,7 +613,12 @@
     const submitAnswer=()=>{
       const task=currentTask;if(!task||task.finished||!task.manualRequest||panel.dataset.operationId!==task.operationId)return;
       if(task.manualLocalOnly){
-        try{applyManualRecovery(task,panel.querySelector('.kra-manual-response').value);}catch(error){note(error.message);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;}return;
+        panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
+        void applyManualRecovery(task,panel.querySelector('.kra-manual-response').value).catch(error=>{
+          if(currentTask!==task||task.finished)return;
+          note(error.message);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+        });
+        return;
       }
       panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;note('正在校验本批结果…');
       task.manualSubmitted={requestId:task.manualRequest,text:panel.querySelector('.kra-manual-response').value};
@@ -669,7 +674,79 @@
     task.manualTimer=setTimeout(()=>{if(!task.finished&&currentTask===task&&task.manualBackup?.requestId===requestId)recoverManualConnection(task,'提交后 30 秒未收到后台确认，切换到页面备份。');},30000);
   }
 
-  function applyManualRecovery(task,text,{advance=true,paint=true}={}){
+  // Same input/reading constraints as experimental-options.js, using only the
+  // trusted target metadata preserved with the manual batch. The dictionary
+  // path remains unchanged; unknown spellings are never treated as dictionary choices.
+  async function manualLiteralChoice(binding,choiceId,entry,task,row){
+    const meta=binding?.literalOrigin;
+    if(!meta?.eligible||typeof choiceId!=='string'||!choiceId||choiceId.length>160||
+       choiceId!==choiceId.trim()||/[<>\x00-\x1f\x7f]/u.test(choiceId)||
+       /^(?:KEEP|[cnxp]\d+)$/i.test(choiceId)||
+       Object.keys(row).sort().join(',')!=='choice_id,target_id')return null;
+    const hanja=/^[\p{Script=Han}]+$/u.test(choiceId)&&meta.hanja===true&&task.modes.hanja===true;
+    const loanword=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u.test(choiceId)&&
+      /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&task.modes.loanword===true;
+    if(!hanja&&!loanword)return null;
+    if(entry.text.slice(binding.start,binding.end)!==binding.surface)return null;
+    const surface=binding.surface,type=hanja?'hanja':'loanword',annotations=[];
+    const base={type,entry_id:'experimental:'+type,origin_source:'model-unverified',confidence:1};
+    let replacement=choiceId;
+    // Match experimental-options.js splitAlignedHanja for spaced Korean words.
+    const words=hanja&&/^[가-힣]+(?: [가-힣]+){1,3}$/u.test(surface)?surface.split(' '):null;
+    if(words){
+      const characters=[...choiceId];
+      if(characters.length!==words.join('').length)return null;
+      let start=binding.start,index=0;
+      for(const word of words){
+        const written=characters.slice(index,index+word.length).join('');
+        annotations.push({...base,start,end:start+word.length,surface:word,replacement:written});
+        start+=word.length+1;index+=word.length;
+      }
+      replacement=annotations.map(a=>a.replacement).join(' ');
+    }else{
+      // Mirror local-engine.js projectAnnotation: retain an unchanged prefix
+      // or suffix rather than overwriting adjoining Latin/digit characters.
+      const src=[...surface],dst=[...choiceId];let prefix=0,suffix=0;
+      while(prefix<src.length&&prefix<dst.length&&src[prefix]===dst[prefix])prefix++;
+      while(suffix<src.length-prefix&&suffix<dst.length-prefix&&src[src.length-1-suffix]===dst[dst.length-1-suffix])suffix++;
+      const changedSrc=src.slice(prefix,src.length-suffix),changedDst=dst.slice(prefix,dst.length-suffix);
+      if(!changedSrc.length)return null;
+      const left=src.slice(0,prefix).join('').length,source=changedSrc.join('');
+      const make=(a,b,written)=>({...base,start:binding.start+left+a,end:binding.start+left+b,
+        surface:source.slice(a,b),replacement:written});
+      if(type==='loanword')annotations.push(make(0,source.length,changedDst.join('')));
+      else{
+        if(changedSrc.length!==changedDst.length)return null;
+        let offset=0,runStart=null,runReplacement='';
+        for(let i=0;i<changedSrc.length;i++){
+          const char=changedDst[i];
+          if(/\p{Script=Han}/u.test(char)){
+            if(!/^[가-힣]$/u.test(changedSrc[i]))return null;
+            if(runStart===null)runStart=offset;
+            runReplacement+=char;
+          }else if(char!==changedSrc[i])return null;
+          else if(runStart!==null){
+            annotations.push(make(runStart,offset,runReplacement));runStart=null;runReplacement='';
+          }
+          offset+=changedSrc[i].length;
+        }
+        if(runStart!==null)annotations.push(make(runStart,offset,runReplacement));
+      }
+    }
+    if(!annotations.length)return null;
+    if(meta.known?.some(o=>o.type===type&&o.replacement===replacement))return null;
+    if(hanja){
+      // Load the EXISTING pronunciation verifier only for an offline Hanja
+      // proposal. Its data is local to the extension; no background is needed.
+      const validateModelHanjaReadings=await (task.manualReadingCheck ||
+        import(chrome.runtime.getURL('hanja-reading-check.js')).then(m=>m.validateModelHanjaReadings).catch(()=>null));
+      if(typeof validateModelHanjaReadings!=='function'||
+         validateModelHanjaReadings(entry.text,annotations).status==='mismatch')return null;
+    }
+    return {choice_id:choiceId,annotations};
+  }
+
+  async function applyManualRecovery(task,text,{advance=true,paint=true}={}){
     const backup=task.manualBackup;
     if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
     if(typeof text!=='string'||text.length>16*1024*1024)throw Error('请提供不超过 16 MiB 的完整 JSON 结果。');
@@ -683,20 +760,21 @@
     const rows=response?.results,bindings=new Map(backup.bindings.map(b=>[b.target_id,b])),seen=new Set(),accepted=[];
     if(response.repairs!==undefined&&(!Array.isArray(response.repairs)||response.repairs.length))
       throw Error('分词修复必须由后台核对词界和人名；断线页面备份不能直接应用 repairs，请恢复连接或重新开始。');
-    // Page-only backup has approved dictionary choices only. Raw model-origin
-    // spellings in choice_id require Python-backed validation in the worker.
-    if(Array.isArray(rows)&&rows.some(row=>{
-      const binding=bindings.get(row?.target_id);
-      return binding&&!binding.choices.some(o=>o.choice_id===row?.choice_id);
-    }))
-      throw Error('模型直接填写的汉字／拉丁字词源需要后台校验，不能在断线页面备份中应用；请重新连接或重新开始审核。');
     if(!Array.isArray(rows)||rows.length!==bindings.size)throw Error('本批结果不完整，请使用当前批次的全部 target_id。');
+    const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry])),groups=new Map();
     for(const row of rows){
-      const binding=bindings.get(row?.target_id),choice=binding?.choices.find(o=>o.choice_id===row?.choice_id);
-      if(!binding||seen.has(row.target_id)||!choice)throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
+      const binding=bindings.get(row?.target_id);
+      if(!binding||seen.has(row.target_id))throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
+      let choice=binding.choices.find(o=>o.choice_id===row?.choice_id);
+      if(!choice&&entries.has(binding.sentenceId))
+        choice=await manualLiteralChoice(binding,row?.choice_id,entries.get(binding.sentenceId),task,row);
+      if(!choice)throw Error('本批包含重复、其他批次的 target_id 或无效 choice_id。');
       seen.add(row.target_id);accepted.push({binding,choice});
     }
-    const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry])),groups=new Map();
+    // An asynchronous reading-table load must never apply a cancelled or
+    // superseded manual batch to the page.
+    if(task.finished||currentTask!==task||task.manualBackup!==backup||task.manualRequest!==backup.requestId)
+      throw Error('当前审核批次已取消或改变，未应用过期答案。');
     for(const {binding,choice} of accepted)for(const b of (task.paragraphPlan?task.paragraphPlan.projectBinding(binding,choice):[{...binding,annotations:choice.annotations}])){
       const entry=entries.get(b.sentenceId);
       if(!entry||!Number.isInteger(b.start)||!Number.isInteger(b.end)||b.start<0||b.end<=b.start||entry.text.slice(b.start,b.end)!==b.surface)throw Error('当前批次的原文位置已失效，未应用任何答案。');
@@ -766,7 +844,8 @@
           return binding&&!binding.choices.some(o=>o.choice_id===row?.choice_id);
         })===true;
       }catch{}
-      if(!requiresBackground)try{applyManualRecovery(task,submitted,{advance:false,paint:false});}catch(error){addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message});}
+      if(!requiresBackground)void applyManualRecovery(task,submitted,{advance:false,paint:false})
+        .catch(error=>addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message}));
       task.manualRequest=null;panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }
@@ -875,7 +954,15 @@
     port.onMessage.addListener(result => {
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
       if(task.manualLocalOnly)return;
-      if(result.type==='MANUAL_REVIEW_PLAN'){task.manualPlan=result.batches;return;}
+      if(result.type==='MANUAL_REVIEW_PLAN'){
+        task.manualPlan=result.batches;
+        // Warm the local pronunciation table while the extension is connected;
+        // the cached module remains usable if the worker disconnects later.
+        if(result.batches?.some(batch=>batch.bindings?.some(b=>b.literalOrigin?.eligible&&b.literalOrigin.hanja)))
+          task.manualReadingCheck=import(chrome.runtime.getURL('hanja-reading-check.js'))
+            .then(m=>m.validateModelHanjaReadings).catch(()=>null);
+        return;
+      }
       if(['MANUAL_REVIEW_REQUEST','MANUAL_REVIEW_ERROR','MANUAL_REVIEW_ACCEPTED'].includes(result.type)){handleManualEvent(task,result);return;}
       if (result.type === 'ERROR') { addDiagnostic({level:'error',message:result.error});if(recoverManualConnection(task,result.error||'标注后台异常。'))return;status(result.error || '分析失败', 0); finishTask(task,result.error||'分析失败'); return; }
       if (result.type === 'DIAGNOSTIC') {

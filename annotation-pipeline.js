@@ -1,5 +1,6 @@
 import {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis} from './local-engine.js';
 import {filterReviewTarget} from './review-pos.js';
+import {canProposeExperimentalOption} from './experimental-options.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
@@ -137,7 +138,17 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     existingRepairs:item.repairs
    });
   }
-  const manualBindings=config.manualReview?targets.map(t=>{const {item,target}=owners.get(t.target_id);return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,choices:filterReviewTarget(target,config).options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))}))};}):undefined;
+  const manualBindings=config.manualReview?targets.map(t=>{
+   const {item,target}=owners.get(t.target_id);
+   const options=filterReviewTarget(target,config).options;
+   return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,
+    choices:options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))})),
+    ...((config.experimentalHanja===true||config.experimentalLoanword===true)?{literalOrigin:{
+     hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true,
+     eligible:canProposeExperimentalOption(target),
+     known:options.filter(o=>o.type==='hanja'||o.type==='loanword').map(o=>({type:o.type,replacement:o.replacement}))
+    }}:{})};
+  }):undefined;
   const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
   return {owners,targets,repairScopes,manualBindings,manualPrepared};
  });

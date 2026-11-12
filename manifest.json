@@ -61,7 +61,9 @@
     {
       "resources": [
         "paragraph-plan.js",
-        "text-chunks.js"
+        "text-chunks.js",
+        "hanja-reading-check.js",
+        "hanja-reading-data.js"
       ],
       "matches": [
         "<all_urls>"
