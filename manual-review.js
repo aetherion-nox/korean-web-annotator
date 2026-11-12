@@ -146,7 +146,14 @@ export function createManualReviewSession({operationId,post,signal}={}){
       // Previous valid repairs cannot be revoked by a new conflicting retry.
       const previous=check(current.savedRepairs);
       const stable=previous.accepted.map(r=>current.savedRepairs[r.index]);
-      const proposed=[...stable,...additions];
+      const nonconflicting=additions.filter(row=>!stable.some(old=>
+        row?.sentence_id===old.sentence_id&&(
+          Number.isInteger(row.start)&&Number.isInteger(row.end)&&
+            row.start<old.end&&old.start<row.end||
+          Array.isArray(row.old_target_ids)&&
+            row.old_target_ids.some(id=>old.old_target_ids.includes(id))
+        )));
+      const proposed=[...stable,...nonconflicting];
       const checked=check(proposed);
       validRepairs=checked.accepted;
       current.savedRepairs=validRepairs.map(r=>({
