@@ -845,6 +845,58 @@
     });
   }
 
+  // Validate the snapshot against today's still-live DOM before retiring any
+  // old target. A failed projection invalidates all fragments sharing that ID.
+  function stagePageRepairs(task,repairs,entries){
+    const records=[],failed=new Set(),reasons=new Map();
+    const targets=new Map((task.manualBackup?.repairValidation?.targets||[]).map(t=>[t.target_id,t]));
+    const project=(sentenceId,start,end,surface,annotations=[])=>{
+      const binding={sentenceId,start,end,surface};
+      const parts=task.paragraphPlan?task.paragraphPlan.projectBinding(binding,{annotations}):[{...binding,annotations}];
+      if(!parts.length)throw Error('段落无法映射到 DOM');
+      return parts.map(part=>{
+        const entry=entries.get(part.sentenceId);
+        if(!entry||!Number.isInteger(part.start)||!Number.isInteger(part.end)||
+           part.start<0||part.end<=part.start||entry.text.slice(part.start,part.end)!==part.surface)
+          throw Error('原文 DOM 位置失效');
+        if(part.annotations.some(a=>!Number.isInteger(a.start)||!Number.isInteger(a.end)||
+            a.start<0||a.end<=a.start||entry.text.slice(a.start,a.end)!==a.surface||
+            !['hanja','loanword'].includes(a.type)||
+            !entry.selected.some(r=>a.start>=r.start&&a.end<=r.end)))
+          throw Error('修复位置或选区无效');
+        return {entry,annotations:part.annotations,reviewed:[{start:part.start,end:part.end}]};
+      });
+    };
+    for(const repair of repairs){
+      try{
+        const parts=project(repair.sentenceKey,repair.start,repair.end,repair.surface,repair.annotations);
+        for(const id of repair.old_target_ids){
+          const old=targets.get(id);
+          if(!old)throw Error('旧 target 不存在');
+          parts.push(...project(repair.sentenceKey,old.start,old.end,old.surface));
+        }
+        records.push({repair,parts});
+      }catch(error){
+        for(const id of repair.old_target_ids){failed.add(id);reasons.set(id,'修复 DOM 投射失败：'+error.message);}
+      }
+    }
+    // Propagate failures within a connected split/merge group.
+    let change=true;
+    while(change){
+      change=false;
+      for(const {repair} of records)if(repair.old_target_ids.some(id=>failed.has(id)))
+        for(const id of repair.old_target_ids)if(!failed.has(id)){failed.add(id);change=true;}
+    }
+    const applied=records.filter(({repair})=>!repair.old_target_ids.some(id=>failed.has(id)));
+    const retired=new Set(applied.flatMap(({repair})=>repair.old_target_ids)),groups=new Map();
+    for(const {parts} of applied)for(const {entry,annotations,reviewed} of parts){
+      if(!groups.has(entry))groups.set(entry,{annotations:[],reviewed:[]});
+      const group=groups.get(entry);
+      group.annotations.push(...annotations);group.reviewed.push(...reviewed);
+    }
+    return {applied:applied.map(({repair})=>repair),retired,groups,reasons};
+  }
+
   // Construct a retry prompt from the original shared pool, keeping the
   // same batch ID and only the sentences/candidates the missing targets need.
   function manualRetryPrompt(task,missing,reasons){
