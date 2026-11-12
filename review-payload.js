@@ -35,7 +35,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
   'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
   'Before finishing, internally verify no IDs are omitted or duplicated, and copy batch_id unchanged. Do not add commentary.',
   ''
- ].join('\\n');
+ ].join('\n');
  return buildReviewInstructions(config)+'\n'+batchInstruction+JSON.stringify(payload);
 }
 function canonical(value){
