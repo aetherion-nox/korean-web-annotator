@@ -1,6 +1,7 @@
 import {buildManualPrompt} from './review-payload.js';
 export {buildManualPrompt} from './review-payload.js';
 import {validateChoices,validateExperimentalChoices} from './choice-review.js';
+import {filterReviewTarget} from './review-pos.js';
 import {describeBatchBudget} from './batch-budget.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
@@ -36,6 +37,30 @@ export function prepareManualRequest(config,targets){
  return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
 }
 
+// Preserve the original shared pools and restrict retry work to unsolved IDs.
+function manualRetryPrompt(original,batchId,remaining,reasons,acceptedCount){
+ const ids=new Set(remaining.map(t=>t.target_id));
+ const lead='此前已验证并保存 '+acceptedCount+' 条答案。本次只回答以下 '+remaining.length+
+   ' 个 target_id；不要重发已完成目标。逐条核对原句、候选释义与词性；拿不准返回 KEEP。'+
+   ' 禁止更改 target_id；复制 batch_id '+batchId+'；只输出 JSON 对象（batch_id、results，必要时 repairs），'+
+   '不要复制 format、sentences、candidates 或 targets。\n错误原因：\n'+
+   remaining.map(t=>t.target_id+'：'+(reasons.get(t.target_id)||'该目标未返回有效答案')).join('\n')+'\n\n';
+ const begin=original.indexOf('{"format":"shared-pools-v3"');
+ if(begin<0)return lead+original;
+ try{
+   const old=JSON.parse(original.slice(begin));
+   const selected=(old.targets||[]).filter(t=>ids.has(t.target_id));
+   if(selected.length!==remaining.length)return lead+original;
+   const candidateIds=new Set(selected.flatMap(t=>Object.values(t.options||{})).filter(x=>typeof x==='string'));
+   const sentenceIds=new Set(selected.map(t=>t.sentence_id));
+   const payload={...old,
+     sentences:(old.sentences||[]).filter(s=>sentenceIds.has(s.sentence_id)),
+     candidates:(old.candidates||[]).filter(c=>candidateIds.has(c.candidate_id)),
+     targets:selected,batch_id:batchId};
+   return lead+original.slice(0,begin)+JSON.stringify(payload);
+ }catch{return lead+original;}
+}
+
 export function createManualReviewSession({operationId,post,signal}={}){
  let pending=null,batchNumber=0;
  const notify=(type,extra)=>post({type,operationId,...extra});
@@ -48,7 +73,10 @@ export function createManualReviewSession({operationId,post,signal}={}){
    return new Promise((resolve,reject)=>{
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
-    pending={requestId,targets,wireTargets,experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,reviewPosFilter:config.reviewPosFilter,smartSegmentation:config.smartSegmentation===true,resolve:response=>{clear();resolve(response);}};
+    pending={requestId,targets,wireTargets,originalPrompt:prepared.text,acceptedRows:new Map(),savedRepairs:[],
+      experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,
+      reviewPosFilter:config.reviewPosFilter,smartSegmentation:config.smartSegmentation===true,
+      resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
     try{notify('MANUAL_REVIEW_REQUEST',prepared);}catch(error){clear();reject(error);}
    });
@@ -66,20 +94,69 @@ export function createManualReviewSession({operationId,post,signal}={}){
     // batch_id must still be rejected rather than silently applied.
     if(Object.hasOwn(response,'batch_id')&&response.batch_id!==current.requestId)
       throw Error('batch_id 与当前批次不一致，请检查是否粘贴了其他批次的答案。');
+    if(Object.prototype.hasOwnProperty.call(response,'experimental_options'))
+      throw Error('新版协议只需要 results；请不要包含 experimental_options。');
     const experimental=current.experimentalHanja||current.experimentalLoanword;
-    const choicesConfig={reviewPosFilter:current.reviewPosFilter,experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword};
-    if(Object.prototype.hasOwnProperty.call(response,'experimental_options'))throw Error('新版协议只需要 results；请重新复制当前批次提示词，不要 experimental_options。');
-    const result=experimental?validateExperimentalChoices(current.wireTargets,response,choicesConfig):validateChoices(current.wireTargets,response,choicesConfig);
-    if(result.unresolved.length||response.results.length!==current.wireTargets.length)throw Error('本批结果不完整，或包含重复/其他批次的 target_id、无效 choice_id 或未通过校验的实验性选项。请完整复制本批结果，保留 ID 原样。');
+    const choicesConfig={reviewPosFilter:current.reviewPosFilter,
+      experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword};
+    const known=new Map(current.wireTargets.map(t=>[t.target_id,t]));
+    const incoming=new Map(),reasons=new Map(),unknown=[];
+    for(const row of response.results){
+      if(!row||typeof row.target_id!=='string'||!known.has(row.target_id)){
+        unknown.push(String(row?.target_id??'(缺失)'));continue;
+      }
+      if(!incoming.has(row.target_id))incoming.set(row.target_id,[]);
+      incoming.get(row.target_id).push(row);
+    }
+    for(const [id,rows] of incoming){
+      if(current.acceptedRows.has(id))continue; // Already validated, never overwrite.
+      if(rows.length!==1){
+        reasons.set(id,'重复 target_id（本次 '+rows.length+' 条），请只返回一条');continue;
+      }
+      const target=known.get(id),row=rows[0];
+      const selected=experimental?
+        validateExperimentalChoices([target],{results:[row]},choicesConfig):
+        validateChoices([target],{results:[row]},choicesConfig);
+      if(selected.accepted.length!==1){
+        const candidate=filterReviewTarget(target,choicesConfig).options.find(o=>o.choice_id===row.choice_id);
+        reasons.set(id,candidate?'字段不符合当前协议':'无效 choice_id：'+String(row.choice_id??'(缺失)')+
+          '；请核对当前目标的选项，实验词源需满足读音、格式与专名保护');continue;
+      }
+      current.acceptedRows.set(id,{target_id:id,choice_id:selected.accepted[0].option.choice_id});
+    }
+    if(current.smartSegmentation&&Array.isArray(response.repairs)){
+      for(const repair of response.repairs){
+        const serialized=JSON.stringify(repair);
+        if(serialized&&!current.savedRepairs.some(old=>JSON.stringify(old)===serialized))
+          current.savedRepairs.push(repair);
+      }
+    }
+    const missing=current.wireTargets.filter(t=>!current.acceptedRows.has(t.target_id));
+    if(missing.length){
+      const retry=manualRetryPrompt(current.originalPrompt,current.requestId,missing,reasons,current.acceptedRows.size);
+      const detail=missing.slice(0,12).map(t=>t.target_id+'（'+(reasons.get(t.target_id)||'未提交')+'）').join('；');
+      notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,
+        error:'本批已保留 '+current.acceptedRows.size+'/'+current.wireTargets.length+
+          ' 条有效答案，剩余 '+missing.length+' 条待补交：'+detail+
+          (missing.length>12?'；其余见补交提示词':'')+
+          (unknown.length?'。已忽略 '+unknown.length+' 条未知或跨批 target_id':'')+
+          '。请复制新的补交提示词，只回答剩余目标。',
+        acceptedCount:current.acceptedRows.size,
+        acceptedRows:[...current.acceptedRows.values()],invalidTargetIds:missing.map(t=>t.target_id),
+        repairPrompt:retry});
+      return false;
+    }
     const ids=new Map(current.wireTargets.map((t,i)=>[t.target_id,current.targets[i].target_id]));
-    // Do not reject an otherwise valid batch because one repair is malformed.
-    // Preserve individual proposals for the background source/overlap validator.
-    const proposed=current.smartSegmentation&&response.repairs!==undefined?{
-     repairs:Array.isArray(response.repairs)?response.repairs.map(row=>row&&typeof row==='object'&&
-       Array.isArray(row.old_target_ids)?{...row,old_target_ids:row.old_target_ids.map(id=>ids.get(id)||id)}:row):response.repairs
+    const proposed=current.smartSegmentation&&current.savedRepairs.length?{
+      repairs:current.savedRepairs.map(row=>row&&typeof row==='object'&&Array.isArray(row.old_target_ids)?
+        {...row,old_target_ids:row.old_target_ids.map(id=>ids.get(id)||id)}:row)
     }:{};
-    const mapped={results:result.accepted.map(({target,option})=>({target_id:ids.get(target.target_id),choice_id:option.choice_id})),...proposed};
-    notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,targetCount:result.accepted.length});current.resolve(mapped);return true;
+    const mapped={results:[...current.acceptedRows.values()].map(row=>({
+      target_id:ids.get(row.target_id),choice_id:row.choice_id
+    })),...proposed};
+    notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,
+      targetCount:current.wireTargets.length,acceptedRows:[...current.acceptedRows.values()]});
+    current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
   }
  };
