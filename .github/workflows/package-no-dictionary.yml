@@ -1,15 +1,15 @@
-name: Verify and Package No-Dictionary Open-Origin Fix v3
+name: Verify and Package No-Dictionary Manual Render Fix v4
 on:
   push:
     branches:
-      - fix/v1.1.55.4-no-dictionary-origin-choice
+      - fix/v1.1.55.4-no-dictionary-manual-render
     paths:
       - .github/workflows/package-no-dictionary.yml
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: package-v1.1.55.4-no-dictionary-open-origin
+  group: package-v1.1.55.4-no-dictionary-manual-render
   cancel-in-progress: false
 jobs:
   release:
@@ -104,12 +104,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.55.4-no-dictionary-compatible.3'
+          $tag='v1.1.55.4-no-dictionary-compatible.4'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 no dictionary — open-origin LLM fix (Windows compatible)' --prerelease --notes 'Fixes no-dictionary LLM reviews defaulting to KEEP by making valid choice_id outputs explicitly open-ended in prompt and shared-pools payload. Includes prior analyzeLocal import fix. Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 no dictionary — manual DOM rendering fix (Windows compatible)' --prerelease --notes 'Fixes validated Hanja and Latin model origins not appearing on the webpage during partial manual review, by resolving paragraph IDs before DOM projection. Includes prior open-origin protocol changes. Includes prior analyzeLocal import fix. Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
           }
           if($LASTEXITCODE -ne 0){throw 'GitHub Release failed'}
