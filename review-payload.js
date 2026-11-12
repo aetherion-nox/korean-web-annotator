@@ -17,12 +17,19 @@ export function buildReviewInstructions(config={}){
  const experimental=buildExperimentalOriginInstructions(config);
  // The ordinary results-only schema must not contradict optional repairs.
  const dictionaryFree=config.dictionaryFree===true;
+ const allowedOrigins=[
+   ...(config.experimentalHanja===true?['genuine Hanja spelling of Sino-Korean vocabulary']:[]),
+   ...(config.experimentalLoanword===true?['actual Latin-script original of a borrowed word']:[])
+ ];
  const dictionaryFreeInstructions=[
-   'No external dictionary has been imported. Kiwi supplies tentative Korean word boundaries and POS hints only; they are NOT dictionary senses or etymological evidence.',
-   'Each target has KEEP but no dictionary candidate. If you confidently recognize a genuine Korean Sino-word origin and Hanja is enabled, write its actual Hanja characters directly in choice_id. If you confidently recognize the original Latin-script loanword spelling and loanword mode is enabled, write that original spelling. Never fabricate dictionary option IDs.',
-   'If the word is native Korean, is not a target language type, is a person/place name without identity evidence, or its origin is uncertain, choose KEEP. Do not translate or romanize Korean words into arbitrary English/Latin or convert a semantically related character word. Be conservative.',
-   'Use the sentence and adjacent context to interpret each occurrence. Kiwi segmentation may be wrong; avoid arbitrary pieces, names and overlapping spans. Hanja must align with the actual Hangul syllables. Keep target_id exactly as given.',
-   'Input uses pooled sentences and targets; options.KEEP=null. Return only JSON with results containing exactly one {target_id,choice_id} per target; do not return input metadata.'
+   'OPEN-ENDED KOREAN WORD ORIGIN ANNOTATION. There is NO imported dictionary, so the input lists only KEEP. This does NOT mean KEEP is the only valid choice_id.',
+   'For EACH target, actively determine whether its occurrence is a Sino-Korean word or a borrowed word from the actual sentence, then infer the authentic source spelling. When the origin is reliably known, write the source spelling DIRECTLY as results[].choice_id; do not default to KEEP because the spelling is missing from options.',
+   'Permitted generated source types in THIS batch: '+(allowedOrigins.join(' OR ')||'none')+'. Do not output source types that are not enabled.',
+   'For Hanja, use the genuine etymological Chinese characters whose Korean readings align with the original syllables. For Latin-script loans, use the genuine borrowed spelling, NOT a free translation, invented English expression, or Korean romanization.',
+   'KEEP is a fallback for genuinely native Korean, prohibited names, uncertain/misidentified word boundaries, or origins you cannot reliably identify. Do not mark an identifiable Hanja/loanword as KEEP merely because options contains no c0 or other dictionary keys.',
+   'Kiwi segmentation and POS are hints, not evidence of etymology. Preserve the exact original target_id and source boundaries. Do not guess personal names, invent character readings or force an origin on ordinary native vocabulary.',
+   'The options object contains KEEP as a safe fallback only. This is NOT a closed multiple-choice task: valid choice_id values are KEEP or a directly written original spelling of an ENABLED source type. Use the context, sentences, morphology and adjacent context to interpret each occurrence.',
+   'Return one JSON object with exactly one {target_id,choice_id} per target, and no commentary. Do not copy the input format/candidates/targets fields.'
  ].join('\n');
  const base=dictionaryFree?dictionaryFreeInstructions:config.smartSegmentation===true
   ?REVIEW_INSTRUCTIONS.replace(
@@ -40,7 +47,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
   'Output JSON only: top-level batch_id and results'+(config.smartSegmentation===true?' (plus optional repairs).':'.'),
   'The input format marker shared-pools-v3 is NOT a response field; do not copy format, sentences, candidates, targets, or context into the output.',
   'Return EXACTLY ONE {target_id,choice_id} for EACH target_id in the current request. Copy IDs character-for-character, never renumber, invent or repeat IDs.',
-  config.dictionaryFree===true?'There are no dictionary senses in this batch: choice_id may be KEEP or a verified-by-model Hanja/Latin spelling permitted by the enabled experiment. If uncertain use KEEP.':'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
+  config.dictionaryFree===true?'OPEN-ENDED answer: options.KEEP is only a fallback, NOT the complete list. For each reliably identified word you SHOULD write the actual Hanja or Latin origin directly as choice_id (only enabled origin types). Choose KEEP for native or genuinely uncertain origins. Never invent c0/n0/p0.':'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
   'Copy batch_id from the input unchanged into the top level of the answer. Before finishing, internally verify no IDs are omitted or duplicated. Do not add commentary.',
   ''
  ].join('\n');
@@ -83,7 +90,11 @@ export function buildReviewPayload(context,targets,config={}){
   }
   return {...occurrence,sentence_id:sentenceIds.get(sentenceKey),options};
  });
- const payload={format:'shared-pools-v3',...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
+ const payload={format:'shared-pools-v3',...(config.dictionaryFree===true?{
+  choice_id_mode:'open-origin',
+  allowed_origin_types:[...(config.experimentalHanja===true?['hanja']:[]),...(config.experimentalLoanword===true?['loanword']:[])],
+  keep_is_fallback_only:true
+ }:{}),...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
  const userBytes=bytes(payload),legacyUserBytes=bytes({context,targets});
  const stats={posFilteredOptions:originalOptionCount-targets.reduce((n,t)=>n+t.options.length,0),posConflictTargets:targets.filter(t=>t.pos_conflict).length,format:payload.format,targets:targets.length,sentences:sentences.length,candidates:candidates.length,userBytes,legacyUserBytes,savedPercent:Math.round((1-userBytes/legacyUserBytes)*1000)/10};
