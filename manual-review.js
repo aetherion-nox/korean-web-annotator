@@ -6,10 +6,10 @@ import {describeBatchBudget} from './batch-budget.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
 // Keep an oversized single dictionary entry intact rather than losing senses.
-export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000,reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false,smartSegmentation=false}={}){
+export function manualReviewBatches(items,context='',{maxTargets=48,maxChars=60000,reviewPosFilter=true,experimentalHanja=false,experimentalLoanword=false,dictionaryFree=false,smartSegmentation=false}={}){
  const groups=[];let rows=[];
  const ownContext=group=>[...new Set(group.map(r=>r.target.context))].join('\n');
- const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000',{reviewPosFilter,experimentalHanja,experimentalLoanword,smartSegmentation});
+ const prompt=(context,group)=>buildManualPrompt(context,group.map((r,i)=>({...r.target,target_id:'t'+i})),'00000000',{reviewPosFilter,experimentalHanja,experimentalLoanword,dictionaryFree,smartSegmentation});
  const size=group=>prompt(ownContext(group),group).length;
  for(const item of items)for(const target of item.result.unresolved){
   const row={item,target};
@@ -34,7 +34,7 @@ export function prepareManualRequest(config,targets){
  const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join('');
  const wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
  const bindings=config.manualBindings?.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};});
- return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
+ return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
 }
 
 // Preserve the original shared pools and restrict retry work to unsolved IDs.
