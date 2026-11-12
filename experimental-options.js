@@ -92,3 +92,25 @@ export function literalOriginOption(target,choiceId,config={}){
  }catch{return null;}
  return option;
 }
+
+
+// Validation diagnostics only; never changes which model origins are accepted.
+export function explainLiteralOriginRejection(target,choiceId,config={}){
+ if(!canProposeExperimentalOption(target))return 'protected_name_or_partial_word';
+ if(typeof choiceId!=='string'||!choiceId||choiceId.length>160||choiceId!==choiceId.trim()||RESERVED.test(choiceId))
+  return 'invalid_choice_id';
+ if(target.options?.some(o=>o.choice_id===choiceId))return 'known_choice_key';
+ if(/\p{Script=Han}/u.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId))
+  return 'mixed_script_requires_segments';
+ if(CJK.test(choiceId)){
+  if(config.experimentalHanja!==true)return 'hanja_mode_disabled';
+  // A structurally valid choice that fails solely because of the reading
+  // table must be distinguishable from impossible character/word alignment.
+  if(config.hanjaReadingCheck!==false&&literalOriginOption(target,choiceId,{...config,hanjaReadingCheck:false}))
+   return 'hanja_reading_conflict';
+  return 'hanja_alignment_or_boundary';
+ }
+ if(/\p{Script=Latin}/u.test(choiceId))
+  return config.experimentalLoanword===true?'loanword_script_or_boundary':'loanword_mode_disabled';
+ return 'unsupported_choice_id';
+}
