@@ -1076,7 +1076,10 @@
   function handleManualEvent(task,event){
     const panel=manualPanel();
     if(event.type==='MANUAL_REVIEW_REQUEST'){
-      clearTimeout(task.manualTimer);task.manualLocalOnly=false;task.manualRecoveryAccepted=new Map();task.manualOriginalPrompt=event.text;task.manualBackup={requestId:event.requestId,bindings:event.bindings,hanjaReadingCheck:event.hanjaReadingCheck!==false,experimentalPhase:event.experimentalPhase,batchNumber:event.batchNumber,batchTotal:event.batchTotal};
+      clearTimeout(task.manualTimer);task.manualLocalOnly=false;task.manualRecoveryAccepted=new Map();task.manualOriginalPrompt=event.text;task.manualBackup={requestId:event.requestId,bindings:event.bindings,
+        repairValidation:event.repairValidation,smartSegmentation:event.smartSegmentation===true,
+        hanjaReadingCheck:event.hanjaReadingCheck!==false,experimentalPhase:event.experimentalPhase,
+        batchNumber:event.batchNumber,batchTotal:event.batchTotal};task.manualRecoveryRepairs=[];
       if(event.experimentalPhase)task.experimentalRecoveryIncomplete=true;
       task.manualRequest=event.requestId;panel.dataset.operationId=task.operationId;panel.dataset.requestId=event.requestId;
       panel.querySelector('.kra-manual-summary').textContent=`${event.experimentalPhase==='propose'?'实验性候选补全 · ':event.experimentalPhase==='choose'?'补充候选复审 · ':''}第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次 · ${event.targetCount} 个词 · ${event.text.length.toLocaleString()} 字符（仅任务内容，无 API Key）`;
@@ -1094,7 +1097,8 @@
     if(event.type==='MANUAL_REVIEW_ERROR'){
       clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
       if(Array.isArray(event.acceptedRows)){
-        const answer=JSON.stringify({batch_id:event.requestId,results:event.acceptedRows});
+        const answer=JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
+          ...(event.acceptedRepairs?{repairs:event.acceptedRepairs}:{})});
         panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
         void applyManualRecovery(task,answer).catch(error=>{
           addDiagnostic({level:'info',message:'部分审核结果：'+error.message});
@@ -1117,7 +1121,8 @@
     }else{
       clearTimeout(task.manualTimer);
       const submitted=Array.isArray(event.acceptedRows)?
-        JSON.stringify({batch_id:event.requestId,results:event.acceptedRows}):
+        JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
+           ...(event.acceptedRepairs?{repairs:event.acceptedRepairs}:{})}):
         (task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value);
       // The background already validated any model-origin string. Do not
       // overwrite it with a page-only recovery that lacks these options.
