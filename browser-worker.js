@@ -1,5 +1,6 @@
 import {loadPyodide} from './runtime/pyodide/pyodide.mjs';
 import {KiwiBuilder,Match} from './runtime/kiwi/index.js';
+import {analyzeWithoutDictionary} from './no-dictionary-analysis.js';
 let initialization,python,kiwi,kiwiInitialization;
 async function initializeKiwi(){
  if(kiwiInitialization)return kiwiInitialization;
@@ -23,6 +24,11 @@ async function initialize(){
  })().catch(error=>{initialization=null;throw error;});return initialization;
 }
 async function dispatch(request,progress=()=>{}){
+ if(request.action==='analyze-no-dictionary'){
+  if(!kiwiInitialization)progress({stage:'tokenizer'});
+  await initializeKiwi();progress({stage:'analysis'});
+  return analyzeWithoutDictionary(request.text,kiwi.tokenize(request.text,Match.all),request.modes);
+ }
  if(!initialization)progress({stage:'dictionary'});
  await initialize();
  if(['analyze','warmup'].includes(request.action)){if(!kiwiInitialization)progress({stage:'tokenizer'});await initializeKiwi();if(request.action==='analyze')progress({stage:'analysis'});}
