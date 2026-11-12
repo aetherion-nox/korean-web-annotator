@@ -1,5 +1,6 @@
 import {storage} from './browser-storage.js';
 import {copyPlainText} from './clipboard.js';
+import {NO_DICTIONARY_IDENTITY} from './no-dictionary-analysis.js';
 let worker,hydrated=false,dictionaryAvailable=false,preloaded=false,number=0;const pending=new Map();let queue=Promise.resolve();
 function resetWorker(){worker?.terminate();worker=null;hydrated=false;dictionaryAvailable=false;preloaded=false;for(const pair of pending.values())pair.reject(Error('Browser worker reset'));pending.clear();}
 function getWorker(){
@@ -13,9 +14,28 @@ async function dispatch(request){
  if(request.action==='clear'){resetWorker();await storage('delete','dictionary');return {ready:false,dictionary_loaded:false};}
  if(request.action==='warmup'&&preloaded)return {ready:true,preloaded:true};
  const missing='当前插件没有已保存的词典。请打开插件设置，选择 ZIP 或电脑预处理的 DB 文件并导入；重新安装插件或更换扩展身份后需要再次导入。';
- if(!hydrated&&request.action!=='import'){if(request.progressId)reportProgress(request.progressId,{stage:'dictionary'});const saved=await storage('get','dictionary');if(!saved&&request.action==='warmup')return {ready:false,skipped:true};if(!saved&&request.action==='analyze')throw Error(missing);const status=await work({action:'status',database:saved,progressId:request.progressId},saved?[saved]:[]);dictionaryAvailable=Boolean(saved&&status.ready);hydrated=true;if(request.action==='status')return status;}
+ if(!hydrated&&request.action!=='import'){
+  const saved=await storage('get','dictionary');
+  if(!saved){
+   if(request.action==='warmup')return {ready:false,skipped:true};
+   if(request.action==='status'&&request.allowNoDictionary===true)return {...NO_DICTIONARY_IDENTITY};
+   if(request.action==='analyze'&&request.modes?.allowNoDictionary===true){
+    return work({action:'analyze-no-dictionary',text:request.text,modes:request.modes,progressId:request.progressId});
+   }
+   if(request.action==='analyze')throw Error(missing+' 或开启实验性汉字词／外来语 LLM 补充选项并启用模型审核。');
+  }
+  if(request.progressId)reportProgress(request.progressId,{stage:'dictionary'});
+  const status=await work({action:'status',database:saved,progressId:request.progressId},saved?[saved]:[]);
+  dictionaryAvailable=Boolean(saved&&status.ready);hydrated=true;
+  if(request.action==='status')return status;
+ }
  if(request.action==='warmup'&&!dictionaryAvailable)return {ready:false,skipped:true};
- if(request.action==='analyze'&&!dictionaryAvailable)throw Error(missing);
+ if(request.action==='status'&&!dictionaryAvailable&&request.allowNoDictionary===true)return {...NO_DICTIONARY_IDENTITY};
+ if(request.action==='analyze'&&!dictionaryAvailable){
+  if(request.modes?.allowNoDictionary===true)
+   return work({action:'analyze-no-dictionary',text:request.text,modes:request.modes,progressId:request.progressId});
+  throw Error(missing+' 无词典时必须开启实验性词源补全和模型审核。');
+ }
  if(request.action==='import'){
   preloaded=false;
   const upload=await storage('get',request.upload);if(!upload)throw Error('Dictionary upload expired');
