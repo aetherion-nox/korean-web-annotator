@@ -4,7 +4,7 @@ import {callBrowserEngine,copyTextToClipboard} from './browser-engine-host.js';
 import {configureBrowserEngineHost} from './browser-engine.js';
 configureBrowserEngineHost(callBrowserEngine);
 import './api-profiles.js';
-import {engineConfig,engineStatus} from './local-engine.js';
+import {engineConfig,engineStatus,analyzeLocal} from './local-engine.js';
 import {reviewTargets} from './choice-review.js';
 import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
