@@ -14,8 +14,15 @@ export function buildExperimentalOriginInstructions(config={}){
   ?'Preserve source word boundaries and Hanja-to-syllable alignment; do not translate, romanize, or guess personal names or uncertain origins.'
   :hanja?'Preserve source word boundaries and Hanja-to-syllable alignment; never guess personal-name Hanja or uncertain origins.'
          :'Use the actual borrowed spelling, not a translation or Korean romanization; preserve source word boundaries and never guess names or uncertain origins.';
- return 'Actively check whether the dictionary actually covers the meaning of EACH occurrence; a same-spelling but wrong-definition candidate is not a match. If no supplied sense fits and you confidently know its '+origin+
-  ', you SHOULD write that origin directly as choice_id, rather than defaulting to KEEP or selecting a semantically mismatching dictionary key. Use a matching dictionary key when one exists. If the genuine origin is uncertain, choose KEEP instead of guessing. '+caution;
+ return [
+  'OPEN-ENDED ORIGIN AUDIT WITH DICTIONARY OPTIONS: the listed dictionary keys are candidates, NOT an exhaustive list of possible etymologies. Direct Hanja/Latin spellings are valid choice_id values when their experimental origin type is enabled.',
+  'For EACH occurrence, FIRST infer its meaning, lexical word boundaries and whether it is native Korean, Sino-Korean or borrowed FROM THE ORIGINAL SENTENCE AND MORPHOLOGY, independently of the candidate list. If the authentic origin is reliably known, keep it in mind before reading the dictionary options.',
+  'SECOND compare EACH offered dictionary definition, POS and origin with that independent interpretation. Choose the target-specific c/n dictionary KEY when a supplied sense and origin really match; this is preferred over rewriting the same correct etymology. A plausible-looking homograph, near meaning or wrong word sense is NOT a match.',
+  'THIRD, if NO supplied dictionary option correctly represents this occurrence AND you confidently know the authentic '+origin+', write its ORIGINAL Hanja characters or borrowed Latin-script spelling DIRECTLY into results[].choice_id. Do not default to KEEP and do not choose a mismatching dictionary key merely because options contains keys. This is still valid when options includes c0/c1/n0 as well as KEEP.',
+  'Use KEEP only for a native word without a suitable dictionary nonconversion sense, a protected name or unclear word boundary, or when neither a matching dictionary sense nor a reliable origin is available. Do not invent an origin to increase the proportion of direct answers.',
+  'Hanja origin must follow Korean character/word alignment; for explicitly tagged derivational suffixes (Kiwi XSN/XSM), give the genuine Hanja stem only and preserve the native Korean suffix. Never truncate an unrecognized component. '+caution,
+  'Output exactly one result per target, with the original target_id and a choice_id that is either a matching dictionary option KEY, an enabled authentic Hanja/Latin origin string, or KEEP. Never return the shared p ID or invent a candidate ID.'
+ ].join('\n');
 }
 
 const CJK=/^[\p{Script=Han}]+$/u;
