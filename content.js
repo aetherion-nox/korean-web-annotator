@@ -875,7 +875,7 @@
       const message='本批结果不完整：已验证 '+verified.size+'/'+bindings.size+' 条，页面已预览 '+count+
         ' 个标注；剩余 '+missing.length+' 条待补交：'+details+
         (missing.length>8?'；其余见补交提示词':'')+
-        (unknown.length?'。已忽略未知或跨批 ID '+unknown.slice(0,4).join('、'):'')+
+        (unknown.length?'。已忽略未知或跨批 target_id '+unknown.slice(0,4).join('、'):'')+
         (repairsSkipped?'。注意：断线状态下未应用 repairs':'')+
         '。请只提交新提示词中的目标。';
       if(count)status('已预览 '+count+' 个标注，仍有 '+missing.length+' 个目标待补交');
