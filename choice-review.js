@@ -4,7 +4,7 @@ import {readModelContent,choicePreviewParser,experimentalChoicePreviewParser} fr
 import {requestLogger} from './request-log.js';
 import './model-catalog.js';
 import {buildReviewPayload,buildReviewInstructions} from './review-payload.js';
-import {literalOriginOption} from './experimental-options.js';
+import {literalOriginOption,explainLiteralOriginRejection} from './experimental-options.js';
 import {validateSegmentationRepairs} from './segmentation-repairs.js';
 import {normalizeOutputTokenLimit} from './batch-budget.js';
 export function validateChoices(targets,response,config={}) {
@@ -29,6 +29,7 @@ export function validateExperimentalChoices(targets,response,config={}){
   typeof row.choice_id!=='string'||Object.keys(row).sort().join(',')!=='choice_id,target_id');
  if(invalid)return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:rows.length};
  const accepted=[],unresolved=[];let experimentalAccepted=0,experimentalRejected=0;
+ const rejectionCounts={},rejectionSamples=[];
  for(const target of targets){
   const matches=rows.filter(row=>row.target_id===target.target_id);
   if(matches.length!==1){unresolved.push(target);continue;}
@@ -37,9 +38,12 @@ export function validateExperimentalChoices(targets,response,config={}){
   if(option){accepted.push({target,option});continue;}
   const generated=literalOriginOption(target,id,config);
   if(generated){accepted.push({target,option:generated});experimentalAccepted++;}
-  else{unresolved.push(target);experimentalRejected++;}
+  else{unresolved.push(target);experimentalRejected++;
+    const reason=explainLiteralOriginRejection(target,id,config);
+    rejectionCounts[reason]=(rejectionCounts[reason]||0)+1;
+    if(rejectionSamples.length<16)rejectionSamples.push({target_id:target.target_id,surface:target.surface,choice_id:id,reason});}
  }
- return {accepted,unresolved,experimentalAccepted,experimentalProposed:experimentalAccepted,experimentalRejected};
+ return {accepted,unresolved,experimentalAccepted,experimentalProposed:experimentalAccepted,experimentalRejected,rejectionCounts,rejectionSamples};
 }
 export function thinkingSettings(config){
  const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
@@ -95,7 +99,7 @@ export async function reviewTargets(config,targets,signal){
       detail:repair.rejected.length?JSON.stringify(repair.rejected.slice(0,30)):''});
    }
    config.onPreview?.([]);
-   if(experimental)notify({stage:'experimental',level:result.experimentalRejected?'warning':'info',message:`单次回复：直接词源标注 ${result.experimentalAccepted} 项、拒绝无效直接词源 ${result.experimentalRejected} 项。`});
+   if(experimental)notify({stage:'experimental',level:result.experimentalRejected?'warning':'info',message:`单次回复：直接词源标注 ${result.experimentalAccepted} 项、拒绝无效直接词源 ${result.experimentalRejected} 项。`,detail:result.experimentalRejected?JSON.stringify({reasons:result.rejectionCounts,samples:result.rejectionSamples}):''});
    notify({stage:'response',level:pending.length?'warning':'info',message:`模型返回：采纳 ${result.accepted.length} 项，未解决 ${pending.length} 项`,detail:pending.length?JSON.stringify(response):''});
   }catch(error){
    config.onPreview?.([]);
