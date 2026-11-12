@@ -1,0 +1,36 @@
+name: Diagnose Windows ZIP extraction
+on:
+  push:
+    branches:
+      - fix/v1.1.55.4-partial-manual-recovery
+    paths:
+      - .github/workflows/verify-windows-zip.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download and verify published archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $url='https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.1.55.4-partial-manual-recovery.1/Korean-Web-Annotator-v1.1.55.4-partial-manual-recovery.zip'
+          $zip=Join-Path $env:RUNNER_TEMP 'Korean-Web-Annotator.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $expected='fb61a3316caed4194e3853f1a6fe171bcad95f3e1189318df5d3b4a36cde9084'
+          $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          Write-Host "Download bytes: $((Get-Item $zip).Length)"
+          Write-Host "SHA256: $actual"
+          if($actual -ne $expected){throw "GitHub release ZIP differs from build ZIP"}
+          $dest=Join-Path $env:RUNNER_TEMP 'Korean-Web-Annotator-extracted'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force -ErrorAction Stop
+          $mdl=Get-ChildItem -Path $dest -Filter 'cong.mdl' -File -Recurse
+          $manifest=Get-ChildItem -Path $dest -Filter 'manifest.json' -File -Recurse | Select-Object -First 1
+          Write-Host "Extracted cong.mdl count: $($mdl.Count)"
+          $mdl | ForEach-Object {Write-Host "Model file: $($_.FullName) ($($_.Length) bytes)"}
+          if(-not $mdl -or -not $manifest){throw "Required extracted file missing"}
+          Write-Host "Windows Expand-Archive OK"
