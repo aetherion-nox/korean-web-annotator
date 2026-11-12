@@ -789,6 +789,10 @@
     // result choices usable offline, but explicitly state repairs were skipped.
     const bindings=new Map(backup.bindings.map(b=>[b.target_id,b]));
     const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry]));
+    // Manual bindings use paragraph/chunk IDs (p0, p1c0...), NOT DOM
+    // text-node IDs (0, 1...). Resolve literal origins against the original
+    // sentence before projectBinding maps verified spans back into DOM nodes.
+    const sourceSentences=new Map((task.paragraphPlan?.sentences||[]).map(sentence=>[sentence.id,sentence]));
     const incoming=new Map(),reasons=new Map(),unknown=[];
     for(const row of response.results){
       if(!bindings.has(row?.target_id)){
@@ -805,8 +809,9 @@
       }
       const row=rows[0],binding=bindings.get(id);
       let choice=binding.choices.find(o=>o.choice_id===row?.choice_id);
-      if(!choice&&entries.has(binding.sentenceId))
-        try{choice=await manualLiteralChoice(binding,row?.choice_id,entries.get(binding.sentenceId),task,row);}
+      const sentence=sourceSentences.get(binding.sentenceId)||entries.get(binding.sentenceId);
+      if(!choice&&sentence)
+        try{choice=await manualLiteralChoice(binding,row?.choice_id,sentence,task,row);}
         catch{choice=null;}
       if(!choice){
         reasons.set(id,'无效 choice_id：'+String(row?.choice_id??'(缺失)'));continue;
@@ -865,6 +870,7 @@
         entry.modelAnnotations=model;entry.annotations=annotations;entry.modelReviewed=true;entry.hasPreview=true;
       }
       const count=paint?task.paint():0;
+      task.manualPreviewCount=count;
       const panel=document.querySelector('.kra-manual-review');
       if(panel){
         panel.querySelector('.kra-manual-prompt').value=manualRetryPrompt(task,missing,reasons);
@@ -935,7 +941,10 @@
             panel.querySelector('.kra-manual-prompt').value=event.repairPrompt;
             panel.querySelector('.kra-manual-response').value='';
           }
-          panel.querySelector('.kra-manual-status').textContent=event.error;
+          const preview=task.manualPreviewCount||0;
+          panel.querySelector('.kra-manual-status').textContent=event.error+
+            (preview?'\n已在当前网页显示 '+preview+' 个标注；未完成目标不影响已显示结果。':
+             '\n本批有效选择尚未生成可显示标注；请检查审核目标及页面结构。');
           panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
         });
       }else{
