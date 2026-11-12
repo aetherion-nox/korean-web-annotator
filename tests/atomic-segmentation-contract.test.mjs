@@ -103,7 +103,11 @@ test('manual partial answer retries only the unrepaired original and retains suc
  assert.deepEqual(final.repairs[0].old_target_ids,['first']);
 });
 test('pipeline renders only the new Hanja fragment when the old original target is superseded',async()=>{
- const text='과학이야기',t=word('local',text,0,text.length),f=fixture(text,[t]),events=[];
+ const text='과학이야기',t=word('local',text,0,text.length);
+ // This mocked upstream dictionary option must project to the entire
+ // original target, or validateAnalysis correctly removes the bad candidate.
+ t.options[1].replacement='科學異野記';
+ const f=fixture(text,[t]),events=[];
  await runSentencePipeline({operationId:'repair-only',sentences:[{id:'paragraphA',text}],
   modes:{hanja:true,loanword:true},smartSegmentation:true,progressiveAnnotation:true},e=>events.push(e),{
   enabled:true,status:async()=>({ready:true,engine_version:'fixture',dictionary_fingerprint:'fixture'}),
