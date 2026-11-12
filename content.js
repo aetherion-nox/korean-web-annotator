@@ -806,7 +806,8 @@
       const row=rows[0],binding=bindings.get(id);
       let choice=binding.choices.find(o=>o.choice_id===row?.choice_id);
       if(!choice&&entries.has(binding.sentenceId))
-        choice=await manualLiteralChoice(binding,row?.choice_id,entries.get(binding.sentenceId),task,row);
+        try{choice=await manualLiteralChoice(binding,row?.choice_id,entries.get(binding.sentenceId),task,row);}
+        catch{choice=null;}
       if(!choice){
         reasons.set(id,'无效 choice_id：'+String(row?.choice_id??'(缺失)'));continue;
       }
@@ -871,7 +872,7 @@
           '\n已保存 '+verified.size+'/'+bindings.size+' 条；仅需补交 '+missing.length+' 条。';
       }
       const details=missing.slice(0,8).map(b=>b.target_id+'（'+(reasons.get(b.target_id)||'未提交')+'）').join('；');
-      const message='本批已验证 '+verified.size+'/'+bindings.size+' 条，页面已预览 '+count+
+      const message='本批结果不完整：已验证 '+verified.size+'/'+bindings.size+' 条，页面已预览 '+count+
         ' 个标注；剩余 '+missing.length+' 条待补交：'+details+
         (missing.length>8?'；其余见补交提示词':'')+
         (unknown.length?'。已忽略未知或跨批 ID '+unknown.slice(0,4).join('、'):'')+
@@ -923,10 +924,29 @@
     if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
     if(event.type==='MANUAL_REVIEW_ERROR'){
       clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
-      panel.querySelector('.kra-manual-status').textContent=event.error;panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+      if(Array.isArray(event.acceptedRows)){
+        const answer=JSON.stringify({batch_id:event.requestId,results:event.acceptedRows});
+        panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
+        void applyManualRecovery(task,answer).catch(error=>{
+          addDiagnostic({level:'info',message:'部分审核结果：'+error.message});
+        }).finally(()=>{
+          if(currentTask!==task||task.finished||task.manualRequest!==event.requestId)return;
+          if(event.repairPrompt){
+            panel.querySelector('.kra-manual-prompt').value=event.repairPrompt;
+            panel.querySelector('.kra-manual-response').value='';
+          }
+          panel.querySelector('.kra-manual-status').textContent=event.error;
+          panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+        });
+      }else{
+        panel.querySelector('.kra-manual-status').textContent=event.error;
+        panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+      }
     }else{
       clearTimeout(task.manualTimer);
-      const submitted=task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value;
+      const submitted=Array.isArray(event.acceptedRows)?
+        JSON.stringify({batch_id:event.requestId,results:event.acceptedRows}):
+        (task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value);
       // The background already validated any model-origin string. Do not
       // overwrite it with a page-only recovery that lacks these options.
       let requiresBackground=false;
