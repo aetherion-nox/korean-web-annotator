@@ -766,6 +766,85 @@
     return {choice_id:choiceId,annotations};
   }
 
+  // Reuse the same source-bound repair geometry checks as the worker. Only
+  // literal-origin projection differs here, because the page stays functional
+  // without a service worker or its dictionary/engine modules.
+  async function verifyPageRepairOrigin(task,repair,sentence){
+    const {start,end,surface,choice_id}=repair;
+    if(!sentence||sentence.text.slice(start,end)!==surface)return null;
+    const binding={start,end,surface,literalOrigin:{
+      eligible:true,hanja:task.modes.hanja===true,loanword:task.modes.loanword===true,
+      known:[],morphology:[]}};
+    const row={target_id:'repair',choice_id};
+    const direct=await manualLiteralChoice(binding,choice_id,sentence,task,row);
+    if(direct)return direct.annotations;
+    // A legitimate repair may explicitly preserve Hangul positions between
+    // Hanja runs (e.g. uninflected stem + unchanged ending). No synthesized
+    // Korean characters are permitted.
+    const src=[...surface],dst=[...choice_id||''];
+    if(!task.modes.hanja||!src.length||src.length!==dst.length||surface.includes(' ')||
+       !/^[가-힣]+$/u.test(surface)||!dst.some(c=>/\p{Script=Han}/u.test(c))||
+       !dst.every((c,i)=>/\p{Script=Han}/u.test(c)||c===src[i]))return null;
+    const annotations=[];let begin=null,written='';
+    const flush=i=>{if(begin===null)return;
+      annotations.push({start:start+begin,end:start+i,surface:surface.slice(begin,i),
+        replacement:written,type:'hanja',entry_id:'experimental:hanja',
+        origin_source:'model-unverified',confidence:1});begin=null;written='';};
+    for(let i=0;i<dst.length;i++){
+      if(/\p{Script=Han}/u.test(dst[i])){if(begin===null)begin=i;written+=dst[i];}
+      else flush(i);
+    }
+    flush(dst.length);
+    if(!annotations.length)return null;
+    if(task.manualBackup?.hanjaReadingCheck!==false){
+      const validator=await (task.manualReadingCheck||
+        import(chrome.runtime.getURL('hanja-reading-check.js')).then(m=>m.validateModelHanjaReadings).catch(()=>null));
+      if(typeof validator!=='function'||validator(sentence.text,annotations).status==='mismatch')return null;
+    }
+    return annotations;
+  }
+
+  async function validatePageManualRepairs(task,response){
+    const backup=task.manualBackup;
+    if(!backup?.smartSegmentation)return {accepted:[],rejected:[]};
+    const original=task.manualOriginalPrompt||'',begin=original.indexOf('{"format":"shared-pools-v3"');
+    if(!backup.repairValidation||begin<0)return {accepted:[],rejected:[{reason:'页面缺少分词修复安全快照',old_target_ids:[]}]};
+    let payload;
+    try{payload=JSON.parse(original.slice(begin));}
+    catch{return {accepted:[],rejected:[{reason:'原始句子批次快照损坏',old_target_ids:[]}]};}
+    const targets=backup.repairValidation.targets||[];
+    const scopesBySentence=new Map(backup.repairValidation.scopes||[]);
+    const repairScopes=new Map(targets.map(t=>[t.target_id,scopesBySentence.get(t.repair_sentence_key)]));
+    const rows=[],serialized=new Set();
+    for(const row of [...(task.manualRecoveryRepairs||[]),...(Array.isArray(response.repairs)?response.repairs:[])]){
+      const key=JSON.stringify(row);
+      if(!key||serialized.has(key))continue;
+      serialized.add(key);rows.push(row);
+    }
+    const verified=new Map();
+    for(const repair of rows){
+      if(!repair||repair.choice_id==='KEEP'||repair.op==='delete'||typeof repair.choice_id!=='string')continue;
+      const sentence=payload.sentences?.find(s=>s.sentence_id===repair.sentence_id);
+      if(!sentence)continue;
+      let start=repair.start,end=repair.end;
+      if(sentence.text.slice(start,end)!==repair.surface){
+        const found=[];let at=sentence.text.indexOf(repair.surface,Math.max(0,start-8));
+        while(at>=0&&at<=Math.min(sentence.text.length,start+8)){found.push(at);at=sentence.text.indexOf(repair.surface,at+1);}
+        if(found.length!==1)continue;
+        start=found[0];end=start+repair.surface.length;
+      }
+      const annotations=await verifyPageRepairOrigin(task,{...repair,start,end},sentence);
+      if(annotations?.length)verified.set(JSON.stringify([repair.sentence_id,start,end,repair.surface,repair.choice_id]),annotations);
+    }
+    const validator=await (task.manualRepairValidator||
+      import(chrome.runtime.getURL('repair-validation-core.js')).then(m=>m.validateSegmentationRepairsCore));
+    return validator(targets,{repairs:rows},{
+      smartSegmentation:true,payload,repairScopes,
+      verifyOrigin:({start,end,surface,choice_id,sentence})=>
+        verified.get(JSON.stringify([sentence.sentence_id,start,end,surface,choice_id]))||null
+    });
+  }
+
   // Construct a retry prompt from the original shared pool, keeping the
   // same batch ID and only the sentences/candidates the missing targets need.
   function manualRetryPrompt(task,missing,reasons){
