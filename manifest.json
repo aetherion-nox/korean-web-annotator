@@ -63,7 +63,8 @@
         "paragraph-plan.js",
         "text-chunks.js",
         "hanja-reading-check.js",
-        "hanja-reading-data.js"
+        "hanja-reading-data.js",
+        "repair-validation-core.js"
       ],
       "matches": [
         "<all_urls>"
