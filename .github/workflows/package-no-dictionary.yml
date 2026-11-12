@@ -1,4 +1,4 @@
-name: Verify and Package Dictionary Open-Origin Prompt Experiment v6
+name: Verify and Package Dictionary Open-Origin Prompt Experiment v6 (verified rerun)
 on:
   push:
     branches:
