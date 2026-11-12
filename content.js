@@ -693,7 +693,27 @@
     let replacement=choiceId;
     // Match experimental-options.js splitAlignedHanja for spaced Korean words.
     const words=hanja&&/^[가-힣]+(?: [가-힣]+){1,3}$/u.test(surface)?surface.split(' '):null;
-    if(words){
+    // The model may write the genuine Sino-Korean stem without copying a
+    // following native suffix. Accept only an explicit Kiwi XSN/XSM tail.
+    let suffixStem=null;
+    if(hanja&&!words&&/^[가-힣]+$/u.test(surface)){
+      const n=[...choiceId].length,source=[...surface];
+      if(n>0&&n<source.length){
+        const stem=source.slice(0,n).join(''),tail=source.slice(n).join('');
+        const trailing=(meta.morphology||[]).filter(m=>m.start>=binding.start+stem.length)
+          .sort((a,b)=>a.start-b.start);
+        let pos=binding.start+stem.length;
+        if(trailing.length&&trailing[0].start===pos&&trailing.every(m=>{
+          if(m.start!==pos||!/^(?:XSN|XSM)(?:[-+].*)?$/u.test(m.tag||''))return false;
+          pos=m.end;return true;
+        })&&pos===binding.end)suffixStem={stem,tail};
+      }
+    }
+    if(suffixStem){
+      annotations.push({...base,start:binding.start,end:binding.start+suffixStem.stem.length,
+        surface:suffixStem.stem,replacement:choiceId});
+      replacement=choiceId+suffixStem.tail;
+    }else if(words){
       const characters=[...choiceId];
       if(characters.length!==words.join('').length)return null;
       let start=binding.start,index=0;
