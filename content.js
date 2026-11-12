@@ -1151,6 +1151,20 @@
         return;
       }
       const count = paint();
+      const expected=[...entries.values()].reduce((n,e)=>n+(e.annotations||[]).length,0);
+      const actual=[...entries.values()].reduce((n,e)=>n+(e.renderRecord?.inserted||[]).reduce((m,node)=>
+        m+(node.isConnected&&node.matches?.(OWN_RUBY)?1:0)+
+        (node.isConnected?(node.querySelectorAll?.(OWN_RUBY)?.length||0):0),0),0);
+      const invalidated=[...entries.values()].filter(e=>e.invalidated===true).length;
+      const display={model_accepted:result.stats?.model_accepted||0,
+        model_keep:result.stats?.model_keep||0,
+        model_literal_origins:result.stats?.model_literal_origins||0,
+        projected_annotations:expected,rendered_annotations:count,
+        connected_visible_annotations:actual,invalidated_dom_entries:invalidated};
+      globalThis.__KRA_PIPELINE_STATUS__={...globalThis.__KRA_PIPELINE_STATUS__,display};
+      addDiagnostic({stage:'render',level:expected>actual?'warning':'info',
+        message:`模型审核 ${display.model_accepted} 项（KEEP ${display.model_keep}、直接词源 ${display.model_literal_origins}）；投射 ${expected} 处，写入 ${count} 处，目前仍连接 DOM ${actual} 处。`,
+        detail:JSON.stringify(display)});
       for(const entry of entries.values())seenSources.add(entry.text);
       status(`完成：${count} 个标注`, 100);
       finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`,true);
