@@ -33,7 +33,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
   'The input format marker shared-pools-v3 is NOT a response field; do not copy format, sentences, candidates, targets, or context into the output.',
   'Return EXACTLY ONE {target_id,choice_id} for EACH target_id in the current request. Copy IDs character-for-character, never renumber, invent or repeat IDs.',
   'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
-  'Before finishing, internally verify no IDs are omitted or duplicated, and copy batch_id unchanged. Do not add commentary.',
+  'Copy batch_id from the input unchanged into the top level of the answer. Before finishing, internally verify no IDs are omitted or duplicated. Do not add commentary.',
   ''
  ].join('\n');
  return buildReviewInstructions(config)+'\n'+batchInstruction+JSON.stringify(payload);
