@@ -36,18 +36,23 @@ export function buildReviewInstructions(config={}){
     'Return only JSON {"results":[{"target_id":"...","choice_id":"..."}]} with exactly one result for every target. Keep target_id unchanged; no explanations or extra fields.',
     'Return one JSON object with results containing exactly one {target_id,choice_id} per original target, plus optional repairs for genuine segmentation errors. Keep target_id unchanged. No explanations or unrelated fields.')
   :REVIEW_INSTRUCTIONS;
- return [base,...(experimental&&!dictionaryFree?[experimental]:[]),
+ // Lead with independent origin assessment only in the experimental
+ // dictionary-backed mode. Ordinary dictionary review remains unchanged.
+ return [...(experimental&&!dictionaryFree?[experimental]:[]),base,
  ...(config.smartSegmentation===true?[SMART_SEGMENTATION_INSTRUCTIONS]:[])].join("\n");
 }
 
 export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,config);
  if(batchId!==undefined)payload.batch_id=batchId;
+ const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
  const batchInstruction=batchId===undefined?'':[
   'Output JSON only: top-level batch_id and results'+(config.smartSegmentation===true?' (plus optional repairs).':'.'),
   'The input format marker shared-pools-v3 is NOT a response field; do not copy format, sentences, candidates, targets, or context into the output.',
   'Return EXACTLY ONE {target_id,choice_id} for EACH target_id in the current request. Copy IDs character-for-character, never renumber, invent or repeat IDs.',
-  config.dictionaryFree===true?'OPEN-ENDED answer: options.KEEP is only a fallback, NOT the complete list. For each reliably identified word you SHOULD write the actual Hanja or Latin origin directly as choice_id (only enabled origin types). Choose KEEP for native or genuinely uncertain origins. Never invent c0/n0/p0.':'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
+  config.dictionaryFree===true?'OPEN-ENDED answer: options.KEEP is only a fallback, NOT the complete list. For each reliably identified word you SHOULD write the actual Hanja or Latin origin directly as choice_id (only enabled origin types). Choose KEEP for native or genuinely uncertain origins. Never invent c0/n0/p0.':
+   experimental?'OPEN-ENDED origin audit: FIRST judge meaning and authentic origin independently, THEN compare dictionary senses. For a matching dictionary sense use its target-specific c/n key. If ALL senses mismatch and the authentic enabled Hanja/Latin origin is reliable, write that original spelling directly as choice_id; KEEP only when unresolved. Options is NOT the complete set; NEVER return shared candidate p IDs.':
+   'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
   'Copy batch_id from the input unchanged into the top level of the answer. Before finishing, internally verify no IDs are omitted or duplicated. Do not add commentary.',
   ''
  ].join('\n');
@@ -90,10 +95,11 @@ export function buildReviewPayload(context,targets,config={}){
   }
   return {...occurrence,sentence_id:sentenceIds.get(sentenceKey),options};
  });
- const payload={format:'shared-pools-v3',...(config.dictionaryFree===true?{
+ const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
+ const payload={format:'shared-pools-v3',...(experimental?{
   choice_id_mode:'open-origin',
   allowed_origin_types:[...(config.experimentalHanja===true?['hanja']:[]),...(config.experimentalLoanword===true?['loanword']:[])],
-  keep_is_fallback_only:true
+  ...(config.dictionaryFree===true?{keep_is_fallback_only:true}:{dictionary_options_are_not_exhaustive:true})
  }:{}),...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
  const userBytes=bytes(payload),legacyUserBytes=bytes({context,targets});
