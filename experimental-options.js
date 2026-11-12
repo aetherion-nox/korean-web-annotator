@@ -40,6 +40,29 @@ function splitAlignedHanja(surface,origin){
  return {replacement:segments.map(p=>p.replacement).join(' '),segments};
 }
 
+// An unchanged native/derivational suffix may follow a Sino-Korean stem.
+// Only trust Kiwi's *explicit* suffix boundary, never truncate an arbitrary
+// portion of the source to make a shorter model answer fit.
+export function alignedHanjaStemSuffix(target,origin){
+ if(!/^[\p{Script=Han}]+$/u.test(origin)||!/^[가-힣]+$/u.test(target?.surface||''))return null;
+ const chars=[...origin],source=[...target.surface];
+ if(!chars.length||chars.length>=source.length)return null;
+ const stem=source.slice(0,chars.length).join(''),suffix=source.slice(chars.length).join('');
+ const start=target.start+stem.length,end=target.end;
+ const trailing=(target.morphology||[]).filter(m=>m.start>=start)
+  .sort((a,b)=>a.start-b.start);
+ if(!trailing.length||trailing[0].start!==start)return null;
+ let pos=start;
+ for(const m of trailing){
+  if(m.start!==pos||!/^(?:XSN|XSM)(?:[-+].*)?$/u.test(m.tag||''))return null;
+  pos=m.end;
+ }
+ if(pos!==end)return null;
+ return {stem,suffix,replacement:origin+suffix,segments:[{
+  start:0,end:stem.length,surface:stem,type:'hanja',replacement:origin
+ }]};
+}
+
 // Return null instead of silently changing / accepting an unknown choice.
 // A raw model origin is *not* a dictionary-backed etymology.
 export function literalOriginOption(target,choiceId,config={}){
@@ -52,7 +75,8 @@ export function literalOriginOption(target,choiceId,config={}){
  if(CJK.test(choiceId)&&config.experimentalHanja===true)type='hanja';
  else if(LOANWORD.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId)&&config.experimentalLoanword===true)type='loanword';
  else return null;
- const aligned=type==='hanja'?splitAlignedHanja(target.surface,choiceId):null;
+ const aligned=type==='hanja'?(splitAlignedHanja(target.surface,choiceId)||
+   alignedHanjaStemSuffix(target,choiceId)):null;
  // Existing dictionary spellings must be selected by their supplied c/n key.
  // A literal spelling must not bypass sense/POS competition or make an
  // already-known etymology look like independent model evidence.
