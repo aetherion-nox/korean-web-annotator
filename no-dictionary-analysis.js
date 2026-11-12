@@ -36,9 +36,11 @@ export function analyzeWithoutDictionary(text,tokens,modes={}){
    const first=prepared[i];
    if(!LEXICAL.test(first.tag)||first.end<=first.start)continue;
    let end=first.end,group=[first],j=i;
+   // Avoid merging independent nouns across navigation boundaries.
+   // Derivational suffixes alone are reliably part of this token.
    if(NOUN.test(first.tag)){
      while(j+1<prepared.length&&prepared[j+1].start===end&&
-       (NOUN.test(prepared[j+1].tag)||NOUN_SUFFIX.test(prepared[j+1].tag))){
+       NOUN_SUFFIX.test(prepared[j+1].tag)){
        const next=prepared[++j];group.push(next);end=next.end;
      }
    }
