@@ -49,6 +49,10 @@ export function validateAnalysis(text,data){
   return [a.start,a.end];
  }).sort((a,b)=>a[0]-b[0]);
  if(sourceRanges.some((r,i)=>i&&r[0]<sourceRanges[i-1][1]))throw Error('Overlapping engine spans');
+  const dictionaryFree=data.dictionary_free===true;
+  if(dictionaryFree && (data.annotations.length||data.targets.some(t=>
+    !Array.isArray(t.options)||t.options.some(o=>o.type!=='keep'))))
+   throw Error('Dictionary-free engine cannot supply dictionary conversions or senses');
  const annotations=[],targets=[],diagnostics=Array.isArray(data.diagnostics)?data.diagnostics.filter(d=>d?.stage==='alignment'&&d.level==='warning'&&typeof d.message==='string'&&typeof d.detail==='string'):[];
  let rejectedAnnotations=0,rejectedTargets=0,rejectedOptions=0;
  const warn=(a,error,option=false)=>diagnostics.push({stage:'alignment',level:'warning',message:option?'已移除无法可靠对齐的汉字候选，保留其他候选；无可用候选时保留原文。':'已跳过无法可靠对齐的汉字词，保留原文并继续处理。',detail:JSON.stringify({surface:a.surface,replacement:a.replacement,start:a.start,end:a.end,entry_id:a.entry_id,source_characters:Array.from(a.surface).length,replacement_characters:Array.from(a.replacement).length,reason:error.message})});
@@ -84,7 +88,9 @@ export function validateAnalysis(text,data){
   if(!choices.has('KEEP'))throw Error('Missing KEEP');
   const convertible=validOptions.some(o=>['hanja','loanword','mixed'].includes(o.type));
   const nameOnlyReview=(t.suspected_person_name===true||t.dictionary_name_homograph===true)&&validOptions.some(o=>o.type==='nonconversion');
-  if(!convertible&&!nameOnlyReview){rejectedTargets++;continue;}
+   // Dictionary-free inputs have KEEP only; the model can propose allowed
+   // Hanja/Latin origins which are independently validated before application.
+   if(!convertible&&!nameOnlyReview&&!dictionaryFree){rejectedTargets++;continue;}
   targets.push({...t,options:validOptions});ranges.push([t.start,t.end]);
  }
  ranges.sort((a,b)=>a[0]-b[0]);if(ranges.some((r,i)=>i&&r[0]<ranges[i-1][1]))throw Error('Overlapping engine spans');
