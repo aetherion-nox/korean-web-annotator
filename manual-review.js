@@ -36,7 +36,21 @@ export function prepareManualRequest(config,targets){
  const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join('');
  const wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
  const bindings=config.manualBindings?.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};});
- return {requestId,bindings,hanjaReadingCheck:config.hanjaReadingCheck!==false,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
+ // Compact, source-bound safety snapshot for disconnected manual repairs.
+ // Deduplicate scopes by original sentence, rather than copying them per word.
+ const repairValidation=config.smartSegmentation===true?(()=>{
+  const scopes=new Map();
+  targets.forEach(t=>{if(!scopes.has(t.repair_sentence_key))
+   scopes.set(t.repair_sentence_key,config.repairScopes?.get(t.target_id)||null);});
+  return {targets:wireTargets.map(t=>({
+   target_id:t.target_id,original_target_id:t.original_target_id,
+   repair_sentence_key:t.repair_sentence_key,start:t.start,end:t.end,
+   surface:t.surface,scan_only:t.scan_only===true,
+   proper_noun:t.proper_noun===true,suspected_person_name:t.suspected_person_name===true,
+   dictionary_person_name:t.dictionary_person_name===true,dictionary_name_homograph:t.dictionary_name_homograph===true
+  })),scopes:[...scopes]};
+ })():undefined;
+ return {requestId,bindings,repairValidation,smartSegmentation:config.smartSegmentation===true,hanjaReadingCheck:config.hanjaReadingCheck!==false,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
 }
 
 // Preserve the original shared pools and restrict retry work to unsolved IDs.
