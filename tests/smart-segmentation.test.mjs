@@ -220,9 +220,10 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
  assert.ok(!buildManualPrompt(text,[t],'batch',{}).includes('repairs'));
  const combined=buildReviewInstructions({smartSegmentation:true,experimentalHanja:true,experimentalLoanword:true});
  assert.ok(combined.includes('Actively audit EVERY original sentence'));
- assert.ok(combined.includes('you SHOULD write that origin directly as choice_id'));
+ assert.ok(combined.includes('THIRD, if NO supplied dictionary option correctly represents'));
+ assert.ok(combined.includes('DIRECTLY into results[].choice_id'));
  assert.equal((combined.match(/You SHOULD submit repairs/g)||[]).length,1);
- assert.equal((combined.match(/you SHOULD write/g)||[]).length,1);
+ assert.equal((combined.match(/FIRST infer its meaning/g)||[]).length,1);
 });
 
 test('manual mode returns normal target choices and repairs in a single response',async()=>{
