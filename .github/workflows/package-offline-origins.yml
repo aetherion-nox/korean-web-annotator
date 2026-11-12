@@ -1,15 +1,15 @@
-name: Package v1.1.55.4 Offline Origin Recovery
+name: Package v1.1.55.4 Partial Manual Recovery
 on:
   push:
     branches:
-      - fix/v1.1.55.4-offline-origins
+      - fix/v1.1.55.4-partial-manual-recovery
     paths:
       - .github/workflows/package-offline-origins.yml
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: package-v1.1.55.4-offline-origins
+  group: package-v1.1.55.4-partial-manual-recovery
   cancel-in-progress: false
 jobs:
   release:
@@ -28,7 +28,7 @@ jobs:
           m=json.loads(Path('manifest.json').read_text())
           assert m['version']=='1.1.55.4'
           assert 'hanja-reading-check.js' in m['web_accessible_resources'][0]['resources']
-          assert 'offline-origins' in os.environ['GITHUB_REF_NAME']
+          assert 'partial-manual-recovery' in os.environ['GITHUB_REF_NAME']
           print('Correct experimental base and offline origin patch')
           PY
       - name: Restore verified Kiwi runtime files
@@ -38,7 +38,7 @@ jobs:
       - name: Run focused regressions
         run: |
           npm install --no-audit --no-fund --ignore-scripts
-          node --test tests/manual-continuation.test.mjs tests/experimental-options.test.mjs
+          node --test tests/manual-continuation.test.mjs tests/manual-partial-review.test.mjs tests/experimental-options.test.mjs
       - name: Package installable extension
         run: |
           python3 - <<'PY'
@@ -49,7 +49,7 @@ jobs:
           files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests'} and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
-          dest=root/'Korean-Web-Annotator-v1.1.55.4-offline-origins.zip'
+          dest=root/'Korean-Web-Annotator-v1.1.55.4-partial-manual-recovery.zip'
           with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
               for p in sorted(files):z.write(root/p,'Korean-Web-Annotator/'+p.as_posix())
           with zipfile.ZipFile(dest) as z:
@@ -67,13 +67,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG='v1.1.55.4-offline-origins.1'
-          ASSET='Korean-Web-Annotator-v1.1.55.4-offline-origins.zip'
+          TAG='v1.1.55.4-partial-manual-recovery.1'
+          ASSET='Korean-Web-Annotator-v1.1.55.4-partial-manual-recovery.zip'
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title 'v1.1.55.4 Offline Origins Recovery (Experimental)' \
+              --title 'v1.1.55.4 Partial Manual Recovery (Experimental)' \
               --prerelease \
-              --notes 'Based on v1.1.55.4, this targeted patch allows disconnected manual-review recovery of locally validated model-supplied Hanja/Latin origins, while preserving existing dictionary, positional and proper-name checks. Existing v1.1.55.4 release and stable branch are unchanged.'
+              --notes 'Based on v1.1.55.4, this experimental patch extends offline model-origin recovery with per-target manual review, saved valid decisions, partial preview, and smaller prompts for only missing or invalid target IDs. Existing v1.1.55.4 release and stable branch are unchanged.'
           fi
