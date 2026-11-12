@@ -58,6 +58,11 @@ export function validateSegmentationRepairs(targets,response,config={}){
    if(matches.length!==1){fail(index,'source offset incorrect or ambiguous',row);continue;}
    start=matches[0];end=start+surface.length;offset_corrected=true;
   }
+  // An omitted word with empty old_target_ids can only be an ADD; the
+  // ordinary overlap, selection, name and word-boundary checks below
+  // remain mandatory. Never reinterpret a conflicting target replacement.
+  const normalizedFromEmptyReplace=op==='replace'&&old_target_ids.length===0;
+  if(normalizedFromEmptyReplace)op='add';
   if(op==='add'?old_target_ids.length!==0:old_target_ids.length<1||old_target_ids.length>12){
    fail(index,'old target ID count invalid for operation',row);continue;
   }
@@ -113,7 +118,8 @@ export function validateSegmentationRepairs(targets,response,config={}){
      options:[{choice_id:'KEEP',type:'keep',replacement:surface,definitions:[],entry_id:null}]};
    let option=literalOriginOption(virtual,choice_id,{
     experimentalHanja:config.repairModes?.hanja===true,
-    experimentalLoanword:config.repairModes?.loanword===true
+    experimentalLoanword:config.repairModes?.loanword===true,
+    hanjaReadingCheck:config.hanjaReadingCheck!==false
    });
    // Inflected stems can contain unchanged Hangul suffix anchors. The
    // existing projector verifies each same-position Hangul/Chinese pair;
@@ -130,14 +136,14 @@ export function validateSegmentationRepairs(targets,response,config={}){
    try{
     annotations=projectAnnotation(sentence.text,{...virtual,...option});
     if(!annotations.length){fail(index,'repair produced no annotation',row);continue;}
-    if(option.type==='hanja'&&validateModelHanjaReadings(sentence.text,annotations).status==='mismatch'){
+    if(option.type==='hanja'&&config.hanjaReadingCheck!==false&&validateModelHanjaReadings(sentence.text,annotations).status==='mismatch'){
      fail(index,'Hanja pronunciation contradicts Korean source',row);continue;
     }
     annotations=annotations.map(a=>({...a,origin_source:'model-unverified'}));
    }catch{fail(index,'source-to-origin projection failed',row);continue;}
   }
   prepared.push({index,sentence_id,op,old_target_ids,source_target_ids:[...oldNative],start,end,surface,choice_id,annotations,
-   sentenceKey:anchor.repair_sentence_key,offset_corrected});
+   sentenceKey:anchor.repair_sentence_key,offset_corrected,normalizedFromEmptyReplace});
  }
  // A malformed sibling must never cause a partial split to consume the
  // original target. Conflicting rows invalidate the entire connected group.
