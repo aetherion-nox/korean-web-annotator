@@ -85,10 +85,26 @@ export async function reviewTargets(config,targets,signal){
    const wire=modelTargets(current,config);
    const response=await (config.request || requestChoices)({...config,attempt:attempt+1},wire,signal);
    const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
-   const result=experimental?validateExperimentalChoices(current,response,config):validateChoices(current,response,config);
+   // In segmentation mode a successfully validated repair owns its old
+   // targets. Validate repairs BEFORE requiring ordinary results; an invalid
+   // repair never suppresses the original target or its dictionary choice.
+   const repair=config.smartSegmentation===true?
+     validateSegmentationRepairs(wire,response,config):{accepted:[],rejected:[]};
+   const retired=new Set(repair.accepted.flatMap(r=>r.old_target_ids));
+   const active=config.smartSegmentation===true?
+     current.filter(t=>!t.scan_only&&!retired.has(t.target_id)):current;
+   const known=new Set(current.map(t=>t.target_id));
+   const badId=config.smartSegmentation===true&&
+     (!Array.isArray(response?.results)||response.results.some(row=>
+       !row||typeof row.target_id!=='string'||!known.has(row.target_id)));
+   const choiceResponse=config.smartSegmentation===true&&!badId?
+     {...response,results:response.results.filter(row=>!retired.has(row.target_id)&&
+       !current.some(t=>t.scan_only&&t.target_id===row.target_id))}:response;
+   const result=badId?
+     {accepted:[],unresolved:active,experimentalAccepted:0,experimentalRejected:0}:
+     experimental?validateExperimentalChoices(active,choiceResponse,config):validateChoices(active,choiceResponse,config);
    accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);
    if(config.smartSegmentation===true){
-    const repair=validateSegmentationRepairs(wire,response,config);
     config.onRepairs?.(repair.accepted);
     config.onRepairRejected?.(repair.rejected.length);
     const corrected=repair.accepted.filter(r=>r.offset_corrected===true).length;
