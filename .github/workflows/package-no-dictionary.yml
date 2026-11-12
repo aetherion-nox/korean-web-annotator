@@ -104,12 +104,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.55.4-no-dictionary-compatible.1'
+          $tag='v1.1.55.4-no-dictionary-compatible.2'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 no dictionary (Windows compatible)' --prerelease --notes 'Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 no dictionary — analyzeLocal fix (Windows compatible)' --prerelease --notes 'Fixes analyzeLocal is not defined. Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
           }
           if($LASTEXITCODE -ne 0){throw 'GitHub Release failed'}
