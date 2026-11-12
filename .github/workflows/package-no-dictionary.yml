@@ -1,0 +1,79 @@
+name: Verify and Package No-Dictionary Experimental Extension
+on:
+  push:
+    branches:
+      - feature/v1.1.55.4-no-dictionary-experimental
+    paths:
+      - .github/workflows/package-no-dictionary.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: package-v1.1.55.4-no-dictionary
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify version and opt-in implementation
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('manifest.json').read_text())
+          assert m['version']=='1.1.55.4'
+          assert Path('no-dictionary-analysis.js').is_file()
+          assert 'experimentalHanja' in Path('service-worker.js').read_text()
+          print('Experimental no-dictionary patch based on v1.1.55.4')
+          PY
+      - name: Restore pinned Kiwi and Python assets
+        run: |
+          python3 restore_distribution.py
+          git restore runtime/python-sources.json
+      - name: Run full regression suite and new no-dictionary tests
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          PYTHONPATH=python/browser-support npm test
+      - name: Build and verify extension ZIP
+        run: |
+          python3 - <<'PY'
+          import subprocess,zipfile,json,hashlib
+          from pathlib import Path
+          root=Path.cwd()
+          tracked=[Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if p]
+          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests'}
+                 and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          dest=root/'Korean-Web-Annotator-v1.1.55.4-no-dictionary.zip'
+          with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+              for p in sorted(files):
+                  z.write(root/p,'Korean-Web-Annotator/'+p.as_posix())
+          with zipfile.ZipFile(dest) as z:
+              assert z.testzip() is None
+              required=['manifest.json','content.js','service-worker.js','no-dictionary-analysis.js',
+                  'browser-worker.js','engine-page.js','runtime/models/nounchr.mdl','runtime/python-sources.json']
+              assert all('Korean-Web-Annotator/'+p in z.namelist() for p in required)
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.55.4'
+          assert dest.stat().st_size>90_000_000, 'Incomplete Kiwi runtime'
+          print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
+          PY
+      - name: Publish independent experimental prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG='v1.1.55.4-no-dictionary.1'
+          ASSET='Korean-Web-Annotator-v1.1.55.4-no-dictionary.zip'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+          else
+            gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
+              --title 'v1.1.55.4 Experimental: No Imported Dictionary Needed' \
+              --prerelease \
+              --notes 'Based on the partial-manual-recovery v1.1.55.4 branch. Without an imported dictionary, annotation is allowed ONLY when model review and at least one experimental Hanja/Latin origin completion feature is enabled. Bundled Kiwi supplies lexical targets with KEEP, while model-origin proposals retain existing local alignment and reading checks. Normal imported-dictionary analysis is unchanged. This is experimental; words and names may be missed.'
+          fi
