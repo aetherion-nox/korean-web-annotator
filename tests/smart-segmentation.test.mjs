@@ -210,7 +210,7 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
  assert.ok(!buildReviewInstructions({}).includes('repairs'));
  assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Actively audit EVERY original sentence'));
  assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('You SHOULD submit repairs for EVERY genuine, well-supported'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('never invent repairs to reach a quota'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Never invent repairs to reach a quota'));
  assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('plus optional repairs'));
  assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('no explanations or extra fields'));
  assert.ok(!buildReviewInstructions({}).includes('Actively audit EVERY original sentence'));
