@@ -29,7 +29,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,config);
  if(batchId!==undefined)payload.batch_id=batchId;
  const batchInstruction=batchId===undefined?'':[
-  'Output JSON only: top-level batch_id and results (plus repairs only if the segmentation experiment is enabled).',
+  'Output JSON only: top-level batch_id and results'+(config.smartSegmentation===true?' (plus optional repairs).':'.'),
   'The input format marker shared-pools-v3 is NOT a response field; do not copy format, sentences, candidates, targets, or context into the output.',
   'Return EXACTLY ONE {target_id,choice_id} for EACH target_id in the current request. Copy IDs character-for-character, never renumber, invent or repeat IDs.',
   'For dictionary senses use the target-specific choice key (c/n etc.), never the shared candidate p ID. If uncertain choose KEEP.',
