@@ -816,7 +816,15 @@
     const scopesBySentence=new Map(backup.repairValidation.scopes||[]);
     const repairScopes=new Map(targets.map(t=>[t.target_id,scopesBySentence.get(t.repair_sentence_key)]));
     const rows=[],serialized=new Set();
-    for(const row of [...(task.manualRecoveryRepairs||[]),...(Array.isArray(response.repairs)?response.repairs:[])]){
+    const previous=task.manualRecoveryRepairs||[];
+    const newRows=(Array.isArray(response.repairs)?response.repairs:[]).filter(row=>
+      !previous.some(old=>row?.sentence_id===old.sentence_id&&(
+        Number.isInteger(row.start)&&Number.isInteger(row.end)&&
+          row.start<old.end&&old.start<row.end||
+        Array.isArray(row.old_target_ids)&&
+          row.old_target_ids.some(id=>old.old_target_ids.includes(id))
+      )));
+    for(const row of [...previous,...newRows]){
       const key=JSON.stringify(row);
       if(!key||serialized.has(key))continue;
       serialized.add(key);rows.push(row);
