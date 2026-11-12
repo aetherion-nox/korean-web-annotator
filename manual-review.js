@@ -34,7 +34,7 @@ export function prepareManualRequest(config,targets){
  const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)),byte=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'[byte & 63]).join('');
  const wireTargets=targets.map((target,i)=>({...target,target_id:'t'+i}));
  const bindings=config.manualBindings?.map((binding,i)=>{if(binding.target_id!==targets[i]?.target_id)throw Error('Invalid manual recovery binding');return {...binding,target_id:wireTargets[i].target_id};});
- return {requestId,bindings,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
+ return {requestId,bindings,hanjaReadingCheck:config.hanjaReadingCheck!==false,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
 }
 
 // Preserve the original shared pools and restrict retry work to unsolved IDs.
@@ -74,7 +74,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
     const clear=()=>{activeSignal?.removeEventListener('abort',abort);if(pending?.requestId===requestId)pending=null;};
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
     pending={requestId,targets,wireTargets,originalPrompt:prepared.text,acceptedRows:new Map(),savedRepairs:[],
-      experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,
+      experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,hanjaReadingCheck:config.hanjaReadingCheck!==false,
       reviewPosFilter:config.reviewPosFilter,smartSegmentation:config.smartSegmentation===true,
       resolve:response=>{clear();resolve(response);}};
     activeSignal?.addEventListener('abort',abort,{once:true});
@@ -98,7 +98,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
       throw Error('新版协议只需要 results；请不要包含 experimental_options。');
     const experimental=current.experimentalHanja||current.experimentalLoanword;
     const choicesConfig={reviewPosFilter:current.reviewPosFilter,
-      experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword};
+      experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword,hanjaReadingCheck:current.hanjaReadingCheck};
     const known=new Map(current.wireTargets.map(t=>[t.target_id,t]));
     const incoming=new Map(),reasons=new Map(),unknown=[];
     for(const row of response.results){
