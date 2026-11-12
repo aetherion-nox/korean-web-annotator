@@ -1,4 +1,4 @@
-name: Verify and Package Atomic Segmentation Repair Contract v7
+name: Verify and Package Atomic Segmentation Repair Contract v7 (regression rerun)
 on:
   push:
     branches:
