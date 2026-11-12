@@ -39,7 +39,7 @@ test('reading check defaults on but can be turned off without bypassing boundary
  const html=await readFile(new URL('../options.html',import.meta.url),'utf8');
  assert.match(html,/<input id="hanjaReadingCheck" type="checkbox" checked/);
  const settings=await readFile(new URL('../engine-settings.js',import.meta.url),'utf8');
- assert.match(settings,/hanjaReadingCheck:\$('hanjaReadingCheck'\)\.checked/);
+ assert.ok(settings.includes("hanjaReadingCheck:$('hanjaReadingCheck').checked"));
 });
 test('noun target builder no longer glues adjacent noun tokens; explicit suffix still joins',()=>{
  const text='회사소개기자채용';
