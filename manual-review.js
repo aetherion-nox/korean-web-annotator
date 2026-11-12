@@ -2,6 +2,7 @@ import {buildManualPrompt} from './review-payload.js';
 export {buildManualPrompt} from './review-payload.js';
 import {validateChoices,validateExperimentalChoices} from './choice-review.js';
 import {filterReviewTarget} from './review-pos.js';
+import {explainLiteralOriginRejection} from './experimental-options.js';
 import {describeBatchBudget} from './batch-budget.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
@@ -120,7 +121,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
       if(selected.accepted.length!==1){
         const candidate=filterReviewTarget(target,choicesConfig).options.find(o=>o.choice_id===row.choice_id);
         reasons.set(id,candidate?'字段不符合当前协议':'无效 choice_id：'+String(row.choice_id??'(缺失)')+
-          '；请核对当前目标的选项，实验词源需满足读音、格式与专名保护');continue;
+          '；原因 '+explainLiteralOriginRejection(target,row.choice_id,choicesConfig));continue;
       }
       current.acceptedRows.set(id,{target_id:id,choice_id:selected.accepted[0].option.choice_id});
     }
