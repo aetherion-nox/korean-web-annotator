@@ -1,4 +1,4 @@
-name: Verify and Package Reading, Boundary and Origin Controls v5
+name: Verify and Package Reading, Boundary and Origin Controls v5 (regression rerun)
 on:
   push:
     branches:
