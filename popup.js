@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.5-undo-restore-all-scopes';
+const CONTENT_SCRIPT_VERSION = '1.1.56.6-manual-auto-apply';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
