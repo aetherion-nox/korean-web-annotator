@@ -1,0 +1,52 @@
+name: Inspect Chosun Article Comment HTML (diagnostic)
+on:
+  push:
+    branches:
+      - diagnostic/chosun-100japyung-20261112
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Download original server HTML
+        shell: bash
+        run: |
+          mkdir -p html
+          BASE='https://www.chosun.com/international/international_general/2026/11/12/4JHDVTVHR5GLZDG7GPJRYZMXQM/'
+          for mode in native standard; do
+            if [ "$mode" = native ]; then URL="${BASE}?outputType=native"; else URL="$BASE"; fi
+            echo "Downloading $mode"
+            curl -L --compressed --connect-timeout 12 --max-time 40 --retry 1 \
+              -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+              -H 'Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.7' \
+              -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' \
+              -w "HTTP=%{http_code} FINAL=%{url_effective} SIZE=%{size_download} TYPE=%{content_type}\\n" \
+              --output "html/chosun-article-$mode.html" "$URL" || true
+          done
+      - name: Inspect comment markup and response
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for file in sorted(Path('html').glob('*.html')):
+            data=file.read_bytes()
+            html=data.decode('utf-8','replace')
+            print('\n==',file.name,'size',len(data),'==')
+            print('HTML prefix:',repr(html[:250]))
+            patterns=['100자평','100자','댓글','comment','Comment','iframe','shadow','disqus','react','__NEXT_DATA__','data-testid','hydration','article']
+            for term in patterns:
+              xs=list(re.finditer(re.escape(term),html,re.I))
+              print(f'  {term}: {len(xs)}')
+              if term in ('100자평','댓글','comment','iframe'):
+                for m in xs[:8]: print('    ...',re.sub(r'\s+',' ',html[max(0,m.start()-120):m.end()+170]))
+          PY
+      - name: Archive downloaded HTML for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: chosun-2026-11-12-server-html
+          path: html/*.html
+          retention-days: 7
