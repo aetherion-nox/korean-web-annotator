@@ -14,7 +14,7 @@ import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {undoTabAnnotations,restoreTabAnnotations} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.56.5-undo-restore-all-scopes';
+const CONTENT_SCRIPT_VERSION='1.1.56.6-manual-auto-apply';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
