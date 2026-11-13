@@ -6,7 +6,9 @@ import {runSentencePipeline} from '../annotation-pipeline.js';
 import {validateAnalysis} from '../local-engine.js';
 function setup(html){
  const dom=new JSDOM(html);const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
- const context={document:dom.window.document,NodeFilter:dom.window.NodeFilter,MAX_ENTRIES:3000,OWN_RUBY:'ruby[kra-annotated="true"]',seenSources:new Set()};vm.createContext(context);
+ const context={document:dom.window.document,NodeFilter:dom.window.NodeFilter,MAX_RECOVERY_BLOCKS:12000,OWN_RUBY:'ruby[kra-annotated="true"]',
+  seenSources:new Set(),analyzedNodeVersions:new WeakMap(),recoveryBlocks:new Set(),
+  pageIdentity:()=>'',lastScanStats:null,setTimeout:()=>1};vm.createContext(context);
  vm.runInContext(source.slice(source.indexOf('  function sourceOf'),source.indexOf('  function pageIdentity')),context);
  vm.runInContext(source.slice(source.indexOf('  function selectedIntervals'),source.indexOf('  function applySettings')),context);
  vm.runInContext(source.slice(source.indexOf('  function openTextRoots'),source.indexOf('  function isKnownRecoverySource')),context);
