@@ -186,24 +186,29 @@ export function createManualReviewSession({operationId,post,signal}={}){
           (unknown.length?'。已忽略 '+unknown.length+' 条未知或跨批 target_id':'')+
           '。请复制新的补交提示词，只回答剩余目标。',
         acceptedCount:current.acceptedRows.size+retired.size,
-        acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)),
+        acceptedRows:current.wireTargets.flatMap((t,i)=>
+          current.acceptedRows.has(t.target_id)&&!retired.has(t.target_id)?
+           [[i,current.acceptedRows.get(t.target_id)]]:[]),
         acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired],
         invalidTargetIds:missing.map(t=>t.target_id),
         repairPrompt:retry});
       return false;
     }
     const ids=new Map(current.wireTargets.map((t,i)=>[t.target_id,current.targets[i].target_id]));
+    const values=current.wireTargets.map(t=>
+      retired.has(t.target_id)||current.smartSegmentation&&t.scan_only?
+       false:current.acceptedRows.get(t.target_id));
     const proposed=current.smartSegmentation&&current.savedRepairs.length?{
       repairs:current.savedRepairs.map(row=>({...row,
-        old_target_ids:row.old_target_ids.map(id=>ids.get(id)||id)}))
+       old_target_ids:row.old_target_ids.map(id=>ids.get(id)||id)}))
     }:{};
-    const mapped={results:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)).map(row=>({
-      target_id:ids.get(row.target_id),choice_id:row.choice_id
-    })),...proposed};
+    const mapped={batch_id:current.requestId,results:values,...proposed};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,
-      targetCount:current.wireTargets.length,
-      acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)),
-      acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired]});
+     targetCount:current.wireTargets.length,
+     acceptedRows:current.wireTargets.flatMap((t,i)=>
+      current.acceptedRows.has(t.target_id)&&!retired.has(t.target_id)?
+       [[i,current.acceptedRows.get(t.target_id)]]:[]),
+     acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired]});
     current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
   }
