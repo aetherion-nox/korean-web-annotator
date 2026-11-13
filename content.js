@@ -1419,6 +1419,7 @@
         hanjaReadingCheck:event.hanjaReadingCheck!==false,experimentalPhase:event.experimentalPhase,
         batchNumber:event.batchNumber,batchTotal:event.batchTotal};task.manualRecoveryRepairs=[];
       if(event.experimentalPhase)task.experimentalRecoveryIncomplete=true;
+      task.manualAcceptedAwaitingDone=null;
       task.manualRequest=event.requestId;panel.dataset.operationId=task.operationId;panel.dataset.requestId=event.requestId;
       panel.querySelector('.kra-manual-summary').textContent=`${event.experimentalPhase==='propose'?'实验性候选补全 · ':event.experimentalPhase==='choose'?'补充候选复审 · ':''}第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次 · ${event.targetCount} 个词 · ${event.text.length.toLocaleString()} 字符（仅任务内容，无 API Key）`;
       if(event.budget){const b=event.budget;panel.querySelector('.kra-manual-summary').textContent+=`\n${b.label}档 · 预估输入 ${b.inputTokens.toLocaleString()} / 答案 ${b.outputTokens.toLocaleString()} tokens${b.contextTokens?` / 余量 ${b.safetyTokens.toLocaleString()}（窗口 ${b.contextTokens.toLocaleString()}）`:''}${b.limitReason==='output'?' · 受答案长度预算限制':''}。估算与实际分词可能不同。`;}
@@ -1494,10 +1495,18 @@
           if(task.pendingAcceptedRecovery===pending)task.pendingAcceptedRecovery=null;
           if(task.manualRequest===requestId&&!task.manualLocalOnly)task.manualRequest=null;
         });
-      }else{
-        if(task.mergedGroup)(task.manualApplied ||=new Set()).add(event.requestId);
-        task.manualRequest=null;
-      }
+      }else if(task.mergedGroup){
+        (task.manualApplied ||= new Set()).add(event.requestId);
+        // ACCEPTED precedes actual model result delivery. Keep the source
+        // backup and request identity until DONE (or the next request), so
+        // an idle worker shutdown cannot turn an accepted row into a dead UI.
+        task.manualAcceptedAwaitingDone=event.requestId;
+        task.manualTimer=setTimeout(()=>{
+          if(currentTask===task&&!task.finished&&!task.manualLocalOnly&&
+             task.manualAcceptedAwaitingDone===event.requestId)
+            recoverManualConnection(task,'批次已通过校验，但后续写入回报迟迟未到。');
+        },90000);
+      }else task.manualRequest=null;
       panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }
@@ -1661,6 +1670,14 @@
         return;
       }
       if (result.type !== 'RESULTS' && result.type !== 'DONE') return;
+      if(result.type==='DONE'&&task.manualRequest&&
+         task.manualApplied?.has(task.manualRequest)){
+        // DONE is the final source-bound commit proof for an accepted merged
+        // batch. Other pending answers still require explicit confirmation.
+        task.manualRequest=null;
+        task.manualAcceptedAwaitingDone=null;
+        clearTimeout(task.manualTimer);
+      }
       if(result.type==='DONE'&&task.manualRequest){
         if(recoverManualConnection(task,'后台已结束，但本批答案尚未确认；切换到页面备份继续应用。'))return;
         // A merged batch may include targets from other documents, so never
