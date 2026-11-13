@@ -44,8 +44,7 @@ test('manual review remaps raw choice_id to local target ID with no proposal arr
   '原潛','n0']};
  assert.equal(session.submit({operationId:'manual',requestId:request.requestId,text:JSON.stringify(response)}),true);
  const mapped=await pending;
- assert.deepEqual(mapped.results.map(r=>r.target_id),['local-0','local-1']);
- assert.equal(mapped.results[0].choice_id,'原潛');
+ assert.deepEqual(mapped.results,['原潛','n0']);
  assert.ok(!('experimental_options' in mapped));
 });
 
@@ -56,9 +55,9 @@ test('manual rejects unknown ID and old experimental array while allowing correc
  const id=events[0].requestId;
  const submit=payload=>session.submit({operationId:'manual-bad',requestId:id,text:JSON.stringify({batch_id:id,...payload})});
  assert.equal(submit({results:['x0']}),false);
- assert.equal(submit({results:['原潛'],experimental_options:[]}),false);
+ assert.equal(submit({results:[{target_id:'t0',choice_id:'原潛'}]}),false);
  assert.equal(submit({results:['原潛']}),true);
- assert.equal((await pending).results[0].choice_id,'原潛');
+ assert.equal((await pending).results[0],'原潛');
  assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_ERROR').length,2);
 });
 
@@ -67,7 +66,7 @@ test('API sends results-only protocol and configurable max_tokens (DeepSeek)',as
  globalThis.fetch=async(url,init)=>{
   wire=JSON.parse(init.body);
   return new Response(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{
-   content:JSON.stringify({results:['原潛']})}}]}),
+   content:JSON.stringify({batch_id:JSON.parse(wire.messages[1].content).batch_id,results:['原潛']})}}]}),
    {headers:{'content-type':'application/json'}});
  };
  try{
@@ -96,14 +95,17 @@ test('OpenAI Chat/Responses and Anthropic use the correct configured output limi
    let wire;
    globalThis.fetch=async(_,options)=>{
     wire=JSON.parse(options.body);
-    const text=JSON.stringify({results:[null]});
+    const payload=item.provider==='anthropic'?JSON.parse(wire.messages[0].content):
+   item.endpoint.endsWith('/responses')?JSON.parse(wire.input[1].content):
+   JSON.parse(wire.messages[1].content);
+    const text=JSON.stringify({batch_id:payload.batch_id,results:[null]});
     const body=item.provider==='anthropic'?{stop_reason:'end_turn',content:[{type:'text',text}]}:
       item.endpoint.endsWith('/responses')?{status:'completed',output:[{type:'message',content:[{type:'output_text',text}]}]}:
       {choices:[{index:0,finish_reason:'stop',message:{content:text}}]};
     return new Response(JSON.stringify(body),{headers:{'content-type':'application/json'}});
    };
    const res=await reviewTargets({enableModelReview:true,...item,model:'fixture',
-    batchBudget:{outputLimit:44444},logger:{start:async()=>1,finish:async()=>{}}},[target0]);
+    batchBudget:{reservedOutputTokens:44444},logger:{start:async()=>1,finish:async()=>{}}},[target0]);
    assert.equal(res.accepted.length,1,item.provider);
    assert.equal(wire[item.name],44444,item.endpoint);
    assert.ok(!Object.hasOwn(wire,item.name==='max_tokens'?'max_completion_tokens':'max_tokens'),'no conflicting cap property');
@@ -112,13 +114,13 @@ test('OpenAI Chat/Responses and Anthropic use the correct configured output limi
 });
 
 test('stream previews valid raw Hanja and dictionary choices from completed rows',()=>{
- const events=[],parser=experimentalChoicePreviewParser([target0,target1],{experimentalHanja:true},rows=>events.push(rows.map(a=>a.option.choice_id)));
- const message=JSON.stringify(answer([target0,target1]));
+ const events=[],parser=experimentalChoicePreviewParser([target0,target1],{experimentalHanja:true,batchId:'stream-test'},rows=>events.push(rows.map(a=>a.option.choice_id)));
+ const message=JSON.stringify({batch_id:'stream-test',...answer([target0,target1])});
  parser(message.slice(0,10));assert.equal(events.length,0);
  for(let i=10;i<message.length;i+=8)parser(message.slice(i,i+8));
  assert.deepEqual(events.at(-1),['原潛','n0']);
- const badEvents=[],bad=experimentalChoicePreviewParser([target0],{experimentalHanja:true},rows=>badEvents.push(rows));
- bad(JSON.stringify({results:['x0']}));
+ const badEvents=[],bad=experimentalChoicePreviewParser([target0],{experimentalHanja:true,batchId:'stream-test'},rows=>badEvents.push(rows));
+ bad(JSON.stringify({batch_id:'stream-test',results:['x0']}));
  assert.ok(badEvents.every(rows=>rows.length===0));
 });
 
