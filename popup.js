@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.50';
+const CONTENT_SCRIPT_VERSION = '1.1.55.4-multiframe';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -150,7 +150,11 @@ runButton.addEventListener('click', async () => {
       uiSettings:currentUiSettings()
     });
     if(!response?.ok)throw new Error(response?.error||t('scriptFailed'));
-    status.textContent=response.started===false?'没有未标注的韩语文字。':t('pageStarted');
+    const frames=response.frameSummary||{};
+     status.textContent=response.started===false&&!(frames.started>0)?
+       '没有未标注的韩语文字。':
+       t('pageStarted')+(frames.started? `（另启动 ${frames.started} 个子框架）`:'')+
+       (frames.inaccessible? `；${frames.inaccessible} 个子框架不可访问`:'');
   } catch(error){showError(error);}
   finally{pageStartPending=false;runButton.disabled=false;}
 });
