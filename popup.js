@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.4-idle-manual-recovery';
+const CONTENT_SCRIPT_VERSION = '1.1.56.5-undo-restore-all-scopes';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -169,21 +169,18 @@ function currentUiSettings(){
 
 undoButton.addEventListener('click', async () => {
   try {
-    const tab = await getActiveTab();
-    await ensureContentScript(tab.id);
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'UNDO_LAST_ANNOTATION' });
-    if (!response?.ok) throw new Error(response?.error || t('noUndo'));
-    status.textContent = t('undoDone');
-  } catch (error) { showError(error); }
+    const response=await chrome.runtime.sendMessage({type:'KRA_UNDO_TAB'});
+    if(!response?.ok)throw new Error(response?.error||t('noUndo'));
+    status.textContent=t('undoDone')+(response.undoneFrames>1?`（${response.undoneFrames} 个框架）`:'');
+  } catch(error){showError(error);}
 });
 
 restoreButton.addEventListener('click', async () => {
   try {
-    const tab = await getActiveTab();
-    await ensureContentScript(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { type: 'RESTORE_ANNOTATION' });
-    status.textContent = t('restored');
-  } catch (error) { showError(error); }
+    const response=await chrome.runtime.sendMessage({type:'KRA_RESTORE_TAB'});
+    if(!response?.ok)throw new Error(response?.error||t('restored'));
+    status.textContent=t('restored')+(response.restoredFrames>1?`（${response.restoredFrames} 个框架）`:'');
+  } catch(error){showError(error);}
 });
 
 clearCacheButton.addEventListener('click', async () => {
