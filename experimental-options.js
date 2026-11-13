@@ -15,19 +15,18 @@ export function buildExperimentalOriginInstructions(config={}){
   :hanja?'Preserve source word boundaries and Hanja-to-syllable alignment; never guess personal-name Hanja or uncertain origins.'
          :'Use the actual borrowed spelling, not a translation or Korean romanization; preserve source word boundaries and never guess names or uncertain origins.';
  return [
-  'OPEN-ENDED ORIGIN AUDIT WITH DICTIONARY OPTIONS: the listed dictionary keys are candidates, NOT an exhaustive list of possible etymologies. Direct Hanja/Latin spellings are valid choice_id values when their experimental origin type is enabled.',
-  'For EACH occurrence, FIRST infer its meaning, lexical word boundaries and whether it is native Korean, Sino-Korean or borrowed FROM THE ORIGINAL SENTENCE AND MORPHOLOGY, independently of the candidate list. If the authentic origin is reliably known, keep it in mind before reading the dictionary options.',
-  'SECOND compare EACH offered dictionary definition, POS and origin with that independent interpretation. Choose the target-specific c/n dictionary KEY when a supplied sense and origin really match; this is preferred over rewriting the same correct etymology. A plausible-looking homograph, near meaning or wrong word sense is NOT a match.',
-  'THIRD, if NO supplied dictionary option correctly represents this occurrence AND you confidently know the authentic '+origin+', write its ORIGINAL Hanja characters or borrowed Latin-script spelling DIRECTLY into results[].choice_id. Do not default to KEEP and do not choose a mismatching dictionary key merely because options contains keys. This is still valid when options includes c0/c1/n0 as well as KEEP.',
-  'Use KEEP only for a native word without a suitable dictionary nonconversion sense, a protected name or unclear word boundary, or when neither a matching dictionary sense nor a reliable origin is available. Do not invent an origin to increase the proportion of direct answers.',
-  'Hanja origin must follow Korean character/word alignment; for explicitly tagged derivational suffixes (Kiwi XSN/XSM), give the genuine Hanja stem only and preserve the native Korean suffix. Never truncate an unrecognized component. '+caution,
-  'Output exactly one result per target, with the original target_id and a choice_id that is either a matching dictionary option KEY, an enabled authentic Hanja/Latin origin string, or KEEP. Never return the shared p ID or invent a candidate ID.'
+  'OPEN-ENDED ORIGIN AUDIT: dictionary keys are only candidate meanings, not an exhaustive inventory of authentic origins. With an enabled origin type, an authentic Hanja/Latin spelling may be placed directly into results[].c.',
+  'For EACH occurrence, FIRST infer its contextual meaning and actual etymological word boundaries; THEN compare every offered dictionary sense and origin, favoring a matching local c/n option key.',
+  'When no supplied dictionary sense matches and the authentic '+origin+' is reliably known, put that spelling directly in c; never invent a dictionary key or choose an unrelated meaning.',
+  'Use actual JSON null only for native words, protected names, unclear boundaries, or genuinely uncertain origins. Do not default to null merely because the dictionary is incomplete.',
+  'Hanja must align with the Korean source; explicitly tagged native suffixes can be preserved. '+caution,
+  'Output exactly one {t,c} row per target unless superseded by a validated segmentation repair; t matches target_id, c is an option key, genuine enabled source spelling, or JSON null.'
  ].join('\n');
 }
 
 const CJK=/^[\p{Script=Han}]+$/u;
 const LOANWORD=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u;
-const RESERVED=/^(?:KEEP|[cnxp]\d+)$/i;
+const RESERVED=/^[cnxp]\d+$/i;
 export const canProposeExperimentalOption=t=>/[가-힣]/u.test(t?.surface||'')&&
  !(t.scan_only===true||t.proper_noun===true||t.dictionary_person_name===true||t.dictionary_name_homograph===true||
    t.suspected_person_name===true||t.partial_word===true);
@@ -75,9 +74,9 @@ export function alignedHanjaStemSuffix(target,origin){
 export function literalOriginOption(target,choiceId,config={}){
  if(typeof choiceId!=='string'||!choiceId||choiceId.length>160||choiceId!==choiceId.trim()||
     /[<>\x00-\x1f\x7f]/u.test(choiceId)||RESERVED.test(choiceId)||!canProposeExperimentalOption(target))return null;
- // A known dictionary key (including KEEP) MUST be resolved by dictionary
- // selection, never interpreted as an invented etymology.
- if(target.options?.some(o=>o.choice_id===choiceId))return null;
+ // Internal nonconversion/keep options are not model-visible sentinels.
+ // A Latin original equal to a former keep marker remains valid.
+ if(target.options?.some(o=>o.type!=='keep'&&o.choice_id===choiceId))return null;
  let type;
  if(CJK.test(choiceId)&&config.experimentalHanja===true)type='hanja';
  else if(LOANWORD.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId)&&config.experimentalLoanword===true)type='loanword';
@@ -106,7 +105,7 @@ export function explainLiteralOriginRejection(target,choiceId,config={}){
  if(!canProposeExperimentalOption(target))return 'protected_name_or_partial_word';
  if(typeof choiceId!=='string'||!choiceId||choiceId.length>160||choiceId!==choiceId.trim()||RESERVED.test(choiceId))
   return 'invalid_choice_id';
- if(target.options?.some(o=>o.choice_id===choiceId))return 'known_choice_key';
+ if(target.options?.some(o=>o.type!=='keep'&&o.choice_id===choiceId))return 'known_choice_key';
  if(/\p{Script=Han}/u.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId))
   return 'mixed_script_requires_segments';
  if(CJK.test(choiceId)){
