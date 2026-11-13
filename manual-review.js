@@ -2,7 +2,7 @@ import {buildManualPrompt} from './review-payload.js';
 export {buildManualPrompt} from './review-payload.js';
 import {validateChoices,validateExperimentalChoices} from './choice-review.js';
 import {filterReviewTarget} from './review-pos.js';
-import {explainLiteralOriginRejection} from './experimental-options.js';
+import {explainLiteralOriginRejection,literalOriginOption} from './experimental-options.js';
 import {describeBatchBudget} from './batch-budget.js';
 import {validateSegmentationRepairs} from './segmentation-repairs.js';
 import {parsePositionalResults,choiceFromValue} from './positional-results.js';
