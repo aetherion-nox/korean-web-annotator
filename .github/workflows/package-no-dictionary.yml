@@ -1,15 +1,15 @@
-name: Verify and Package Atomic Segmentation Repair Contract v7 (final validation)
+name: Verify and Package Dynamic Full-Page Korean Text Scan v8
 on:
   push:
     branches:
-      - fix/v1.1.55.4-atomic-segmentation-repairs
+      - fix/v1.1.55.4-dynamic-page-full-scan
     paths:
       - .github/workflows/package-no-dictionary.yml
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: package-v1.1.55.4-atomic-segmentation-repairs
+  group: package-v1.1.55.4-dynamic-page-full-scan
   cancel-in-progress: false
 jobs:
   release:
@@ -104,12 +104,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.55.4-atomic-segmentation-compatible.1'
+          $tag='v1.1.55.4-dynamic-page-scan-compatible.1'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 — atomic segmentation fixes and optional old-target results (Windows compatible)' --prerelease --notes 'Atomic segmentation repairs now validate before old target choices, allow omitting results for safely superseded targets and scan-only placeholders, remove artificial KEEP fragments, reject KEEP additions, allow delete without origin, and preserve fallback old choices if repairs fail. Manual reviews, retries and disconnected-page recovery use the shared repair validator. Includes previous dictionary-backed experiment. Open-origin JSON mode explicitly allows genuine Hanja or Latin spellings only when an enabled source type has no matching dictionary candidate. Matching dictionary senses still use c/n choice IDs; KEEP remains fallback and all existing validators are unchanged. Includes default-on Hanja reading verification toggle, lexical alternate-reading checks, keeps all structural safety checks when disabled, prevents unsafe noun merging, preserves native suffixes, safely normalizes nonconflicting empty-ID repair additions, and reports distinct origin validation/render statistics. Includes previous manual DOM rendering fix. Includes prior open-origin protocol changes. Includes prior analyzeLocal import fix. Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 — complete Korean DOM scan and dynamic news sections (Windows compatible)' --prerelease --notes 'Fixes the old 3000-node whole-page truncation, cross-location identical-text deduplication and hidden/tab visibility handling. Detects open Shadow DOM, optionally observes visibility attribute changes and adds a bounded one-time asynchronous hydration follow-up without disabling stop-auto. Includes detailed DOM scan versus model/DOM render diagnostics. Atomic segmentation repairs now validate before old target choices, allow omitting results for safely superseded targets and scan-only placeholders, remove artificial KEEP fragments, reject KEEP additions, allow delete without origin, and preserve fallback old choices if repairs fail. Manual reviews, retries and disconnected-page recovery use the shared repair validator. Includes previous dictionary-backed experiment. Open-origin JSON mode explicitly allows genuine Hanja or Latin spellings only when an enabled source type has no matching dictionary candidate. Matching dictionary senses still use c/n choice IDs; KEEP remains fallback and all existing validators are unchanged. Includes default-on Hanja reading verification toggle, lexical alternate-reading checks, keeps all structural safety checks when disabled, prevents unsafe noun merging, preserves native suffixes, safely normalizes nonconflicting empty-ID repair additions, and reports distinct origin validation/render statistics. Includes previous manual DOM rendering fix. Includes prior open-origin protocol changes. Includes prior analyzeLocal import fix. Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
           }
           if($LASTEXITCODE -ne 0){throw 'GitHub Release failed'}
