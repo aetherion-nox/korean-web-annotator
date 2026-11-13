@@ -1563,7 +1563,7 @@
       // it) without enabling unlimited post-completion model requests.
       // The user's "stop after page complete" setting still controls
       // CONTINUOUS future monitoring; this is one bounded settling pass.
-      if(!ranges&&!task.startedAutomatically&&!task.manualPanelShown&&
+      if(!ranges&&!task.mergedGroup&&!task.startedAutomatically&&!task.manualPanelShown&&
          uiSettings.stopAutoAfterPageComplete!==false){
         const generation=sequence,originalUrl=task.startPageUrl;
         setTimeout(()=>{
