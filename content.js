@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.6-manual-auto-apply';
+  const VERSION = '1.1.56.7-manual-scroll-to-answer';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -834,20 +834,37 @@
     panel=document.createElement('section');panel.className='kra-manual-review';panel.setAttribute('aria-label','手动聊天审核');
     panel.innerHTML='<div class="kra-manual-heading"><strong>手动聊天审核</strong><button type="button" class="kra-manual-hide">收起</button></div><p class="kra-manual-summary"></p><p>① 复制提示词给聊天模型。② 粘贴完整 JSON 或导入 JSON/TXT，检测到完整答案立即自动校验并应用，无需点击按钮；发生错误可修改后重新粘贴或手动重试。等待期间请保留本网页。</p><label>发给模型的完整内容<textarea class="kra-manual-prompt" readonly spellcheck="false"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-copy">复制提示词</button><button type="button" class="kra-manual-download">下载提示词 TXT</button></div><label>粘贴模型返回的完整 JSON<textarea class="kra-manual-response" spellcheck="false" placeholder="粘贴 JSON 或完整的 json 代码块"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-import">导入 JSON／TXT 答案</button><input class="kra-manual-file" type="file" accept=".json,.txt,application/json,text/plain" aria-label="导入 JSON 或 TXT 答案文件" hidden><button type="button" class="kra-manual-apply">校验并应用／手动重试</button><button type="button" class="kra-manual-cancel">取消本次任务</button></div><p class="kra-manual-status" role="status" aria-live="polite"></p>';
     const note=message=>{panel.querySelector('.kra-manual-status').textContent=message;};
+    const scrollToAnswer=()=>{
+      // Scroll only this floating panel, never the underlying website.
+      // Do not focus the textarea: on mobile that would open the keyboard.
+      if(panel.hidden||!panel.isConnected||panel.scrollHeight<=panel.clientHeight)return;
+      const answer=panel.querySelector('.kra-manual-response');
+      if(!answer)return;
+      const top=panel.scrollTop+answer.getBoundingClientRect().top-
+        panel.getBoundingClientRect().top-12;
+      if(!Number.isFinite(top))return;
+      const target=Math.max(0,Math.min(panel.scrollHeight-panel.clientHeight,top));
+      try{panel.scrollTo({top:target,behavior:'smooth'});}
+      catch{panel.scrollTop=target;}
+    };
     const reopen=document.createElement('button');reopen.type='button';reopen.className='kra-manual-reopen';reopen.textContent='打开手动审核';reopen.hidden=true;
     reopen.onclick=()=>{panel.hidden=false;refreshManualReopen();};
     panel.querySelector('.kra-manual-hide').onclick=()=>{panel.hidden=true;refreshManualReopen();};
     panel.querySelector('.kra-manual-copy').onclick=async event=>{
       if(!event.isTrusted)return;
-      const prompt=panel.querySelector('.kra-manual-prompt');
-      const copied=await send({type:'KRA_COPY_TEXT',text:prompt.value});
-      if(copied?.ok){note('已复制完整提示词。可粘贴到大模型聊天框。');return;}
-      try{await navigator.clipboard.writeText(prompt.value);note('已复制完整提示词。可粘贴到大模型聊天框。');}
-      catch{prompt.focus();prompt.select();let ok=false;try{ok=document.execCommand('copy');}catch{}note(ok?'已复制完整提示词。可粘贴到大模型聊天框。':'复制失败，已选中文本；可用系统复制或下载 TXT。');}
+      try{
+        const prompt=panel.querySelector('.kra-manual-prompt');
+        const copied=await send({type:'KRA_COPY_TEXT',text:prompt.value});
+        if(copied?.ok){note('已复制完整提示词。可粘贴到大模型聊天框。');return;}
+        try{await navigator.clipboard.writeText(prompt.value);note('已复制完整提示词。可粘贴到大模型聊天框。');}
+        catch{prompt.focus();prompt.select();let ok=false;try{ok=document.execCommand('copy');}catch{}note(ok?'已复制完整提示词。可粘贴到大模型聊天框。':'复制失败，已选中文本；可用系统复制或下载 TXT。');}
+      }finally{scrollToAnswer();}
     };
     panel.querySelector('.kra-manual-download').onclick=()=>{
-      const text=panel.querySelector('.kra-manual-prompt').value,url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');
-      a.href=url;a.download=`Korean-Web-Annotator-manual-${panel.dataset.requestId||'prompt'}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);note('提示词已导出为 TXT。');
+      try{
+        const text=panel.querySelector('.kra-manual-prompt').value,url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');
+        a.href=url;a.download=`Korean-Web-Annotator-manual-${panel.dataset.requestId||'prompt'}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);note('提示词已导出为 TXT。');
+      }finally{scrollToAnswer();}
     };
     const responseInput=panel.querySelector('.kra-manual-response');
     const applyButton=panel.querySelector('.kra-manual-apply');
