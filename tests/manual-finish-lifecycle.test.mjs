@@ -54,7 +54,7 @@ test('worker DONE waits for in-flight accepted answer checkpoint before any comp
   document:{querySelector:()=>null,location:{href:'https://example.test/article'}},
   location:{href:'https://example.test/article'},chrome:{runtime:{connect:()=>port,getURL:x=>x}},
   collectTextNodes:()=>new Map(),lastScanStats:{textNodes:0,hangulNodes:0},
-  cancelTask(){},addDiagnostic(){},status(){},sourceOf(){},BLOCK_TAGS:'p',
+  cancelTask(){},stopHydrationGrace(){},startHydrationGrace(){},addDiagnostic(){},status(){},sourceOf(){},BLOCK_TAGS:'p',
   setInterval:()=>1,clearInterval(){},clearTimeout(){},getToolbar:()=>({}),
   seenSources:new Set(),publishState(){},configureRecovery(){},
   recoverManualConnection(){rescued++;return true;},
