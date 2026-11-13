@@ -1021,7 +1021,7 @@
   async function validatePageManualRepairs(task,response){
     const backup=task.manualBackup;
     if(!backup?.smartSegmentation)return {accepted:[],rejected:[]};
-    const original=task.manualOriginalPrompt||'',begin=original.indexOf('{"format":"shared-pools-v3"');
+    const original=task.manualOriginalPrompt||'',begin=original.indexOf('{"format":"shared-pools-v4"');
     if(!backup.repairValidation||begin<0)return {accepted:[],rejected:[{reason:'页面缺少分词修复安全快照',old_target_ids:[]}]};
     let payload;
     try{payload=JSON.parse(original.slice(begin));}
@@ -1045,7 +1045,7 @@
     }
     const verified=new Map();
     for(const repair of rows){
-      if(!repair||repair.choice_id==='KEEP'||repair.op==='delete'||typeof repair.choice_id!=='string')continue;
+      if(!repair||repair.op==='delete'||typeof repair.choice_id!=='string')continue;
       const sentence=payload.sentences?.find(s=>s.sentence_id===repair.sentence_id);
       if(!sentence)continue;
       let start=repair.start,end=repair.end;
