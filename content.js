@@ -1593,6 +1593,11 @@
     if(groupId!==null&&operation.groupId!==groupId)
       return {ok:false,skipped:true,error:'当前框架的最后一次标注不属于此轮操作'};
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
+    // Cancelling a streaming task may finalize a committed preview and append
+    // another history entry. Never pop that entry and then undo an unrelated
+    // older one picked before the cancellation.
+    if(history.at(-1)!==operation)
+      return {ok:false,error:'标注任务刚刚写入了新结果；请再次点击撤销以选择最新的一次操作。'};
     history.pop();
     for(const [block,before]of operation.recoveryBefore||[])
       if(recoveryBlocks.has(block))block.annotations=new Map(before);
