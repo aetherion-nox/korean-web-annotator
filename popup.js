@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.2-page-access';
+const CONTENT_SCRIPT_VERSION = '1.1.56.3-manual-lifecycle';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
