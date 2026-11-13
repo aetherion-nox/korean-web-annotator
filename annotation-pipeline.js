@@ -189,7 +189,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    item.result.unresolved=item.analysis.targets.filter(t=>
      !answered.has(t.target_id)&&!retired.has(t.target_id)&&!t.scan_only);
    const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,item.analysis.targets,batch.context]);
-   if(!experimental&&!smartSegmentation&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id}))});
+   if(!experimental&&!smartSegmentation&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({t:a.target.target_id,c:a.option.type==='keep'?null:a.option.choice_id}))});
   }
   await persist(cache);
  }
