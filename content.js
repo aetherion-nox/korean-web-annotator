@@ -422,19 +422,42 @@
     if(automaticObserver){automaticObserver.disconnect();automaticObserver=null;}
     clearTimeout(automaticTimer);
     if(!pageCompleted||uiSettings.stopAutoAfterPageComplete!==false||!document.body)return;
-    // Optional NEW text only. Previously processed source is never repaint-restored.
+    // Continuous rescanning is opt-in. A page-complete stop remains the
+    // default, so updates cannot silently trigger unlimited model calls.
+    const observeOptions={subtree:true,childList:true,characterData:true,
+      attributes:true,attributeFilter:['class','style','hidden','aria-hidden','inert','open']};
+    const observed=new WeakSet();
+    const observeOpenShadows=()=>{
+      for(const root of openTextRoots().slice(1))if(!observed.has(root)){
+        observed.add(root);automaticObserver.observe(root,observeOptions);
+      }
+    };
     automaticObserver=new MutationObserver(records=>{
+      // New open shadow hosts can appear after observer setup.
+      if(records.some(record=>record.type==='childList'))observeOpenShadows();
       const relevant=records.some(record=>{
         if(isOwnMutation(record))return false;
         const parent=record.target.nodeType===1?record.target:record.target.parentElement;
-        if(parent?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball,script,style'))return false;
+        if(parent?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
+           '.kra-floating-ball,.kra-manual-reopen,script,style'))return false;
+        if(record.type==='attributes'){
+          // A hidden tab can become visible without any text-node mutation.
+          // Trigger a scan only if its subtree actually contains Hangul.
+          return /[가-힣]/u.test(record.target.textContent||'');
+        }
         const nodes=record.type==='characterData'?[record.target]:Array.from(record.addedNodes);
-        return nodes.some(node=>!node.matches?.(OWN_RUBY)&&!node.querySelector?.(OWN_RUBY)&&/[가-힣]/u.test(node.textContent||''));
+        return nodes.some(node=>!node.matches?.(OWN_RUBY)&&!node.querySelector?.(OWN_RUBY)&&
+          /[가-힣]/u.test(node.textContent||''));
       });
       if(!relevant)return;
-      clearTimeout(automaticTimer);automaticTimer=setTimeout(()=>{if(!currentTask)startAnnotation({automatic:true,modes:{hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true}})},900);
+      clearTimeout(automaticTimer);
+      automaticTimer=setTimeout(()=>{
+        if(!currentTask)startAnnotation({automatic:true,
+          modes:{hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true}});
+      },900);
     });
-    automaticObserver.observe(document.body,{subtree:true,childList:true,characterData:true});
+    automaticObserver.observe(document.body,observeOptions);
+    observeOpenShadows();
   }
 
   document.addEventListener('selectionchange',()=>{
