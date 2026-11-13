@@ -37,7 +37,7 @@ test('empty top-level document still joins merged group and can host the single 
  assert.equal(result.started,true);
  assert.equal(e.starts.length,1);
  assert.equal(e.starts[0].mergeGroupId,'frame-group-1');
- assert.deepEqual(e.starts[0].sentences,[]);
+ assert.equal(e.starts[0].sentences.length,0);
  assert.equal(vm.runInContext('currentTask.mergedHost',e.c),true);
  assert.equal(vm.runInContext('currentTask.mergedGroup',e.c),true);
 });
