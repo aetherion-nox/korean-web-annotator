@@ -65,7 +65,7 @@ test('model-authored Hanja stem keeps explicit Korean suffix without inventing w
  assert.deepEqual(projectAnnotation(t.context,{...t,...result}).map(a=>[a.surface,a.replacement]),[['선생','先生']]);
  assert.equal(literalOriginOption(target('선생님'),'先生',cfg),null,'never truncate without explicit suffix evidence');
  assert.equal(literalOriginOption(target('휴대폰'),'携帶',cfg),null,'native suffix heuristic cannot shorten a lexical loanword');
- const accepted=validateExperimentalChoices([t],{results:[{target_id:'t0',choice_id:'先生'}]},cfg);
+ const accepted=validateExperimentalChoices([t],{results:['先生']},cfg);
  assert.equal(accepted.accepted.length,1);
  assert.equal(accepted.experimentalAccepted,1);
 });
@@ -77,7 +77,7 @@ test('invalid literal-origin choices report separate alignment, reading, mixed-s
  ]){
   assert.equal(explainLiteralOriginRejection(t,choice_id,{experimentalHanja:true}),reason,choice_id);
  }
- const res=validateExperimentalChoices([t],{results:[{target_id:'t0',choice_id:'韓'}]},cfg);
+ const res=validateExperimentalChoices([t],{results:['韓']},cfg);
  assert.equal(res.rejectionCounts.hanja_reading_conflict,1);
 });
 test('conflict-free empty-ID replacement can be safely normalized to add, not an overlapping replacement',()=>{
