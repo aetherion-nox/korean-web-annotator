@@ -279,6 +279,12 @@
 
   function configureHangulVisibility() {
     clearTimeout(hangulVisibilityTimer);hangulVisibilityTimer=null;
+    // Each iframe still runs the annotation engine, but only the top-level
+    // document owns the toolbar and its visibility observer.
+    if(typeof window!=='undefined'&&window!==window.top){
+      hangulVisibilityObserver?.disconnect();hangulVisibilityObserver=null;
+      return;
+    }
     if(uiSettings.toolbarHangulOnly===false||uiSettings.mobileSelectionToolbar===false){hangulVisibilityObserver?.disconnect();hangulVisibilityObserver=null;return;}
     const own='.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball,.kra-manual-reopen';
     const isOwn=node=>(node.nodeType===1?node:node.parentElement)?.closest(own);
@@ -382,7 +388,8 @@
   window.visualViewport?.addEventListener('scroll',placeFloatingBall);
 
   function refreshToolbar() {
-    if(!document.body)return;
+    // An iframe's annotation progress must never create a second toolbar.
+    if(!document.body||(typeof window!=='undefined'&&window!==window.top))return;
     refreshFloatingBall();
     const selected=captureSelection();
     if(selected)selectionSnapshot=selected;
@@ -407,7 +414,9 @@
 
   function refreshManualReopen() {
     const reopen=document.querySelector('.kra-manual-reopen'),panel=document.querySelector('.kra-manual-review');
-    if(reopen)reopen.hidden=!toolbar?.isConnected||toolbar.hidden||!panel?.dataset.operationId||!panel.hidden;
+    if(reopen)reopen.hidden=(typeof window!=='undefined'&&window!==window.top)?
+      !panel?.dataset.operationId||!panel.hidden:
+      !toolbar?.isConnected||toolbar.hidden||!panel?.dataset.operationId||!panel.hidden;
   }
 
   function addDiagnostic(item) {
@@ -467,7 +476,7 @@
     observeOpenShadows();
   }
 
-  document.addEventListener('selectionchange',()=>{
+  if(typeof window==='undefined'||window===window.top)document.addEventListener('selectionchange',()=>{
     // Dismissal hides controls, not the running task. A new selection in the
     // page must reopen them during manual review and API requests alike.
     // Editing/copying in extension panels is not a page selection gesture.
@@ -760,6 +769,9 @@
   }
 
   function getToolbar() {
+    // Explicit UI boundary; keep frame-local DOM conversion and messaging
+    // but prevent embedded documents from creating control overlays.
+    if(typeof window!=='undefined'&&window!==window.top)return null;
     if (toolbar?.isConnected) return toolbar;
     toolbar = document.createElement('div');
     toolbar.className = 'kra-mobile-selection-bar';
@@ -1299,7 +1311,11 @@
       if(firstAppearance&&uiSettings.hideToolbarOnFirstManual!==false)dismissToolbar();
       refreshManualReopen();
       configureRecovery();
-      getToolbar().querySelector('.kra-manual-open').hidden=false;status(`等待手动回填：第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次（${event.targetCount} 个词）`);return;
+      // Non-merged iframe selection can still use its explicit manual panel,
+      // but it must not create a secondary page toolbar.
+      const manualButton=getToolbar()?.querySelector('.kra-manual-open');
+      if(manualButton)manualButton.hidden=false;
+      status(`等待手动回填：第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次（${event.targetCount} 个词）`);return;
     }
     if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
     if(event.type==='MANUAL_REVIEW_ERROR'){
@@ -1357,7 +1373,9 @@
   }
 
   function status(message, percent) {
-    if (!document.body) return;
+    // The worker receives frame-local progress; only the primary document
+    // should render progress and control buttons.
+    if(!document.body||(typeof window!=='undefined'&&window!==window.top))return;
     const bar = getToolbar();
     bar.querySelector('.kra-task-label').textContent = message;
     const progress = bar.querySelector('.kra-task-progress');
@@ -1434,7 +1452,7 @@
     const ranges=message.ranges||null;
     const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
     const scan={...(lastScanStats||{}),collected:entries.size};
-    if(entries.size)pageHasHangul=true;
+    if(entries.size||message.mergeHost===true)pageHasHangul=true;
     if(!message.automatic||entries.size||scan.skippedHidden||scan.skippedProcessed){
       addDiagnostic({stage:'scan',level:scan.recoveryCapReached?'warning':'info',
         message:`网页文本扫描：检测 ${scan.textNodes} 个文本节点，含韩文 ${scan.hangulNodes}，进入分析 ${entries.size}；隐藏跳过 ${scan.skippedHidden}，已有标注/已处理跳过 ${scan.skippedProcessed}，开放式 Shadow DOM ${scan.shadowRoots}。`,
@@ -1612,7 +1630,8 @@
 
   send({ type: 'GET_UI_SETTINGS' }).then(reply => {
     if (!reply?.ok) return;
-    pageHasHangul=collectTextNodes().size>0;
+    if(typeof window==='undefined'||window===window.top)
+      pageHasHangul=collectTextNodes().size>0;
     applySettings(reply.uiSettings);
   });
 })();
