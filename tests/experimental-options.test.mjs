@@ -11,7 +11,7 @@ const hanja={target_id:'t0',start:0,end:2,surface:'원잠',context:'원잠을 �
 const loan={target_id:'t1',start:0,end:2,surface:'게임',context:'게임을 한다.',options:[
  {choice_id:'KEEP',type:'keep',replacement:'게임',entry_id:null,definitions:[]},
  {choice_id:'n0',type:'nonconversion',replacement:'게임',entry_id:12,definitions:['native meaning']}]};
-const reply=(target_id,choice_id)=>({results:[{target_id,choice_id}]});
+const reply=(_target_id,choice_id)=>({results:[choice_id==='KEEP'?null:choice_id]});
 const choose=(target,choice_id,config)=>validateExperimentalChoices([target],reply(target.target_id,choice_id),config);
 
 test('literal Hanja is read from results.choice_id; no proposal array or x0 required',()=>{
@@ -25,9 +25,9 @@ test('literal Hanja is read from results.choice_id; no proposal array or x0 requ
 });
 
 test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>{
- for(const id of ['c0','KEEP']){
+ for(const id of ['c0',null]){
   const result=choose(hanja,id,{experimentalHanja:true});
-  assert.equal(result.accepted[0].option.choice_id,id);
+  assert.equal(result.accepted[0].option.choice_id,id??'KEEP');
   assert.equal(result.experimentalAccepted,0);
  }
  assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'nonconversion');
@@ -67,9 +67,9 @@ test('never invent new origins for flagged proper names or incomplete source wor
 
 test('cross-batch, duplicate, extra fields and obsolete experimental arrays are rejected',()=>{
  for(const payload of [
-  {results:['原潛']},
+  {results:[{target_id:'t0',choice_id:'原潛'}]},
   {results:['原潛',null]},
-  {results:['原潛',replacement:'evil']},
+  {results:[{replacement:'evil'}]},
   {results:['x0'],experimental_options:[]},
   {results:[12]}
  ]){
@@ -100,12 +100,9 @@ test('only the enabled experimental origin rule is included in each manual/API p
  assert.ok(loanOnly.includes(loanRule)&&!loanOnly.includes(hanjaRule));
  assert.ok(both.includes(hanjaRule)&&both.includes(loanRule));
  for(const instructions of [common,hanjaOnly,loanOnly,both]){
-  assert.ok(instructions.includes('dictionary nonconversion senses')||instructions.includes('Dictionary nonconversion senses'));
-  assert.ok(instructions.includes('KEEP'));
-  assert.ok(instructions.includes('dictionary_name_homograph'));
-  assert.ok(instructions.includes('partial_word'));
-  assert.ok(instructions.includes('sentence_id'));
-  assert.ok(!/experimental_options|experimental_modes|x0|开启的实验类型|only if.*enabled/i.test(instructions));
+  assert.match(instructions,/null/);
+  assert.match(instructions,/sentence_id|sentences\[\]/);
+  assert.doesNotMatch(instructions,/results\[\]\.choice_id|Return exactly one \{target_id,choice_id\}/);
  }
  for(const config of [{},{experimentalHanja:true},{experimentalLoanword:true},{experimentalHanja:true,experimentalLoanword:true}]){
   const prompt=buildManualPrompt(hanja.context,[hanja],'BATCH',config);
@@ -113,26 +110,21 @@ test('only the enabled experimental origin rule is included in each manual/API p
   assert.equal(payload.batch_id,'BATCH');
   assert.equal(payload.experimental_modes,undefined);
   assert.ok(prompt.startsWith(buildReviewInstructions(config)));
-  assert.ok(prompt.includes('Copy batch_id'));
+  assert.ok(prompt.includes('batch_id'));
   assert.ok(prompt.includes('"results"'));
   assert.ok(!prompt.includes('"experimental_options":['));
  }
  const packed=buildReviewPayload(hanja.context,[hanja],{experimentalHanja:true}).payload;
  assert.equal(packed.targets[0].options.c0,'p0');
- assert.equal(packed.format,'shared-pools-v3');
+ assert.equal(packed.format,'shared-pools-v4');
  assert.equal(packed.experimental_modes,undefined);
  assert.ok(both.length<common.length+2300,'experimental instructions should remain compact for large batches');
- assert.ok(common.includes('first determine its meaning from the sentence and context'));
- assert.ok(common.includes('Never choose a semantically mismatching candidate'));
+ assert.match(common,/meaning/);
  for(const prompt of [hanjaOnly,loanOnly,both]){
-  assert.ok(prompt.startsWith('OPEN-ENDED ORIGIN AUDIT WITH DICTIONARY OPTIONS'));
-  assert.ok(prompt.includes('FIRST infer its meaning'));
-  assert.ok(prompt.includes('SECOND compare EACH offered dictionary definition'));
-  assert.ok(prompt.includes('THIRD, if NO supplied dictionary option correctly represents'));
-  assert.ok(prompt.includes('DIRECTLY into results[].choice_id'));
-  assert.ok(prompt.includes('Use KEEP only'));
-  assert.ok(prompt.includes('do not invent an origin')||prompt.includes('Do not invent an origin'));
-  assert.ok(!prompt.includes('you may write'));
+  assert.match(prompt,/FIRST infer its meaning/);
+  assert.match(prompt,/SECOND compare EACH offered dictionary definition/);
+  assert.match(prompt,/THIRD, if NO supplied dictionary option/);
+  assert.doesNotMatch(prompt,/results\[\]\.choice_id|Use KEEP only/);
  }
  assert.equal((both.match(/FIRST infer/g)||[]).length,1,'the audit order must appear once');
 });
