@@ -7,13 +7,13 @@ import {buildReviewPayload,buildReviewInstructions} from './review-payload.js';
 import {literalOriginOption,explainLiteralOriginRejection} from './experimental-options.js';
 import {validateSegmentationRepairs} from './segmentation-repairs.js';
 import {normalizeOutputTokenLimit} from './batch-budget.js';
-// Response rows have one wire format only: {tID, cID}. The special null
-// cID means keep the source. A string "KEEP" is NOT a fallback marker.
+// Response rows have one wire format only: {t, c}. The special null
+// c means keep the source. A string "KEEP" is NOT a fallback marker.
 function validWireRow(row,known){
  return row&&typeof row==='object'&&!Array.isArray(row)&&
-  Object.keys(row).sort().join(',')==='cID,tID'&&
-  typeof row.tID==='string'&&known.has(row.tID)&&
-  (row.cID===null||(typeof row.cID==='string'&&row.cID.length>0));
+  Object.keys(row).sort().join(',')==='c,t'&&
+  typeof row.t==='string'&&known.has(row.t)&&
+  (row.c===null||(typeof row.c==='string'&&row.c.length>0));
 }
 function matchedWireOption(target,value,config){
  const options=filterReviewTarget(target,config).options;
@@ -28,8 +28,8 @@ export function validateChoices(targets,response,config={}){
     rows.some(row=>!validWireRow(row,known)))
   return {accepted:[],unresolved:targets};
  for(const target of targets){
-  const matches=rows.filter(row=>row.tID===target.target_id);
-  const option=matches.length===1?matchedWireOption(target,matches[0].cID,config):null;
+  const matches=rows.filter(row=>row.t===target.target_id);
+  const option=matches.length===1?matchedWireOption(target,matches[0].c,config):null;
   if(option)accepted.push({target,option});else unresolved.push(target);
  }
  return {accepted,unresolved};
@@ -43,9 +43,9 @@ export function validateExperimentalChoices(targets,response,config={}){
  const accepted=[],unresolved=[];let experimentalAccepted=0,experimentalRejected=0;
  const rejectionCounts={},rejectionSamples=[];
  for(const target of targets){
-  const matches=rows.filter(row=>row.tID===target.target_id);
+  const matches=rows.filter(row=>row.t===target.target_id);
   if(matches.length!==1){unresolved.push(target);continue;}
-  const id=matches[0].cID;
+  const id=matches[0].c;
   const option=matchedWireOption(target,id,config);
   if(option){accepted.push({target,option});continue;}
   const generated=literalOriginOption(target,id,config);
@@ -53,7 +53,7 @@ export function validateExperimentalChoices(targets,response,config={}){
   else{unresolved.push(target);experimentalRejected++;
    const reason=explainLiteralOriginRejection(target,id,config);
    rejectionCounts[reason]=(rejectionCounts[reason]||0)+1;
-   if(rejectionSamples.length<16)rejectionSamples.push({target_id:target.target_id,surface:target.surface,cID:id,reason});
+   if(rejectionSamples.length<16)rejectionSamples.push({target_id:target.target_id,surface:target.surface,c:id,reason});
   }
  }
  return {accepted,unresolved,experimentalAccepted,experimentalProposed:experimentalAccepted,experimentalRejected,rejectionCounts,rejectionSamples};
@@ -109,10 +109,10 @@ export async function reviewTargets(config,targets,signal){
    const known=new Set(current.map(t=>t.target_id));
    const badId=config.smartSegmentation===true&&
      (!Array.isArray(response?.results)||response.results.some(row=>
-       !row||typeof row.tID!=='string'||!known.has(row.tID)));
+       !row||typeof row.t!=='string'||!known.has(row.t)));
    const choiceResponse=config.smartSegmentation===true&&!badId?
-     {...response,results:response.results.filter(row=>!retired.has(row.tID)&&
-       !current.some(t=>t.scan_only&&t.target_id===row.tID))}:response;
+     {...response,results:response.results.filter(row=>!retired.has(row.t)&&
+       !current.some(t=>t.scan_only&&t.target_id===row.t))}:response;
    const result=badId?
      {accepted:[],unresolved:active,experimentalAccepted:0,experimentalRejected:0}:
      experimental?validateExperimentalChoices(active,choiceResponse,config):validateChoices(active,choiceResponse,config);
