@@ -108,25 +108,12 @@ export function createManualReviewSession({operationId,post,signal}={}){
    const current=pending;
    try{
     const response=parseAnswer(message.text);
-    // A missing batch_id is acceptable only when every target ID and choice
-    // passes the existing one-to-one validation below. A supplied but wrong
-    // batch_id must still be rejected rather than silently applied.
-    if(Object.hasOwn(response,'batch_id')&&response.batch_id!==current.requestId)
-      throw Error('batch_id 与当前批次不一致，请检查是否粘贴了其他批次的答案。');
-    if(Object.prototype.hasOwnProperty.call(response,'experimental_options'))
-      throw Error('新版协议只需要 results；请不要包含 experimental_options。');
+    if(response.batch_id!==current.requestId)
+     throw Error('positional-v1 回答必须提供当前批次完全一致的 batch_id。');
     const experimental=current.experimentalHanja||current.experimentalLoanword;
     const choicesConfig={reviewPosFilter:current.reviewPosFilter,
       experimentalHanja:current.experimentalHanja,experimentalLoanword:current.experimentalLoanword,hanjaReadingCheck:current.hanjaReadingCheck};
-    const known=new Map(current.wireTargets.map(t=>[t.target_id,t]));
-    const incoming=new Map(),reasons=new Map(),unknown=[];
-    for(const row of response.results){
-      if(!row||typeof row.target_id!=='string'||!known.has(row.target_id)){
-        unknown.push(String(row?.target_id??'(缺失)'));continue;
-      }
-      if(!incoming.has(row.target_id))incoming.set(row.target_id,[]);
-      incoming.get(row.target_id).push(row);
-    }
+    const reasons=new Map();
     // Repair validation must happen before missing-result detection. The same
     // original sentence scopes, names, selections and conflict rules used by
     // the worker determine whether an old target is genuinely superseded.
@@ -159,34 +146,38 @@ export function createManualReviewSession({operationId,post,signal}={}){
       validRepairs=checked.accepted;
       current.savedRepairs=validRepairs.map(r=>({
         sentence_id:r.sentence_id,op:r.op,old_target_ids:r.old_target_ids,
-        start:r.start,end:r.end,surface:r.surface,choice_id:r.choice_id
+        start:r.start,end:r.end,surface:r.surface,
+        ...(r.op==='delete'?{}:{choice_id:r.choice_id})
       }));
       if(checked.rejected.length)for(const issue of checked.rejected){
         for(const id of issue.old_target_ids||[])reasons.set(id,'修复未通过安全校验：'+issue.reason);
       }
     }
     const retired=new Set(validRepairs.flatMap(r=>r.old_target_ids));
-    for(const [id,rows] of incoming){
-      if(current.acceptedRows.has(id)||retired.has(id))continue; // Old answers never override a verified repair.
-      if(rows.length!==1){
-        reasons.set(id,'重复 target_id（本次 '+rows.length+' 条），请只返回一条');continue;
-      }
-      const target=known.get(id),row=rows[0];
-      const selected=experimental?
-        validateExperimentalChoices([target],{results:[row]},choicesConfig):
-        validateChoices([target],{results:[row]},choicesConfig);
-      if(selected.accepted.length!==1){
-        const candidate=filterReviewTarget(target,choicesConfig).options.find(o=>o.choice_id===row.choice_id);
-        reasons.set(id,candidate?'字段不符合当前协议':'无效 choice_id：'+String(row.choice_id??'(缺失)')+
-          '；原因 '+explainLiteralOriginRejection(target,row.choice_id,choicesConfig));continue;
-      }
-      current.acceptedRows.set(id,{target_id:id,choice_id:selected.accepted[0].option.choice_id});
+    const parsed=parsePositionalResults(current.wireTargets,response,{
+      smartSegmentation:current.smartSegmentation,retired,allowPartial:true
+    });
+    if(parsed.malformed)
+     throw Error('positional-v1 长度或索引错误：完整结果必须包含每个原始位置；补交使用 partial:true 与 [[原始索引,值],...]。');
+    for(const [index,reason] of parsed.problems)
+     reasons.set(current.wireTargets[index]?.target_id||String(index),reason);
+    for(const [index,value] of parsed.values){
+     const target=current.wireTargets[index],id=target.target_id;
+     if(retired.has(id)||current.smartSegmentation&&target.scan_only||current.acceptedRows.has(id))continue;
+     const chosen=choiceFromValue(target,value,choicesConfig,
+       experimental?literalOriginOption:()=>null);
+     if(!chosen){
+      reasons.set(id,'无效位置答案：'+JSON.stringify(value)+'；'+
+        (typeof value==='string'?explainLiteralOriginRejection(target,value,choicesConfig):'类型错误'));
+      continue;
+     }
+     current.acceptedRows.set(id,value);
     }
     const missing=current.wireTargets.filter(t=>
       !current.acceptedRows.has(t.target_id)&&!retired.has(t.target_id)&&
       !(current.smartSegmentation&&t.scan_only===true));
     if(missing.length){
-      const retry=manualRetryPrompt(current.originalPrompt,current.requestId,missing,reasons,current.acceptedRows.size);
+      const retry=manualRetryPrompt(current,missing,reasons);
       const detail=missing.slice(0,12).map(t=>t.target_id+'（'+(reasons.get(t.target_id)||'未提交')+'）').join('；');
       notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,
         error:'本批已保留 '+current.acceptedRows.size+'/'+current.wireTargets.length+
