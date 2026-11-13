@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.5-undo-restore-all-scopes';
+  const VERSION = '1.1.56.6-manual-auto-apply';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -814,10 +814,25 @@
     return toolbar;
   }
 
+  function isCompleteManualAnswer(text){
+    // Input/paste should submit immediately when a full JSON value exists.
+    // Parsing only avoids generating an error on every keystroke, and it does
+    // NOT replace the existing batch/choice/repair/security validation.
+    if(typeof text!=='string'||!text.trim())return false;
+    if(text.length>16*1024*1024)return true; // Let the validator explain the limit.
+    let source=text.trim();
+    if(source.startsWith('```')){
+      const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);
+      if(!fence)return false;
+      source=fence[1].trim();
+    }
+    try{JSON.parse(source);return true;}catch{return false;}
+  }
+
   function manualPanel(){
     let panel=document.querySelector('.kra-manual-review');if(panel)return panel;
     panel=document.createElement('section');panel.className='kra-manual-review';panel.setAttribute('aria-label','手动聊天审核');
-    panel.innerHTML='<div class="kra-manual-heading"><strong>手动聊天审核</strong><button type="button" class="kra-manual-hide">收起</button></div><p class="kra-manual-summary"></p><p>① 复制提示词给聊天模型。② 粘贴完整 JSON 或导入 JSON/TXT 答案文件。等待期间请保留本网页。</p><label>发给模型的完整内容<textarea class="kra-manual-prompt" readonly spellcheck="false"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-copy">复制提示词</button><button type="button" class="kra-manual-download">下载提示词 TXT</button></div><label>粘贴模型返回的完整 JSON<textarea class="kra-manual-response" spellcheck="false" placeholder="粘贴 JSON 或完整的 json 代码块"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-import">导入 JSON／TXT 答案</button><input class="kra-manual-file" type="file" accept=".json,.txt,application/json,text/plain" aria-label="导入 JSON 或 TXT 答案文件" hidden><button type="button" class="kra-manual-apply">校验并应用本批结果</button><button type="button" class="kra-manual-cancel">取消本次任务</button></div><p class="kra-manual-status" role="status" aria-live="polite"></p>';
+    panel.innerHTML='<div class="kra-manual-heading"><strong>手动聊天审核</strong><button type="button" class="kra-manual-hide">收起</button></div><p class="kra-manual-summary"></p><p>① 复制提示词给聊天模型。② 粘贴完整 JSON 或导入 JSON/TXT，检测到完整答案立即自动校验并应用，无需点击按钮；发生错误可修改后重新粘贴或手动重试。等待期间请保留本网页。</p><label>发给模型的完整内容<textarea class="kra-manual-prompt" readonly spellcheck="false"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-copy">复制提示词</button><button type="button" class="kra-manual-download">下载提示词 TXT</button></div><label>粘贴模型返回的完整 JSON<textarea class="kra-manual-response" spellcheck="false" placeholder="粘贴 JSON 或完整的 json 代码块"></textarea></label><div class="kra-manual-actions"><button type="button" class="kra-manual-import">导入 JSON／TXT 答案</button><input class="kra-manual-file" type="file" accept=".json,.txt,application/json,text/plain" aria-label="导入 JSON 或 TXT 答案文件" hidden><button type="button" class="kra-manual-apply">校验并应用／手动重试</button><button type="button" class="kra-manual-cancel">取消本次任务</button></div><p class="kra-manual-status" role="status" aria-live="polite"></p>';
     const note=message=>{panel.querySelector('.kra-manual-status').textContent=message;};
     const reopen=document.createElement('button');reopen.type='button';reopen.className='kra-manual-reopen';reopen.textContent='打开手动审核';reopen.hidden=true;
     reopen.onclick=()=>{panel.hidden=false;refreshManualReopen();};
@@ -834,42 +849,88 @@
       const text=panel.querySelector('.kra-manual-prompt').value,url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');
       a.href=url;a.download=`Korean-Web-Annotator-manual-${panel.dataset.requestId||'prompt'}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);note('提示词已导出为 TXT。');
     };
+    const responseInput=panel.querySelector('.kra-manual-response');
+    const applyButton=panel.querySelector('.kra-manual-apply');
+    const importButton=panel.querySelector('.kra-manual-import');
     const submitAnswer=()=>{
-      const task=currentTask;if(!task||task.finished||!task.manualRequest||panel.dataset.operationId!==task.operationId)return;
+      const task=currentTask;
+      if(!task||task.finished||!task.manualRequest||
+         panel.dataset.operationId!==task.operationId||
+         panel.dataset.requestId!==task.manualRequest||
+         task.manualSubmission?.requestId===task.manualRequest)return false;
+      const submitted=responseInput.value;
+      const submission={requestId:task.manualRequest,text:submitted};
+      task.manualSubmission=submission;
+      applyButton.disabled=true;importButton.disabled=true;
+      note('已检测到答案，正在校验并应用本批结果…');
       if(task.manualLocalOnly){
-        panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
-        const submitted=panel.querySelector('.kra-manual-response').value;
         const recovery=task.mergedGroup?recoverMergedManual(task,submitted):applyManualRecovery(task,submitted);
-        void recovery.catch(error=>{
-          if(currentTask!==task||task.finished)return;
-          note('答案尚未全部应用：'+String(error.message||error)+'。可修正答案后重试；当前批次仍有效。');
-          panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+        void recovery.then(()=>{
+          if(task.manualSubmission===submission)task.manualSubmission=null;
+        }).catch(error=>{
+          if(currentTask!==task||task.finished||task.manualRequest!==submission.requestId)return;
+          if(task.manualSubmission===submission)task.manualSubmission=null;
+          note('答案尚未全部应用：'+String(error.message||error)+'。可直接修改后自动重试，或点击手动按钮；当前批次保留。');
+          applyButton.disabled=false;importButton.disabled=false;
         });
+        return true;
+      }
+      task.manualSubmitted={requestId:submission.requestId,text:submitted};
+      watchManualReply(task);
+      try{
+        task.port.postMessage({type:'MANUAL_REVIEW_RESPONSE',operationId:task.operationId,
+          requestId:submission.requestId,text:submitted});
+      }catch{
+        clearInterval(task.keepalive);
+        if(recoverManualConnection(task,'提交连接已断开。')){
+          if(task.manualSubmission===submission)task.manualSubmission=null;
+          // Immediately apply the already pasted answer via local recovery.
+          // No second paste or manual click should be required.
+          submitAnswer();
+        }else{
+          if(task.manualSubmission===submission)task.manualSubmission=null;
+          clearTimeout(task.manualTimer);applyButton.disabled=false;importButton.disabled=false;
+          note('标注连接已断开；答案已保留，请下载保存。');
+        }
+      }
+      return true;
+    };
+    applyButton.onclick=submitAnswer;
+    const autoSubmitAnswer=()=>{
+      const task=currentTask;
+      if(!task||task.finished||!task.manualRequest||
+         panel.dataset.operationId!==task.operationId||
+         panel.dataset.requestId!==task.manualRequest)return;
+      const value=responseInput.value;
+      if(!value.trim())return;
+      if(task.manualSubmission?.requestId===task.manualRequest)return;
+      if(!isCompleteManualAnswer(value)){
+        note('检测到输入，但 JSON 尚未完整或格式无效；继续粘贴／输入，完整后自动应用。');
         return;
       }
-      panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;note('正在校验本批结果…');
-      task.manualSubmitted={requestId:task.manualRequest,text:panel.querySelector('.kra-manual-response').value};
-      watchManualReply(task);
-      try{task.port.postMessage({type:'MANUAL_REVIEW_RESPONSE',operationId:task.operationId,requestId:task.manualRequest,text:panel.querySelector('.kra-manual-response').value});}
-      catch{clearInterval(task.keepalive);if(!recoverManualConnection(task,'提交连接已断开。')){clearTimeout(task.manualTimer);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;note('标注连接已断开；答案已保留，请下载保存。');}}
+      submitAnswer();
     };
-    panel.querySelector('.kra-manual-apply').onclick=submitAnswer;
+    responseInput.addEventListener('input',autoSubmitAnswer);
+    responseInput.addEventListener('compositionend',autoSubmitAnswer);
     let fileReadSequence=0;
-    const fileInput=panel.querySelector('.kra-manual-file'),importButton=panel.querySelector('.kra-manual-import');
+    const fileInput=panel.querySelector('.kra-manual-file');
     importButton.onclick=()=>fileInput.click();
     fileInput.onchange=async()=>{
       const file=fileInput.files?.[0];fileInput.value='';
       const task=currentTask,requestId=task?.manualRequest,sequence=++fileReadSequence;
       if(!file||!task||task.finished||!requestId||panel.dataset.operationId!==task.operationId)return;
       const stillCurrent=()=>sequence===fileReadSequence&&currentTask===task&&!task.finished&&task.manualRequest===requestId&&panel.dataset.requestId===requestId;
-      importButton.disabled=true;panel.querySelector('.kra-manual-apply').disabled=true;note(`正在读取 ${file.name}…`);
+      importButton.disabled=true;applyButton.disabled=true;note(`正在读取 ${file.name}…`);
       try{
         if(!/\.(json|txt)$/i.test(file.name))throw Error('请选择 JSON 或 TXT 答案文件。');
         if(file.size>16*1024*1024)throw Error('答案文件超过 16 MiB，请仅导入当前批次的结果。');
         let readTimer;let text;
         try{text=await Promise.race([file.text(),new Promise((_,reject)=>{readTimer=setTimeout(()=>reject(Error('读取文件超时，请重新导入或粘贴答案。')),15000);})]);}finally{clearTimeout(readTimer);}
         if(!stillCurrent())return;
-        panel.querySelector('.kra-manual-response').value=text;submitAnswer();
+        responseInput.value=text;
+        // Programmatic file reading does not fire the input event.
+        // Preserve explicit validation errors for imported malformed JSON.
+        submitAnswer();
       }catch(error){if(stillCurrent()){importButton.disabled=false;panel.querySelector('.kra-manual-apply').disabled=false;note(`导入失败：${error.message||error}`);}}
     };
     panel.querySelector('.kra-manual-cancel').onclick=()=>{cancelTask();status('已取消手动审核',0);};
@@ -1438,6 +1499,7 @@
       task.manualRequest=event.requestId;panel.dataset.operationId=task.operationId;panel.dataset.requestId=event.requestId;
       panel.querySelector('.kra-manual-summary').textContent=`${event.experimentalPhase==='propose'?'实验性候选补全 · ':event.experimentalPhase==='choose'?'补充候选复审 · ':''}第 ${event.batchNumber}/${event.batchTotal||event.batchNumber} 批次 · ${event.targetCount} 个词 · ${event.text.length.toLocaleString()} 字符（仅任务内容，无 API Key）`;
       if(event.budget){const b=event.budget;panel.querySelector('.kra-manual-summary').textContent+=`\n${b.label}档 · 预估输入 ${b.inputTokens.toLocaleString()} / 答案 ${b.outputTokens.toLocaleString()} tokens${b.contextTokens?` / 余量 ${b.safetyTokens.toLocaleString()}（窗口 ${b.contextTokens.toLocaleString()}）`:''}${b.limitReason==='output'?' · 受答案长度预算限制':''}。估算与实际分词可能不同。`;}
+      task.manualSubmission=null;
       panel.querySelector('.kra-manual-prompt').value=event.text;panel.querySelector('.kra-manual-response').value='';
       panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;panel.querySelector('.kra-manual-file').value='';panel.querySelector('.kra-manual-cancel').disabled=false;
       panel.querySelector('.kra-manual-status').textContent='等待粘贴或导入本批结果；未调用 API。';panel.hidden=false;
@@ -1453,6 +1515,7 @@
     }
     if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
     if(event.type==='MANUAL_REVIEW_ERROR'){
+      task.manualSubmission=null;
       clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
       if(Array.isArray(event.acceptedRows)&&!task.mergedGroup){
         const answer=JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
@@ -1483,6 +1546,7 @@
         panel.querySelector('.kra-manual-import').disabled=false;
       }
     }else{
+      task.manualSubmission=null;
       clearTimeout(task.manualTimer);
       const submitted=Array.isArray(event.acceptedRows)?
         JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
@@ -1542,7 +1606,7 @@
     if (task.finished) return;
     task.reconcile?.();
     task.finished = true;
-    clearTimeout(task.manualTimer);task.manualBackup=null;
+    clearTimeout(task.manualTimer);task.manualSubmission=null;task.manualBackup=null;
     task.manualRequest=null;
     const manual=document.querySelector('.kra-manual-review');
     if(manual?.dataset.operationId===task.operationId){
