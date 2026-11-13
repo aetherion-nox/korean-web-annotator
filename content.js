@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.4-idle-manual-recovery';
+  const VERSION = '1.1.56.5-undo-restore-all-scopes';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -668,10 +668,11 @@
   function insertConversions(entries, operation) {
     const range = document.createRange();
     for (const [node, entry] of entries) {
-      rememberRecovery(entry,operation);
       if (entry.invalidated || (!entry.annotations.length && !entry.renderRecord && !(entry.isRuby && entry.modelReviewed))) continue;
+      // If no new review or local conversion actually replaces an existing
+      // ruby, preserve its old annotation instead of inventing a no-op undo.
       const html=entry.isRuby&&!entry.modelReviewed&&!entry.localAnnotations?.length?entry.originalOuterHTML:conversionHTML(entry);
-      if(entry.renderHTML===html)continue;
+      if(entry.renderHTML===html||!entry.renderRecord&&entry.isRuby&&html===entry.originalOuterHTML)continue;
       let record=entry.renderRecord;
       if(record){
         // Only replace the exact contiguous fragment this operation inserted.
@@ -700,6 +701,10 @@
           analyzedNodeVersions.set(insertedNode,insertedNode.data);
       if(!entry.renderRecord){entry.renderRecord=record;operation.push(record);}
       entry.renderHTML=html;
+      // Only a verified, successful DOM replacement can supersede a saved
+      // annotation. Empty/non-reviewed analyses must not delete the old
+      // recovery record or silently count as an undoable write.
+      rememberRecovery(entry,operation);
       seenSources.add(entry.text);
     }
     return [...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
@@ -790,10 +795,20 @@
     for(const button of toolbar.querySelectorAll('button'))button.addEventListener('pointerdown',event=>event.preventDefault());
     toolbar.querySelector('.kra-mobile-primary').addEventListener('click',()=>startSelection(false));
     toolbar.querySelector('.kra-mobile-review').addEventListener('click',()=>startSelection(true));
-    toolbar.querySelector('.kra-mobile-undo').addEventListener('click',undoLast);
+    toolbar.querySelector('.kra-mobile-undo').addEventListener('click',()=>{
+      void send({type:'KRA_UNDO_TAB'}).then(result=>{
+        if(!result?.ok)status(result?.error||'没有可撤销的标注',0);
+        else status('已撤销上一轮实际标注，恢复此前标注',0);
+      });
+    });
     toolbar.querySelector('.kra-diagnostic-button').addEventListener('click',toggleDiagnostics);
     toolbar.querySelector('.kra-manual-open').addEventListener('click',()=>{const panel=document.querySelector('.kra-manual-review');if(panel){panel.hidden=!panel.hidden;refreshManualReopen();}});
-    toolbar.querySelector('.kra-mobile-restore').addEventListener('click', restorePage);
+    toolbar.querySelector('.kra-mobile-restore').addEventListener('click',()=>{
+      void send({type:'KRA_RESTORE_TAB'}).then(result=>{
+        status(result?.ok?'已还原本页及可访问子框架的全部标注':
+          result?.error||'无法还原标注',result?.ok?100:0);
+      });
+    });
     toolbar.querySelector('.kra-mobile-close').addEventListener('click',dismissToolbar);
     document.body.append(toolbar);
     return toolbar;
@@ -1552,23 +1567,51 @@
   function restorePage() {
     resetRecovery();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();history.length=0;seenSources.clear();
-    // Unwrap owned rubies in both the document and open Shadow DOM.
-    for(const root of openTextRoots())for(const ruby of root.querySelectorAll(OWN_RUBY))
-      ruby.replaceWith(document.createTextNode(ruby.dataset.kraOriginal||''));
+    // A full restore removes extension rubies in THIS frame, including
+    // open Shadow DOM. The tab coordinator calls every accessible frame.
+    let removed=0;
+    for(const root of openTextRoots())for(const ruby of root.querySelectorAll(OWN_RUBY)){
+      ruby.replaceWith(document.createTextNode(ruby.dataset.kraOriginal||''));removed++;
+    }
     status('已还原', 0);
     send({ type: 'SET_BADGE', text: '' });
     publishState();
+    return {ok:true,removed};
   }
 
-  function undoLast() {
+  function latestUndoState() {
+    const operation=history.at(-1);
+    return {ok:true,groupId:operation?.groupId||null,
+      startedAt:operation?.startedAt||0,depth:history.length};
+  }
+
+  function undoLast(groupId=null) {
+    // An operation belongs to a single user action, shared by all selected
+    // frames. Do not accidentally undo an older unrelated selection.
+    const operation=history.at(-1);
+    if(!operation)return {ok:false,error:'没有可撤销的标注'};
+    if(groupId!==null&&operation.groupId!==groupId)
+      return {ok:false,skipped:true,error:'当前框架的最后一次标注不属于此轮操作'};
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
-    const operation=history.pop();if(!operation){status('没有可撤销的标注',0);return {ok:false,error:'没有可撤销的标注'};}
-    for(const [block,before]of operation.recoveryBefore||[])if(recoveryBlocks.has(block))block.annotations=new Map(before);
+    history.pop();
+    for(const [block,before]of operation.recoveryBefore||[])
+      if(recoveryBlocks.has(block))block.annotations=new Map(before);
+    let changed=0;
     for(const record of [...operation].reverse()){
-      if(!record.inserted.every((node,i)=>node.parentNode===record.parent&&node.isEqualNode(record.snapshots[i])&&(i===0||record.inserted[i-1].nextSibling===node)))continue;
-      record.inserted[0].before(record.original.isEqualNode(record.originalSnapshot)?record.original:record.originalSnapshot.cloneNode(true));for(const node of record.inserted)node.remove();
+      if(!record.parent?.isConnected||!record.inserted.length||
+         !record.inserted.every((node,i)=>node.isConnected&&node.parentNode===record.parent&&
+           node.isEqualNode(record.snapshots[i])&&(i===0||record.inserted[i-1].nextSibling===node)))continue;
+      record.inserted[0].before(record.original.isEqualNode(record.originalSnapshot)?
+        record.original:record.originalSnapshot.cloneNode(true));
+      for(const node of record.inserted)node.remove();
+      changed++;
     }
-    configureRecovery();status('已撤销上次标注',0);publishState();return {ok:true};
+    configureRecovery();
+    // If a reactive site replaced the exact nodes, only recover the prior
+    // stored markup at matching source text and original span geometry.
+    if(changed<operation.length)restoreKnownAnnotations();
+    status(changed?'已撤销上次标注，恢复之前的标注':'旧节点已变化，已恢复可验证的旧标注',0);
+    publishState();return {ok:true,changed};
   }
 
   function startSelection(reviewAll) {
@@ -1619,6 +1662,10 @@
       mergedHost:message.mergeHost===true,startedAutomatically:message.automatic===true,
       startPageUrl:typeof location!=='undefined'?location.href:document.location?.href||'', finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges,
       operation:[], historyRecorded:false };
+    // Associate all frames of one whole-page review with the same undo
+    // transaction; selection and automatic tasks use their own operationId.
+    task.operation.groupId=message.mergeGroupId||operationId;
+    task.operation.startedAt=Date.now();
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
     task.paint=paint;
     task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!
@@ -1779,6 +1826,7 @@
     switch (message?.type) {
       case 'KRA_PING': respond({ ok: true, version: VERSION }); break;
       case 'KRA_CONTEXT_STATE': respond(contextState()); break;
+      case 'KRA_HISTORY_STATE': respond(latestUndoState()); break;
       case 'KRA_FRAME_PROBE': respond(probeKoreanFrame()); break;
       case 'KRA_MANUAL_OFFLINE_FRAME':
         applyMergedOfflineFrame(message).then(respond,error=>respond({ok:false,error:String(error.message||error)}));
@@ -1790,8 +1838,8 @@
           detail:JSON.stringify(message.detail||{})});
         respond({ok:true});break;
       case 'START_ANNOTATION': if(message.uiSettings)applySettings(message.uiSettings);Promise.resolve(startAnnotation(message)).then(respond,error=>respond({ok:false,error:error.message}));return true;
-      case 'RESTORE_ANNOTATION': restorePage();respond({ok:true});break;
-      case 'UNDO_LAST_ANNOTATION':respond(undoLast());break;
+      case 'RESTORE_ANNOTATION': respond(restorePage());break;
+      case 'UNDO_LAST_ANNOTATION':respond(undoLast(message.groupId??null));break;
       case 'APPLY_UI_SETTINGS':applySettings(message.uiSettings||{});respond({ok:true});break;
       case 'APPLY_FLOATING_BALL_POSITION':applySettings({floatingBallPosition:message.position});respond({ok:true});break;
       case 'START_SELECTION_ANNOTATION':{const ranges=captureSelection();Promise.resolve(ranges?startAnnotation({...message,ranges}):{ok:false,error:'请先选中需要标注的文字。'}).then(respond,error=>respond({ok:false,error:error.message}));return true;}
