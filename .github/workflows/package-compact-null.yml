@@ -1,13 +1,13 @@
-name: Validate and Package v1.1.56.6 Manual Auto Apply
+name: Validate and Package v1.1.56.7 Manual Scroll To Answer
 on:
   push:
     branches:
-      - feature/v1.1.56.6-manual-auto-apply
+      - fix/v1.1.56.7-manual-scroll-to-answer
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: v1.1.56.6-manual-auto-apply
+  group: v1.1.56.7-manual-scroll-to-answer
   cancel-in-progress: false
 jobs:
   package:
@@ -23,8 +23,8 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.6'
-          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.6'
+          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.7'
+          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.7'
           PY
       - name: Restore frozen Kiwi and Python runtime
         run: |
@@ -56,7 +56,7 @@ jobs:
                  and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
-          dest=root/'Korean-Web-Annotator-v1.1.56.6-manual-auto-apply.zip'
+          dest=root/'Korean-Web-Annotator-v1.1.56.7-manual-scroll-to-answer.zip'
           with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
               for p in sorted(files):
                   mode=zipfile.ZIP_STORED if p.suffix.lower()=='.mdl' else zipfile.ZIP_DEFLATED
@@ -68,14 +68,14 @@ jobs:
                       'choice-review.js','model-stream.js','manual-review.js',
                       'browser-worker.js','engine-page.js','runtime/models/cong.mdl']
               assert all('Korean-Web-Annotator/'+p in z.namelist() for p in needed)
-              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.6'
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.7'
           assert dest.stat().st_size>90_000_000,'Kiwi runtime missing'
           print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: extension-v1.1.56.6
-          path: Korean-Web-Annotator-v1.1.56.6-manual-auto-apply.zip
+          name: extension-v1.1.56.7
+          path: Korean-Web-Annotator-v1.1.56.7-manual-scroll-to-answer.zip
           compression-level: 0
           if-no-files-found: error
   windows-verify-publish:
@@ -84,7 +84,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: extension-v1.1.56.6
+          name: extension-v1.1.56.7
           path: artifact
       - name: Verify Windows Expand-Archive and 7-Zip
         shell: pwsh
@@ -98,7 +98,7 @@ jobs:
           $model=Get-ChildItem $dest -Recurse -Filter cong.mdl -File | Select-Object -First 1
           if(-not $manifest -or -not $model){throw 'Missing runtime files'}
           if($model.Length -ne 75854705){throw "Unexpected Kiwi runtime length: $($model.Length)"}
-          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.6'){throw 'Wrong manifest version'}
+          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.7'){throw 'Wrong manifest version'}
           $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
           if(Test-Path $sevenZip){& $sevenZip t $zip;if($LASTEXITCODE -ne 0){throw '7-Zip validation failed'}}
       - name: Publish distinct prerelease
@@ -107,12 +107,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.56.6-manual-auto-apply.1'
+          $tag='v1.1.56.7-manual-scroll-to-answer.1'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.6 — automatically apply manually pasted JSON answers' --prerelease --notes 'Based on v1.1.56.5: pasted or typed complete JSON in manual review triggers immediate automatic submission and validation without pressing the apply button. Partial JSON awaits completion, and validation errors keep the draft and controls available for automatic resubmission after edits or manual retry. Guard against duplicate submissions on repeated input/paste events, and keep manual input open until all batches have succeeded; only then auto-collapse while retaining text. Includes earlier long-idle recovery, per-frame undo/restore, and shared preload. Full ZIP Windows unpack verified.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.7 — auto-scroll manual review panel to JSON answer after prompt copy or download' --prerelease --notes 'Based on v1.1.56.6. After a user copies or downloads the manual LLM prompt, the plugin review panel itself smoothly scrolls to the JSON answer textarea if it overflows on a small screen, without moving the website or focusing the textarea (no keyboard). Keep clipboard fallback, TXT download, automatic input submission, idle recovery, per-frame undo/restore, and dictionary preload unchanged. Includes DOM regression tests and full ZIP Windows unpack validation.'
           }
           if($LASTEXITCODE -ne 0){throw 'Release publishing failed'}
