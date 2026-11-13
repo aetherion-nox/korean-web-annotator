@@ -67,11 +67,11 @@ test('never invent new origins for flagged proper names or incomplete source wor
 
 test('cross-batch, duplicate, extra fields and obsolete experimental arrays are rejected',()=>{
  for(const payload of [
-  {results:[{target_id:'foreign',choice_id:'原潛'}]},
-  {results:[{target_id:'t0',choice_id:'原潛'},{target_id:'t0',choice_id:'KEEP'}]},
-  {results:[{target_id:'t0',choice_id:'原潛',replacement:'evil'}]},
-  {results:[{target_id:'t0',choice_id:'x0'}],experimental_options:[]},
-  {results:[{target_id:'t0',choice_id:12}]}
+  {results:['原潛']},
+  {results:['原潛',null]},
+  {results:['原潛',replacement:'evil']},
+  {results:['x0'],experimental_options:[]},
+  {results:[12]}
  ]){
   assert.equal(validateExperimentalChoices([hanja],payload,{experimentalHanja:true}).accepted.length,0,JSON.stringify(payload));
  }
