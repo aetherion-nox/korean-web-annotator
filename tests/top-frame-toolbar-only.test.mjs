@@ -53,7 +53,12 @@ async function setup({topText='한국어 본문',childText='한국 정보',setti
   {url:'https://example.test/article',pretendToBeVisual:true});
  const top=dom.window;
  top.document.querySelector('#parent').textContent=topText;
- const child=top.document.querySelector('#recommendations').contentWindow;
+ const frame=top.document.querySelector('#recommendations');
+ // jsdom has no layout engine: give the iframe a realistic visible box.
+ // The production preflight correctly filters zero-size ad/tracker frames.
+ frame.getBoundingClientRect=()=>({x:0,y:0,width:640,height:300,
+  top:0,left:0,right:640,bottom:300});
+ const child=frame.contentWindow;
  child.document.body.innerHTML='<aside><p id="child"></p></aside>';
  child.document.querySelector('#child').textContent=childText;
  assert.notEqual(child.top,child,'the test must use a genuine nested window');
