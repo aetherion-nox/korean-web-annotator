@@ -42,7 +42,8 @@ test('manual review remaps raw choice_id to local target ID with no proposal arr
  assert.equal(request.budget.outputLimit,131072);
  const response={batch_id:request.requestId,results:[
   '原潛','n0']};
- assert.equal(session.submit({operationId:'manual',requestId:request.requestId,text:JSON.stringify(response)}),true);
+ assert.equal(session.submit({operationId:'manual',requestId:request.requestId,text:JSON.stringify(response)}),true,JSON.stringify(events.slice(-2)));
+
  const mapped=await pending;
  assert.deepEqual(mapped.results,['原潛','n0']);
  assert.ok(!('experimental_options' in mapped));
@@ -56,7 +57,7 @@ test('manual rejects unknown ID and old experimental array while allowing correc
  const submit=payload=>session.submit({operationId:'manual-bad',requestId:id,text:JSON.stringify({batch_id:id,...payload})});
  assert.equal(submit({results:['x0']}),false);
  assert.equal(submit({results:[{target_id:'t0',choice_id:'原潛'}]}),false);
- assert.equal(submit({results:['原潛']}),true);
+ assert.equal(submit({results:['原潛']}),true,JSON.stringify(events.slice(-2)));
  assert.equal((await pending).results[0],'原潛');
  assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_ERROR').length,2);
 });
