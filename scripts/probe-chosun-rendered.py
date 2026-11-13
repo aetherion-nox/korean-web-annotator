@@ -26,6 +26,17 @@ try:
   "title":soup.title.get_text(strip=True) if soup.title else "",
   "body_text_len":len(alltext),"body_tags":len(body.select("*")) if body else 0,
   "text_prefix":alltext[:300]},ensure_ascii=False),flush=True)
+ frames=soup.select("iframe,object,embed")
+ print("EMBEDDED_DOCUMENTS",len(frames),flush=True)
+ for i,frame in enumerate(frames):
+  fields={key:(" ".join(value) if isinstance(value,list) else str(value))[:400] for key,value in frame.attrs.items()}
+  parent=frame.parent
+  ancestors=[]
+  for _ in range(4):
+   if not getattr(parent,"name",None):break
+   ancestors.append({"tag":parent.name,"id":parent.attrs.get("id"),"class":parent.attrs.get("class",[])})
+   parent=parent.parent
+  print("EMBED",i,json.dumps({"tag":frame.name,"attrs":fields,"ancestors":ancestors},ensure_ascii=False),flush=True)
  nodes=[s for s in body.descendants if isinstance(s,NavigableString) and re.search(r"[가-힣]",str(s))] if body else []
  for term in ["오늘의 인기정보","많이 본 정보","인기정보","많이 본","오늘의 인기"]:
   print("RENDERED_TERM",term,"raw",html.count(term),"text",alltext.count(term),flush=True)
