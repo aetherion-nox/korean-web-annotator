@@ -33,6 +33,7 @@
   const history = [];
   const diagnostics = [];
   const recoveryBlocks = new Set();
+  const recoveryByElement = new WeakMap();
   const ownDomChanges = new WeakSet();
   const BLOCK_TAGS = 'p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption';
   let recoveryObserver = null;
@@ -68,25 +69,56 @@
     return JSON.stringify([sourceOf(block.previousElementSibling).text,sourceOf(block.nextElementSibling).text]);
   }
 
-  function recoveryAnchor(node) {
+  function recoveryAnchor(node,scanCache=null) {
     const element=node.parentElement?.closest(BLOCK_TAGS)||node.parentElement;
     if(!element||element.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball'))return null;
-    const identity=pageIdentity();if(recoveryPage!==null&&identity!==recoveryPage)resetRecovery();recoveryPage=identity;
-    const source=sourceOf(element),run=source.runs.find(r=>r.node===node);if(!run)return null;
+    const identity=scanCache?.identity??pageIdentity();
+    if(recoveryPage!==null&&identity!==recoveryPage)resetRecovery();
+    recoveryPage=identity;
+    let source=scanCache?.sources.get(element);
+    if(!source){
+      source=sourceOf(element);
+      source.runByNode=new Map(source.runs.map(run=>[run.node,run]));
+      scanCache?.sources.set(element,source);
+    }
+    const run=source.runByNode.get(node);
+    if(!run)return null;
     const scope=element.closest('[itemprop~="articleBody"],article,main')||document.body;
     const selector=scope.matches('[itemprop~="articleBody"]')?'[itemprop~="articleBody"]':scope.tagName.toLowerCase();
-    const scopeIndex=Array.from(document.querySelectorAll(selector)).indexOf(scope),context=recoveryContext(element);
-    let block=Array.from(recoveryBlocks).find(b=>b.element===element&&b.text===source.text);
+    let scopeIndex;
+    if(scanCache){
+      let positions=scanCache.scopePositions.get(selector);
+      if(!positions){
+        positions=new Map([...document.querySelectorAll(selector)].map((el,i)=>[el,i]));
+        scanCache.scopePositions.set(selector,positions);
+      }
+      scopeIndex=positions.get(scope)??-1;
+    }else scopeIndex=Array.from(document.querySelectorAll(selector)).indexOf(scope);
+    let context=scanCache?.contexts.get(element);
+    if(context===undefined){
+      context=recoveryContext(element);
+      scanCache?.contexts.set(element,context);
+    }
+    const tag=element.tagName.toLowerCase();
+    let block=recoveryByElement.get(element);
+    if(!block||!recoveryBlocks.has(block)||block.text!==source.text)block=null;
     if(!block){
-      const previous=Array.from(recoveryBlocks).filter(b=>!b.element.isConnected&&b.text===source.text&&b.context===context&&b.tag===element.tagName.toLowerCase()&&b.selector===selector&&b.scopeIndex===scopeIndex);
+      const key=JSON.stringify([source.text,context,tag,selector,scopeIndex]);
+      const candidates=scanCache?.detachedByKey?.get(key)||
+        [...recoveryBlocks].filter(b=>!b.element.isConnected&&
+          b.text===source.text&&b.context===context&&b.tag===tag&&
+          b.selector===selector&&b.scopeIndex===scopeIndex);
+      const previous=candidates.filter(b=>!b.element.isConnected);
       if(previous.length===1){block=previous[0];block.element=element;block.scope=scope;}
       else if(previous.length>1)for(const stale of previous)stale.annotations.clear();
     }
     if(!block){
       if(recoveryBlocks.size>=MAX_RECOVERY_BLOCKS)return null;
-      block={element,text:source.text,context,tag:element.tagName.toLowerCase(),scope,selector,scopeIndex,annotations:new Map()};recoveryBlocks.add(block);
+      block={element,text:source.text,context,tag,scope,selector,scopeIndex,annotations:new Map()};
+      recoveryBlocks.add(block);
     }
     block.context=context;
+    recoveryByElement.set(element,block);
     return {block,start:run.start};
   }
 
