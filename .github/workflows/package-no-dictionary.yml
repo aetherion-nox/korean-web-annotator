@@ -1,4 +1,4 @@
-name: Verify and Package Unified Cross-Frame Review Batches v10
+name: Verify and Package Unified Cross-Frame Review Batches v10 (final regression)
 on:
   push:
     branches:
@@ -104,7 +104,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.55.4-merged-frame-review-compatible.1'
+          $tag='v1.1.55.4-merged-frame-review-compatible.2'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
