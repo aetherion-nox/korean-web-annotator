@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.55.4-primary-toolbar-only';
+const CONTENT_SCRIPT_VERSION = '1.1.56.0-positional-null';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
