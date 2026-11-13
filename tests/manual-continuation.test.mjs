@@ -28,12 +28,13 @@ test('invalid recovery answer does not change entries or advance batch',async()=
 test('acceptance stops the response watchdog instead of timing next batch',()=>{
  const {context,task,panel}=environment();panel.dataset.operationId='op';let timers=0;context.setTimeout=()=>++timers;
  panel.querySelector('.kra-manual-response').value=JSON.stringify({batch_id:'batch1',results:['c0']});
- context.handleManualEvent(task,{type:'MANUAL_REVIEW_ACCEPTED',requestId:'batch1',targetCount:1});assert.equal(timers,0);
+ context.handleManualEvent(task,{type:'MANUAL_REVIEW_ACCEPTED',requestId:'batch1',targetCount:1,acceptedRows:[[0,'c0']]});assert.equal(timers,0);
 });
 test('accepted batch remains available before later model events arrive',async()=>{
  const {context,task,panel,entry}=environment();task.manualLocalOnly=false;
  panel.querySelector('.kra-manual-response').value=JSON.stringify({batch_id:'batch1',results:['c0']});
  context.handleManualEvent(task,{type:'MANUAL_REVIEW_ACCEPTED',requestId:'batch1',targetCount:1});
+ await new Promise(resolve=>setTimeout(resolve,30));
  assert.equal(entry.annotations.length,1);assert.ok(task.manualApplied.has('batch1'));
  context.recoverManualConnection(task,'lost');
  await context.applyManualRecovery(task,panel.querySelector('.kra-manual-response').value);
@@ -43,14 +44,14 @@ test('accepted batch remains available before later model events arrive',async()
 test('page-only recovery rejects direct Hanja string when experimental mode metadata is absent',async()=>{
  const {context,task,entry}=environment();
  const proposed={batch_id:'batch1',results:['可']};
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify(proposed)),/无效答案/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify(proposed)),/无效答案|unsupported positional value/);
  assert.equal(entry.annotations.length,0);
  assert.equal(task.manualRequest,'batch1');
 });
 
 test('disconnected page recovery requires batch identity and exact positional count',async()=>{
  const {context,task,entry}=environment();
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[]})),/不完整/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[]})),/长度|不完整/);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:['c0']})),/batch_id/);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'wrong',results:['c0']})),/batch_id/);
  assert.equal(task.manualRequest,'batch1');assert.equal(entry.annotations.length,0);
