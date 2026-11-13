@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.9-multistep-undo-redo';
+  const VERSION = '1.1.56.10-dynamic-comment-hydration';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -27,6 +27,11 @@
   let hangulVisibilityTimer = null;
   let automaticObserver = null;
   let automaticTimer = null;
+  // One bounded event-triggered pass for content loaded after an explicit
+  // whole-page run; continuous future scanning remains opt-in.
+  let hydrationGraceObserver = null;
+  let hydrationGraceTimer = null;
+  let hydrationGraceDeadline = null;
   const seenSources = new Set(); // legacy session bookkeeping; NOT a deduplication key
   const analyzedNodeVersions = new WeakMap();
   let lastScanStats = null;
@@ -436,6 +441,78 @@
     panel.append(close,list);document.body.append(panel);
   }
 
+  function hasFreshHangul(node) {
+    if(!node)return false;
+    const excluded='ruby,script,style,noscript,input,textarea,select,'+
+      '.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
+      '.kra-floating-ball,.kra-manual-reopen,[contenteditable="true"]';
+    const eligible=textNode=>textNode?.nodeType===3&&
+      /[가-힣]/u.test(textNode.data||'')&&
+      !textNode.parentElement?.closest?.(excluded);
+    if(node.nodeType===3)return eligible(node);
+    if(node.nodeType!==1&&node.nodeType!==11&&node.nodeType!==9)return false;
+    if(node.nodeType===1&&node.closest?.(excluded))return false;
+    if(!/[가-힣]/u.test(node.textContent||''))return false;
+    // Fast path for common comment text insertions. An ancestor may contain
+    // old extension rubies AND new Korean nodes; never discard it wholesale.
+    if(!node.querySelector?.('ruby')&&!node.closest?.('ruby'))return true;
+    const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);
+    let current;
+    while((current=walker.nextNode()))if(eligible(current))return true;
+    return false;
+  }
+
+  function relevantKoreanMutation(record) {
+    if(isOwnMutation(record))return false;
+    const parent=record.target.nodeType===1?record.target:record.target.parentElement;
+    if(parent?.closest?.('ruby,.kra-mobile-selection-bar,.kra-diagnostics,'+
+       '.kra-manual-review,.kra-floating-ball,.kra-manual-reopen,script,style'))return false;
+    if(record.type==='attributes')return hasFreshHangul(record.target);
+    if(record.type==='characterData')return hasFreshHangul(record.target);
+    return Array.from(record.addedNodes||[]).some(hasFreshHangul);
+  }
+
+  function stopHydrationGrace(){
+    hydrationGraceObserver?.disconnect();hydrationGraceObserver=null;
+    clearTimeout(hydrationGraceTimer);hydrationGraceTimer=null;
+    clearTimeout(hydrationGraceDeadline);hydrationGraceDeadline=null;
+  }
+
+  function startHydrationGrace(task){
+    stopHydrationGrace();
+    if(!task.wholePage||task.startedAutomatically||task.manualPanelShown||
+       uiSettings.stopAutoAfterPageComplete===false||!document.body)return;
+    const generation=sequence,originalUrl=task.startPageUrl;
+    const check=()=>{
+      hydrationGraceTimer=null;
+      if(sequence!==generation||!pageCompleted||location.href!==originalUrl){
+        stopHydrationGrace();return;
+      }
+      if(currentTask)return; // Still analyzing; the observer can retry on completion.
+      const unseen=collectTextNodes(null,false,true,false);
+      if(!unseen.size)return;
+      addDiagnostic({stage:'scan',level:'info',
+        message:`整页标注后的异步内容补扫：发现 ${unseen.size} 个新增韩文文本节点（仅补扫一次）。`,
+        detail:JSON.stringify({late_nodes:unseen.size,source:'hydration-grace'})});
+      stopHydrationGrace();
+      startAnnotation({automatic:true,modes:task.modes});
+    };
+    const schedule=(delay=450)=>{
+      if(hydrationGraceTimer!==null)return;
+      hydrationGraceTimer=setTimeout(check,delay);
+    };
+    hydrationGraceObserver=new MutationObserver(records=>{
+      if(records.some(relevantKoreanMutation))schedule();
+    });
+    hydrationGraceObserver.observe(document.body,{subtree:true,childList:true,
+      characterData:true,attributes:true,
+      attributeFilter:['class','style','hidden','aria-hidden','inert','open']});
+    // Keep the existing one-time settling scan, plus a bounded response to
+    // later comments inserted while the user first scrolls the article.
+    schedule(1200);
+    hydrationGraceDeadline=setTimeout(stopHydrationGrace,15000);
+  }
+
   function configureAutomaticAnnotation() {
     if(automaticObserver){automaticObserver.disconnect();automaticObserver=null;}
     clearTimeout(automaticTimer);
@@ -453,20 +530,7 @@
     automaticObserver=new MutationObserver(records=>{
       // New open shadow hosts can appear after observer setup.
       if(records.some(record=>record.type==='childList'))observeOpenShadows();
-      const relevant=records.some(record=>{
-        if(isOwnMutation(record))return false;
-        const parent=record.target.nodeType===1?record.target:record.target.parentElement;
-        if(parent?.closest?.('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
-           '.kra-floating-ball,.kra-manual-reopen,script,style'))return false;
-        if(record.type==='attributes'){
-          // A hidden tab can become visible without any text-node mutation.
-          // Trigger a scan only if its subtree actually contains Hangul.
-          return /[가-힣]/u.test(record.target.textContent||'');
-        }
-        const nodes=record.type==='characterData'?[record.target]:Array.from(record.addedNodes);
-        return nodes.some(node=>!node.matches?.(OWN_RUBY)&&!node.querySelector?.(OWN_RUBY)&&
-          /[가-힣]/u.test(node.textContent||''));
-      });
+      const relevant=records.some(relevantKoreanMutation);
       if(!relevant)return;
       clearTimeout(automaticTimer);
       automaticTimer=setTimeout(()=>{
@@ -1692,6 +1756,7 @@
 
   function restorePage() {
     resetRecovery();
+    stopHydrationGrace();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();history.length=0;redoStack.length=0;seenSources.clear();
     // A full restore removes extension rubies in THIS frame, including
     // open Shadow DOM. The tab coordinator calls every accessible frame.
@@ -1727,6 +1792,7 @@
     if(!operation)return {ok:false,error:'没有可撤销的标注'};
     if(groupId!==null&&operation.groupId!==groupId)
       return {ok:false,skipped:true,error:'其他框架的历史步骤不属于本次撤销'};
+    stopHydrationGrace();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
     if(history.at(-1)!==operation)
       return {ok:false,error:'任务刚刚写入新结果，请再次点击撤销最新的步骤。'};
@@ -1763,6 +1829,7 @@
     if(!operation)return {ok:false,error:'没有可重做的标注'};
     if(groupId!==null&&operation.groupId!==groupId)
       return {ok:false,skipped:true,error:'其他框架的历史步骤不属于本次重做'};
+    stopHydrationGrace();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
     if(redoStack.at(-1)!==operation)
       return {ok:false,error:'期间有新的标注完成，不能再重做旧步骤。'};
@@ -1809,6 +1876,7 @@
     }
     const modes = { hanja: message.modes?.hanja ?? true, loanword: message.modes?.loanword ?? true };
     if (!modes.hanja && !modes.loanword) return { ok: false, error: '请至少启用一种标注模式。' };
+    stopHydrationGrace();
     cancelTask();
     const oldManual=document.querySelector('.kra-manual-review');if(oldManual){oldManual.hidden=true;delete oldManual.dataset.operationId;}
     const oldReopen=document.querySelector('.kra-manual-reopen');if(oldReopen)oldReopen.hidden=true;
@@ -1977,23 +2045,10 @@
       finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`,true);
       configureRecovery();
       if(!ranges)pageCompleted=true;configureAutomaticAnnotation();
-      // Catch sections hydrated during the original analysis (or just after
-      // it) without enabling unlimited post-completion model requests.
-      // The user's "stop after page complete" setting still controls
-      // CONTINUOUS future monitoring; this is one bounded settling pass.
-      if(!ranges&&!task.mergedGroup&&!task.startedAutomatically&&!task.manualPanelShown&&
-         uiSettings.stopAutoAfterPageComplete!==false){
-        const generation=sequence,originalUrl=task.startPageUrl;
-        setTimeout(()=>{
-          if(sequence!==generation||!pageCompleted||currentTask||location.href!==originalUrl)return;
-          const unseen=collectTextNodes(null,false,true,false);
-          if(!unseen.size)return;
-          addDiagnostic({stage:'scan',level:'info',
-            message:`页面初次标注后的异步加载补扫：新发现 ${unseen.size} 个韩文文本节点，仅补扫一次。`,
-            detail:JSON.stringify({late_nodes:unseen.size,source:'hydration-grace'})});
-          startAnnotation({automatic:true,modes:task.modes});
-        },1200);
-      }
+      // Runs for normal AND merged multi-frame page operations. Manual
+      // reviews do not open unexpected extra prompts; continuous monitoring
+      // remains governed by its separate opt-in setting.
+      if(!ranges)startHydrationGrace(task);
       addDiagnostic({message:`完成：${count} 个标注`,detail:JSON.stringify(result.stats||{})});
       publishState();
     });
