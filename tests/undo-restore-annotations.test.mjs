@@ -15,7 +15,7 @@ function fixture(html='<main><p id="p"><ruby class="kra-ruby" kra-annotated="tru
   currentTask:null,console,
   rememberRecovery:undefined,
   configureRecovery(){events.push('recovery')},
-  configureAutomaticAnnotation(){},restoreKnownAnnotations(){},
+  configureAutomaticAnnotation(){},stopHydrationGrace(){},restoreKnownAnnotations(){},
   cancelTask(){events.push('cancel')},
   status(value){events.push(value)},
   publishState(){},refreshTabHistoryCounter(){},send(){},resetRecovery(){blocks.clear()},
