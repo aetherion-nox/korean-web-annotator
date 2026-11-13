@@ -1,4 +1,4 @@
-name: Verify and Package Frame-Aware Full-Page Annotation v9
+name: Verify and Package Frame-Aware Full-Page Annotation v9 (regression rerun)
 on:
   push:
     branches:
@@ -46,7 +46,7 @@ jobs:
           from pathlib import Path
           root=Path.cwd()
           tracked=[Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if p]
-          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests'}
+          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests','scripts'}
                  and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
