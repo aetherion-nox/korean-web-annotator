@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.55.4-multiframe';
+  const VERSION = '1.1.55.4-primary-toolbar-only';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -778,7 +778,15 @@
     toolbar.setAttribute('role', 'toolbar');
     toolbar.setAttribute('aria-label', '韩语网页标注');
     toolbar.innerHTML = '<div class="kra-task-status"><span class="kra-task-label" role="status">准备标注</span><progress class="kra-task-progress" max="100" value="0"></progress></div><div class="kra-mobile-actions"><button class="kra-mobile-page" type="button">标注整页</button><button class="kra-mobile-primary" type="button">重新标注选区</button><button class="kra-mobile-review" type="button">模型重审选区</button><button class="kra-manual-open" type="button" hidden>手动审核</button><button class="kra-mobile-undo" type="button">撤销</button><button class="kra-diagnostic-button" type="button">诊断</button><button class="kra-mobile-restore" type="button">还原</button><button class="kra-mobile-close" type="button" aria-label="关闭">×</button></div>';
-    toolbar.querySelector('.kra-mobile-page').addEventListener('click', () => startAnnotation({ modes: { hanja: uiSettings.hanjaMode ?? true, loanword: uiSettings.loanwordMode ?? true } }));
+    // The main toolbar and popup must share the same multi-frame coordinator.
+    // Direct startAnnotation() here would silently revert to main-frame-only.
+    toolbar.querySelector('.kra-mobile-page').addEventListener('click', () => {
+      void send({type:'KRA_START_PAGE_FROM_TOOLBAR',
+        modes:{hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true},
+        uiSettings,forceRegenerate:false}).then(reply=>{
+        if(!reply?.ok)status(reply?.error||'整页跨框架标注启动失败',0);
+      });
+    });
     for(const button of toolbar.querySelectorAll('button'))button.addEventListener('pointerdown',event=>event.preventDefault());
     toolbar.querySelector('.kra-mobile-primary').addEventListener('click',()=>startSelection(false));
     toolbar.querySelector('.kra-mobile-review').addEventListener('click',()=>startSelection(true));
