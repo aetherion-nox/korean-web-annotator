@@ -34,7 +34,7 @@ function createFixture(){
       selectNode(node){if(!node?.parentNode)throw new Error('Failed to execute selectNode: the given Node has no parent');selected.push(node);},
       createContextualFragment(html){const child=makeNode(html);return {childNodes:[child],querySelectorAll(){return [{}];}};}
     };}},
-    rememberRecovery(){},conversionHTML(entry){return 'converted:'+entry.annotations[0]?.replacement;},
+    rememberRecovery(){},findRepaintedTextNode(){return null},conversionHTML(entry){return 'converted:'+entry.annotations[0]?.replacement;},
     ownDomChanges:new WeakSet(),seenSources:new Set(),OWN_RUBY:'ruby[kra-annotated="true"]'
   };
   vm.createContext(context);
