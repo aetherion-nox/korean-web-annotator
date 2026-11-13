@@ -10,7 +10,8 @@ export function createUnifiedManualQueue(deliver){
   const tab=tabs.get(tabId);
   if(!tab||tab.active||!tab.pending.length)return;
   tab.active=tab.pending.shift();
-  void Promise.resolve().then(()=>deliver(tab.active,tab.active.request)).catch(()=>{});
+  const next=tab.active;
+  void Promise.resolve().then(()=>deliver(next,next.request)).catch(()=>{});
  }
  function hasSame(item,other){return item.port===other.port&&item.operationId===other.operationId;}
  function submit(item,event){
