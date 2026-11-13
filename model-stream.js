@@ -1,33 +1,63 @@
 import {literalOriginOption} from './experimental-options.js';
-// Protocol-specific SSE envelopes share one byte/framing reader. Reasoning is
-// retained only in the opt-in log, never parsed as dictionary choices.
+import {choiceFromValue} from './positional-results.js';
+// Protocol-specific SSE envelopes share one byte/framing reader.
 function streamError(message,detail=''){const e=Error(message);e.detail=detail;return e;}
-export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null){
- const known=new Map(targets.map(t=>[t.target_id,t]));
- let text='',position=0,array=false,start=-1,depth=0,string=false,escape=false,invalid=false;
- const rows=[];
+
+// Stream only fully parsed positional entries. Never guess an index from an
+// object-row or shifted partial result, and never preview a different batch ID.
+export function choicePreviewParser(targets,onPreview,batchId,resolveExtra=()=>null){
+ let text='',started=false,offset=0,index=0,quoted=false,escaped=false;
+ let closed=false,invalid=false;
+ const accepted=[];
  return chunk=>{
+  if(closed||invalid||!chunk)return;
   text+=chunk;
-  if(!array){const prefix=/^\s*(?:```(?:json)?\s*)?\{\s*"results"\s*:\s*\[/i.exec(text);if(!prefix)return;position=prefix[0].length;array=true;}
-  let changed=false;
-  for(;position<text.length;position++){
-   const c=text[position];
-   if(string){if(escape)escape=false;else if(c==='\\')escape=true;else if(c==='"')string=false;continue;}
-   if(c==='"'){string=true;continue;}
-   if(c==='{'){if(depth===0)start=position;depth++;}
-   else if(c==='}'&&depth){depth--;if(depth===0){
-    let row;try{row=JSON.parse(text.slice(start,position+1));}catch{invalid=true;}
-    if(!row||!known.has(row.target_id)||rows.some(r=>r.target_id===row.target_id))invalid=true;
-    if(row)rows.push(row);changed=true;
-   }}else if(c===']'&&depth===0){position=text.length;break;}
+  if(!started){
+   const prefix=/^\s*(?:```(?:json)?\s*)?\{\s*"batch_id"\s*:\s*"([^"]+)"\s*,\s*"results"\s*:\s*\[/i.exec(text);
+   if(!prefix)return;
+   if(!batchId||prefix[1]!==batchId){invalid=true;onPreview([]);return;}
+   started=true;offset=prefix[0].length;
   }
-  if(changed){const accepted=invalid?[]:rows.flatMap(row=>{const target=known.get(row.target_id),option=target?.options.find(o=>o.choice_id===row.choice_id)||resolveExtra(target,row.choice_id);return option?[{target,option}]:[];});onPreview(accepted);}
+  let begin=offset;
+  for(let j=offset;j<text.length;j++){
+   const c=text[j];
+   if(quoted){
+    if(escaped)escaped=false;
+    else if(c==='\\')escaped=true;
+    else if(c==='"')quoted=false;
+    continue;
+   }
+   if(c==='"'){quoted=true;continue;}
+   if(c!==','&&c!==']')continue;
+   const raw=text.slice(begin,j).trim();
+   if(!raw){if(c===']'&&index===0){closed=true;offset=j+1;break;}invalid=true;break;}
+   let value;
+   try{value=JSON.parse(raw);}
+   catch{invalid=true;break;}
+   if(index>=targets.length||!(
+      value===null||value===false||(typeof value==='string'&&value.length<=180&&value.length>0)
+   )){invalid=true;break;}
+   const target=targets[index];
+   if(value!==false){
+    const option=choiceFromValue(target,value,{},
+     (t,v)=>resolveExtra(t,v));
+    if(option)accepted.push({target,option});
+   }
+   index++;
+   begin=j+1;
+   if(c===']'){closed=true;break;}
+  }
+  if(invalid){onPreview([]);return;}
+  if(accepted.length)onPreview([...accepted]);
+  // Consume only fully separated values, retaining the incomplete string.
+  offset=begin;
+  text=text.slice(offset);offset=0;
+  if(closed&&index!==targets.length)onPreview([]);
  };
 }
-// A literal etymology uses the same results[] streaming path as an existing
-// choice_id. Validate each *complete* row locally before provisional display.
 export function experimentalChoicePreviewParser(targets,config,onPreview){
- return choicePreviewParser(targets,onPreview,(target,id)=>literalOriginOption(target,id,config));
+ return choicePreviewParser(targets,onPreview,config.batchId,
+  (target,value)=>literalOriginOption(target,value,config));
 }
 
 export async function readModelContent(response,{protocol='chat',signal,onStarted=()=>{},onDelta=()=>{},onRaw=()=>{},onMetadata=()=>{},maxContentChars=2_000_000}={}){
