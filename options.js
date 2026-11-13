@@ -374,8 +374,10 @@ async function readFormForSave(requireUsableKey = false) {
 async function requestEndpointPermission(endpoint) {
   const url = new URL(endpoint);
   const originPattern = `${url.protocol}//${url.hostname}/*`;
-  const granted = await chrome.permissions.request({ origins:[originPattern] });
-  if (!granted) throw new Error(t('permissionDenied'));
+  // v1.1.56.2 requests web hosts in the manifest for cross-origin frames.
+  // No optional permission prompt is necessary or valid for these hosts.
+  const granted = await chrome.permissions.contains({origins:[originPattern]});
+  if (!granted) throw new Error(t('permissionDenied')+' 请在浏览器的扩展详情中允许此扩展访问该网站。');
 }
 
 async function saveConfig(config) {
