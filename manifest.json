@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Korean Hanja & Loanword Annotator",
-  "version": "1.1.56.1",
+  "version": "1.1.56.2",
   "description": "Dictionary-based Korean Hanja and loanword annotations entirely in your browser, with optional model review.",
   "permissions": [
     "activeTab",
@@ -12,11 +12,6 @@
     "offscreen",
     "unlimitedStorage",
     "clipboardWrite"
-  ],
-  "optional_host_permissions": [
-    "https://*/*",
-    "http://localhost/*",
-    "http://127.0.0.1/*"
   ],
   "background": {
     "service_worker": "service-worker.js",
@@ -72,5 +67,9 @@
         "<all_urls>"
       ]
     }
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ]
 }
