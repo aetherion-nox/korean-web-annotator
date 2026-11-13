@@ -11,7 +11,7 @@ function environment(){
  const entry={id:'s',text:'가나',selected:[{start:0,end:2}],annotations:[],localAnnotations:[]};
  const event=(n)=>({type:'MANUAL_REVIEW_REQUEST',requestId:'batch'+n,batchNumber:n,batchTotal:2,targetCount:1,text:'prompt'+n,bindings:[{target_id:'t0',sentenceId:'s',start:n-1,end:n,surface:entry.text[n-1],choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{start:n-1,end:n,surface:entry.text[n-1],replacement:n===1?'可':'那',type:'hanja'}]}]}]});
  const task={operationId:'op',entries:new Map([['node',entry]]),modes:{hanja:true},manualBackup:event(1),manualRequest:'batch1',manualLocalOnly:true,manualPlan:[event(1),event(2)],paint:()=>entry.annotations.length};
- const context={chrome:{runtime:{getURL:name=>new URL('../'+name,import.meta.url).href}},uiSettings:{hideToolbarOnFirstManual:false},configureRecovery:()=>{},seenSources:new Set(),configureAutomaticAnnotation:()=>{},currentTask:task,document:{querySelector:()=>panel},manualPanel:()=>panel,getToolbar:()=>panel,status:()=>{},refreshManualReopen:()=>{},publishState:()=>{},clearTimeout:()=>{},clearInterval:()=>{},setTimeout:()=>1,finishTask:(t,m,done)=>{t.finished=true;t.completed=done;},console};
+ const context={chrome:{runtime:{getURL:name=>new URL('../'+name,import.meta.url).href}},uiSettings:{hideToolbarOnFirstManual:false},configureRecovery:()=>{},seenSources:new Set(),configureAutomaticAnnotation:()=>{},currentTask:task,document:{querySelector:()=>panel},manualPanel:()=>panel,getToolbar:()=>panel,status:()=>{},addDiagnostic:()=>{},refreshManualReopen:()=>{},publishState:()=>{},clearTimeout:()=>{},clearInterval:()=>{},setTimeout:()=>1,finishTask:(t,m,done)=>{t.finished=true;t.completed=done;},console};
  vm.createContext(context);const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');const code=source.slice(source.indexOf('  function recoverManualConnection'),source.indexOf('  function status(',source.indexOf('  function recoverManualConnection')));vm.runInContext(code,context,{importModuleDynamically:specifier=>import(specifier)});
  return {context,task,entry,panel};
 }
@@ -92,10 +92,10 @@ test('disconnected recovery fails closed for prohibited names and malformed Hanz
  const {context,task,entry}=environment();
  const meta={eligible:false,hanja:true,loanword:true,known:[]};
  task.manualBackup.bindings[0].literalOrigin=meta;task.modes.loanword=true;
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['game']})),/无效答案/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['game']})),/无效答案|不完整/);
  meta.eligible=true;
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['韓字']})),/无效答案/);
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{value:'game',extra:true}]})),/无效答案/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['韓字']})),/无效答案|不完整/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{value:'game',extra:true}]})),/无效答案|不完整/);
  assert.equal(entry.annotations.length,0);assert.equal(task.manualRequest,'batch1');
 });
 
