@@ -143,7 +143,7 @@ async function requestChoices(config,targets,signal){
   {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
  if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
  const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
- const outputTokenLimit=normalizeOutputTokenLimit(config.batchBudget?.outputLimit??config.apiOutputTokenLimit,false);
+ const outputTokenLimit=normalizeOutputTokenLimit(config.batchBudget?.reservedOutputTokens??config.apiOutputTokenLimit,false);
  if(responses){
   const {messages,reasoning_effort}=body;
   body={model:config.model,input:messages,store:false,
