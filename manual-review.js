@@ -164,7 +164,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
     for(const [index,value] of parsed.values){
      const target=current.wireTargets[index],id=target.target_id;
      if(retired.has(id)||current.smartSegmentation&&target.scan_only||current.acceptedRows.has(id))continue;
-     const chosen=choiceFromValue(target,value,choicesConfig,
+     const chosen=choiceFromValue(filterReviewTarget(target,choicesConfig),value,choicesConfig,
        experimental?literalOriginOption:()=>null);
      if(!chosen){
       reasons.set(id,'无效位置答案：'+JSON.stringify(value)+'；'+
