@@ -36,7 +36,7 @@ test('one real pipeline and API request handle both article and iframe, with uni
      apiRequests++;
      assert.equal(targets.length,2);
      assert.equal(new Set(targets.map(t=>t.target_id)).size,2);
-     return {results:targets.map(t=>({target_id:t.target_id,choice_id:'c0'}))};
+     return {results:targets.map(t=>('c0'))};
     }
    })
   })
@@ -79,7 +79,7 @@ test('one real manual batch across frames and shared-pool candidate IDs; only ma
  assert.ok(request.text.includes('한국 뉴스'));
  assert.equal(ports[1].events.some(e=>e.type==='MANUAL_REVIEW_REQUEST'),false);
  const answer={batch_id:request.requestId,
-  results:request.bindings.map(b=>({target_id:b.target_id,choice_id:'c0'}))};
+  results:request.bindings.map(b=>('c0'))};
  assert.equal(manager.respond('shared-manual',{port:ports[0]},{
   type:'MANUAL_REVIEW_RESPONSE',operationId:'op0',requestId:request.requestId,
   text:JSON.stringify(answer)}),true);
