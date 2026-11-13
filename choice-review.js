@@ -7,43 +7,50 @@ import {buildReviewPayload,buildReviewInstructions} from './review-payload.js';
 import {literalOriginOption,explainLiteralOriginRejection} from './experimental-options.js';
 import {validateSegmentationRepairs} from './segmentation-repairs.js';
 import {normalizeOutputTokenLimit} from './batch-budget.js';
-export function validateChoices(targets,response,config={}) {
- const accepted=[],unresolved=[];
- const rows=Array.isArray(response?.results)?response.results:[];
- const known=new Set(targets.map(t=>t.target_id));
- // Cross-task/unknown IDs invalidate the entire response.
- const invalid=rows.some(r=>!r || !known.has(r.target_id));
- for(const target of targets){
-  const matches=rows.filter(r=>r?.target_id===target.target_id);
-  const option=matches.length===1 && filterReviewTarget(target,config).options.find(o=>o.choice_id===matches[0].choice_id);
-  if(!invalid && option) accepted.push({target,option}); else unresolved.push(target);
- }
- return {accepted,unresolved};
-}
-export function validateExperimentalChoices(targets,response,config={}){
- // Enforce one response array, and reject previous x0/external-list protocol.
- if(!response||!Array.isArray(response.results)||Object.prototype.hasOwnProperty.call(response,'experimental_options'))
-  return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:0};
- const rows=response.results,known=new Set(targets.map(t=>t.target_id));
- const invalid=rows.some(row=>!row||typeof row.target_id!=='string'||!known.has(row.target_id)||
-  typeof row.choice_id!=='string'||Object.keys(row).sort().join(',')!=='choice_id,target_id');
- if(invalid)return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:rows.length};
+import {parsePositionalResults,choiceFromValue} from './positional-results.js';
+// Only positional-v1 values, never object rows keyed by target_id.
+function validatePositional(targets,response,config={},experimental=false){
+ const parsed=parsePositionalResults(targets,response,{
+  allowPartial:false,retired:config.retired||new Set(),
+  smartSegmentation:config.smartSegmentation===true
+ });
+ if(parsed.malformed)return {accepted:[],unresolved:targets,
+  experimentalAccepted:0,experimentalProposed:0,experimentalRejected:0,
+  positionalMalformed:true};
  const accepted=[],unresolved=[];let experimentalAccepted=0,experimentalRejected=0;
  const rejectionCounts={},rejectionSamples=[];
- for(const target of targets){
-  const matches=rows.filter(row=>row.target_id===target.target_id);
-  if(matches.length!==1){unresolved.push(target);continue;}
-  const id=matches[0].choice_id;
-  const option=filterReviewTarget(target,config).options.find(o=>o.choice_id===id);
-  if(option){accepted.push({target,option});continue;}
-  const generated=literalOriginOption(target,id,config);
-  if(generated){accepted.push({target,option:generated});experimentalAccepted++;}
-  else{unresolved.push(target);experimentalRejected++;
-    const reason=explainLiteralOriginRejection(target,id,config);
+ for(let i=0;i<targets.length;i++){
+  const target=targets[i],value=parsed.values.get(i);
+  if(config.smartSegmentation===true&&
+     (config.retired?.has(target.target_id)||target.scan_only===true))continue;
+  if(!parsed.values.has(i)||parsed.problems.has(i)||value===false){
+   unresolved.push(target);continue;
+  }
+  const option=choiceFromValue(target,value,config,experimental?literalOriginOption:()=>null);
+  if(option){
+   accepted.push({target,option});
+   if(experimental&&option.entry_id&&String(option.entry_id).startsWith('experimental:'))
+     experimentalAccepted++;
+  }else{
+   unresolved.push(target);
+   if(experimental){
+    experimentalRejected++;
+    const reason=explainLiteralOriginRejection(target,value,config);
     rejectionCounts[reason]=(rejectionCounts[reason]||0)+1;
-    if(rejectionSamples.length<16)rejectionSamples.push({target_id:target.target_id,surface:target.surface,choice_id:id,reason});}
+    if(rejectionSamples.length<16)rejectionSamples.push({
+     target_id:target.target_id,surface:target.surface,value,reason
+    });
+   }
+  }
  }
- return {accepted,unresolved,experimentalAccepted,experimentalProposed:experimentalAccepted,experimentalRejected,rejectionCounts,rejectionSamples};
+ return {accepted,unresolved,experimentalAccepted,experimentalProposed:experimentalAccepted,
+  experimentalRejected,rejectionCounts,rejectionSamples};
+}
+export function validateChoices(targets,response,config={}){
+ return validatePositional(targets,response,config,false);
+}
+export function validateExperimentalChoices(targets,response,config={}){
+ return validatePositional(targets,response,config,true);
 }
 export function thinkingSettings(config){
  const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
@@ -91,18 +98,10 @@ export async function reviewTargets(config,targets,signal){
    const repair=config.smartSegmentation===true?
      validateSegmentationRepairs(wire,response,config):{accepted:[],rejected:[]};
    const retired=new Set(repair.accepted.flatMap(r=>r.old_target_ids));
-   const active=config.smartSegmentation===true?
-     current.filter(t=>!t.scan_only&&!retired.has(t.target_id)):current;
-   const known=new Set(current.map(t=>t.target_id));
-   const badId=config.smartSegmentation===true&&
-     (!Array.isArray(response?.results)||response.results.some(row=>
-       !row||typeof row.target_id!=='string'||!known.has(row.target_id)));
-   const choiceResponse=config.smartSegmentation===true&&!badId?
-     {...response,results:response.results.filter(row=>!retired.has(row.target_id)&&
-       !current.some(t=>t.scan_only&&t.target_id===row.target_id))}:response;
-   const result=badId?
-     {accepted:[],unresolved:active,experimentalAccepted:0,experimentalRejected:0}:
-     experimental?validateExperimentalChoices(active,choiceResponse,config):validateChoices(active,choiceResponse,config);
+   const validatorConfig={...config,retired};
+   const result=experimental?
+     validateExperimentalChoices(current,response,validatorConfig):
+     validateChoices(current,response,validatorConfig);
    accepted.push(...result.accepted);pending=result.unresolved;config.onAccepted?.(result.accepted);
    if(config.smartSegmentation===true){
     config.onRepairs?.(repair.accepted);
@@ -133,10 +132,14 @@ async function requestChoices(config,targets,signal){
  const native=provider==='openai'||provider==='anthropic';
  const timeout=AbortSignal.timeout(config.timeoutMs || (native||provider==='qwen'?120000:20000));
  const requestSignal=signal?AbortSignal.any([signal,timeout]):timeout;
- const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets,config);
+ // Each API request has an independently verified batch identifier. A model
+ // answer for another page/batch cannot be applied merely because lengths fit.
+ const batchId=crypto.randomUUID();
+ const requestConfig={...config,batchId};
+ const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets,requestConfig);
  config.onDiagnostic?.({stage:'request',level:'info',message:`共享请求：${payloadStats.targets} 个词，${payloadStats.sentences} 份句子，${payloadStats.candidates} 个候选；用户输入 ${payloadStats.legacyUserBytes} → ${payloadStats.userBytes} 字节。`});
  let body={model:config.model,messages:[
-  {role:'system',content:buildReviewInstructions(config)},
+  {role:'system',content:buildReviewInstructions(requestConfig)},
   {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
  if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
  const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
@@ -170,11 +173,17 @@ async function requestChoices(config,targets,signal){
   status=response.status;responseHeaders=Object.fromEntries(['content-type','x-request-id','request-id','retry-after'].map(name=>[name,response.headers.get(name)]).filter(([,v])=>v));
   if(!response.ok){const detail=await response.text();onRaw(detail);const error=Error(`模型 API HTTP ${response.status}`);error.detail=detail;error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
   // Streamed literal origins are validated per complete result before preview.
-  const preview=!config.onPreview?()=>{}:(config.experimentalHanja||config.experimentalLoanword)?experimentalChoicePreviewParser(targets,config,config.onPreview):choicePreviewParser(targets,config.onPreview);
+  const preview=!config.onPreview?()=>{}:(config.experimentalHanja||config.experimentalLoanword)?experimentalChoicePreviewParser(targets,requestConfig,config.onPreview):choicePreviewParser(targets,config.onPreview,batchId);
   const content=await readModelContent(response,{protocol:responses?'responses':provider==='anthropic'?'anthropic':'chat',signal:requestSignal,maxContentChars:Math.min(16_000_000,Math.max(2_000_000,outputTokenLimit*8)),onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
   let result;try{if(typeof content!=='string'||!content.trim())throw Error('empty');result=JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}
-  catch{const error=Error('模型最终回复为空、非 JSON 或不符合候选 ID 协议');error.detail=content||raw;throw error;}
-  const checked=(config.experimentalHanja||config.experimentalLoanword)?validateExperimentalChoices(targets,result,config):validateChoices(targets,result,config);
+  catch{const error=Error('模型最终回复为空、非 JSON 或不符合 positional-v1 协议');error.detail=content||raw;throw error;}
+  if(result?.batch_id!==batchId){
+   const error=Error('positional-v1 batch_id 与当前 API 批次不一致或缺失，已拒绝应用结果');
+   error.detail=JSON.stringify({expected:batchId,received:result?.batch_id});
+   throw error;
+  }
+  const checked=(config.experimentalHanja||config.experimentalLoanword)?
+   validateExperimentalChoices(targets,result,config):validateChoices(targets,result,config);
   await logger.finish(logId,{status,responseHeaders,finishedAt:new Date().toISOString(),elapsedMs:Date.now()-started,firstByteMs,validation:{accepted:checked.accepted.length,unresolved:checked.unresolved.length},response:{raw,truncated:rawTruncated,...metadata}},secrets);
   return result;
  }catch(error){
