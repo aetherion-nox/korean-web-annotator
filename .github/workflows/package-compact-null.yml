@@ -1,13 +1,13 @@
-name: Validate and Package v1.1.56.10 Dynamic Comment Hydration
+name: Validate and Package v1.1.56.11 Accurate Engine Progress
 on:
   push:
     branches:
-      - fix/v1.1.56.10-dynamic-comment-hydration
+      - fix/v1.1.56.11-accurate-engine-progress
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: v1.1.56.10-dynamic-comment-hydration
+  group: v1.1.56.11-accurate-engine-progress
   cancel-in-progress: false
 jobs:
   package:
@@ -23,8 +23,8 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.10'
-          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.10'
+          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.11'
+          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.11'
           PY
       - name: Restore frozen Kiwi and Python runtime
         run: |
@@ -56,7 +56,7 @@ jobs:
                  and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
-          dest=root/'Korean-Web-Annotator-v1.1.56.10-dynamic-comment-hydration.zip'
+          dest=root/'Korean-Web-Annotator-v1.1.56.11-accurate-engine-progress.zip'
           with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
               for p in sorted(files):
                   mode=zipfile.ZIP_STORED if p.suffix.lower()=='.mdl' else zipfile.ZIP_DEFLATED
@@ -68,14 +68,14 @@ jobs:
                       'choice-review.js','model-stream.js','manual-review.js',
                       'browser-worker.js','engine-page.js','runtime/models/cong.mdl']
               assert all('Korean-Web-Annotator/'+p in z.namelist() for p in needed)
-              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.10'
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.11'
           assert dest.stat().st_size>90_000_000,'Kiwi runtime missing'
           print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: extension-v1.1.56.10
-          path: Korean-Web-Annotator-v1.1.56.10-dynamic-comment-hydration.zip
+          name: extension-v1.1.56.11
+          path: Korean-Web-Annotator-v1.1.56.11-accurate-engine-progress.zip
           compression-level: 0
           if-no-files-found: error
   windows-verify-publish:
@@ -84,7 +84,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: extension-v1.1.56.10
+          name: extension-v1.1.56.11
           path: artifact
       - name: Verify Windows Expand-Archive and 7-Zip
         shell: pwsh
@@ -98,7 +98,7 @@ jobs:
           $model=Get-ChildItem $dest -Recurse -Filter cong.mdl -File | Select-Object -First 1
           if(-not $manifest -or -not $model){throw 'Missing runtime files'}
           if($model.Length -ne 75854705){throw "Unexpected Kiwi runtime length: $($model.Length)"}
-          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.10'){throw 'Wrong manifest version'}
+          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.11'){throw 'Wrong manifest version'}
           $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
           if(Test-Path $sevenZip){& $sevenZip t $zip;if($LASTEXITCODE -ne 0){throw '7-Zip validation failed'}}
       - name: Publish distinct prerelease
@@ -107,12 +107,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.56.10-dynamic-comment-hydration.1'
+          $tag='v1.1.56.11-accurate-engine-progress.1'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.10 — dynamic mobile comments and safe React redraw recovery' --prerelease --notes 'Based on v1.1.56.9. Fix missed delayed mobile article comments after merged multi-frame whole-page annotation with a bounded, event-triggered 15-second one-time hydration scan when continuous monitoring is disabled. Detect fresh Korean text inside containers that also contain existing extension ruby annotations. Safely rebind a confirmed annotation after a reactive comment span has been replaced, only if the exact original Korean source and offsets have one unique match; preserve current model review and Undo/Redo history without replaying uncommitted previews. Maintain manual review semantics, avoid unlimited model calls, and add Chosun mobile DOM regression tests. Windows ZIP verified.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.11 — accurate dictionary and tokenizer startup progress' --prerelease --notes 'Based on v1.1.56.10. Fix misleading dictionary loading messages on every annotation. Start each new task with a neutral preparing status; let only real offscreen engine/database and Kiwi worker initialization send dictionary/tokenizer progress. A warmed engine still performs its lightweight identity check without reloading IndexedDB or emitting a fake dictionary stage. All existing multi-frame page review, manual/API model review, dynamic comment hydration, Undo/Redo, and preloading behavior remain unchanged. Regression tested; full Windows ZIP verified.'
           }
           if($LASTEXITCODE -ne 0){throw 'Release publishing failed'}
