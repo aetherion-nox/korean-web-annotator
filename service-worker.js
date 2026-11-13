@@ -601,18 +601,46 @@ async function handleAnnotateBatch(message){
  return {results:Array.from(final,([id,annotations])=>({id,annotations})),stats};
 }
 function handleStreamingPort(port){
- let started=false,operationId,manualSession;const controller=new AbortController();
+ let started=false,operationId,manualSession,groupId=null;const controller=new AbortController();
  const post=event=>{if(!controller.signal.aborted)port.postMessage(event);};
- port.onDisconnect.addListener(()=>controller.abort());
+ const participant=()=>({port,tabId:port.sender?.tab?.id,frameId:port.sender?.frameId,
+  operationId});
+ port.onDisconnect.addListener(()=>{
+  controller.abort();
+  if(groupId)mergedFrameReviews.detach(groupId,participant());
+ });
  port.onMessage.addListener(message=>{
   if(message?.type==='KEEPALIVE'){post({type:'PONG',operationId,at:Date.now()});return;}
-  if(message?.type==='CANCEL'&&message.operationId===operationId){controller.abort();return;}
-  if(message?.type==='MANUAL_REVIEW_RESPONSE'){manualSession?.submit(message);return;}
-  if(started||message?.type!=='START')return;started=true;operationId=message.operationId||crypto.randomUUID();
+  if(message?.type==='CANCEL'&&message.operationId===operationId){
+   controller.abort();
+   if(groupId)mergedFrameReviews.abort(groupId,'合并审核已取消。');
+   return;
+  }
+  if(message?.type==='MANUAL_REVIEW_RESPONSE'){
+   if(groupId)mergedFrameReviews.respond(groupId,participant(),message);
+   else manualSession?.submit(message);
+   return;
+  }
+  if(started||message?.type!=='START')return;
+  started=true;operationId=message.operationId||crypto.randomUUID();
+  if(typeof message.mergeGroupId==='string'&&message.mergeGroupId){
+   groupId=message.mergeGroupId;
+   try{
+    const item=participant();
+    if(!Number.isInteger(item.tabId)||!Number.isInteger(item.frameId))
+     throw Error('Missing trusted sender frame identity');
+    mergedFrameReviews.join(groupId,{...item,message});
+   }catch(error){
+    post({type:'ERROR',operationId,error:error.message});
+   }
+   return;
+  }
   manualSession=createManualReviewSession({operationId,post,signal:controller.signal});
-  runStreamingAnnotation({...message,operationId},post,controller.signal,manualSession).catch(error=>{if(!controller.signal.aborted)post({type:'ERROR',operationId,error:error.message});});
+  runStreamingAnnotation({...message,operationId},post,controller.signal,manualSession)
+   .catch(error=>{if(!controller.signal.aborted)post({type:'ERROR',operationId,error:error.message});});
  });
 }
+
 
 async function migrateEngineSettings(){const state=await chrome.storage.local.get(['enableModelReview']);if(state.enableModelReview===undefined)await chrome.storage.local.set({enableModelReview:false});}
 migrateEngineSettings().catch(console.error);
