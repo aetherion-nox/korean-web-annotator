@@ -943,6 +943,44 @@
     }else panelStatus(statusText);
   }
 
+  async function applyMergedOfflineFrame(message){
+    const task=currentTask,frame=message?.frame,phase=message?.phase;
+    if(!task||task.finished||!task.mergedGroup||!frame||
+       task.mergeGroupId!==message.groupId||task.operationId!==frame.operationId||
+       !['validate','commit'].includes(phase)||frame.backup?.requestId===undefined||
+       !Array.isArray(frame.backup?.bindings)||!frame.backup.bindings.length)
+      return {ok:false,error:'原始跨框架页面或审核快照已失效，禁止将答案写入新页面。'};
+    const requestId=frame.backup.requestId;
+    if(task.manualOfflineCommitted?.has(requestId))return {ok:true,alreadyApplied:true};
+    const previous={backup:task.manualBackup,request:task.manualRequest,
+      prompt:task.manualOriginalPrompt,accepted:task.manualRecoveryAccepted};
+    const isNew=task.manualRecoveryBatchId!==requestId;
+    // This temporary scoped view is never derived from a newly scanned page:
+    // every target must match the original sentence and live DOM text.
+    task.manualBackup=frame.backup;
+    task.manualRequest=requestId;
+    task.manualOriginalPrompt=frame.originalPrompt||'';
+    if(isNew)task.manualRecoveryAccepted=new Map();
+    try{
+      const checked=await applyManualRecovery(task,frame.answer,{
+        advance:false,paint:false,dryRun:phase==='validate'
+      });
+      if(phase==='commit'){
+        (task.manualOfflineCommitted ||= new Set()).add(requestId);
+        task.manualRecoveryBatchId=requestId;
+        task.paint();
+      }
+      return {ok:true,checked};
+    }catch(error){return {ok:false,error:String(error.message||error)};}
+    finally{
+      task.manualBackup=previous.backup;
+      task.manualRequest=previous.request;
+      task.manualOriginalPrompt=previous.prompt;
+      if(phase==='validate'||isNew&&!task.manualOfflineCommitted?.has(requestId))
+        task.manualRecoveryAccepted=previous.accepted;
+    }
+  }
+
   function watchManualReply(task){
     clearTimeout(task.manualTimer);const requestId=task.manualBackup?.requestId;
     task.manualTimer=setTimeout(()=>{if(!task.finished&&currentTask===task&&task.manualBackup?.requestId===requestId)recoverManualConnection(task,'提交后 30 秒未收到后台确认，切换到页面备份。');},30000);
@@ -1725,6 +1763,9 @@
       case 'KRA_PING': respond({ ok: true, version: VERSION }); break;
       case 'KRA_CONTEXT_STATE': respond(contextState()); break;
       case 'KRA_FRAME_PROBE': respond(probeKoreanFrame()); break;
+      case 'KRA_MANUAL_OFFLINE_FRAME':
+        applyMergedOfflineFrame(message).then(respond,error=>respond({ok:false,error:String(error.message||error)}));
+        return true;
       case 'KRA_FRAME_DISPATCH_DIAGNOSTIC':
         if(window===window.top)addDiagnostic({stage:'frames',
           level:message.detail?.inaccessible||message.detail?.failed?'warning':'info',
