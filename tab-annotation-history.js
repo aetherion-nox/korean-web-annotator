@@ -31,6 +31,61 @@ export async function undoTabAnnotations(chrome,tabId){
   changed:results.reduce((n,s)=>n+(s.result?.changed||0),0),
   skipped:results.filter(s=>!s.result?.ok).map(s=>s.frameId)};
 }
+export async function redoTabAnnotations(chrome,tabId){
+ const frames=await activeFrames(chrome,tabId);
+ const states=await Promise.all(frames.map(async frameId=>({
+  frameId,result:await frameMessage(chrome,tabId,frameId,{type:'KRA_HISTORY_STATE'})
+ })));
+ const candidates=states.filter(s=>s.result?.ok&&
+  typeof s.result.redoGroupId==='string'&&s.result.redoGroupId&&
+  Number.isFinite(s.result.redoStartedAt)&&s.result.redoDepth>0);
+ if(!candidates.length)return {ok:false,error:'当前页面和可访问子框架都没有可以重做的步骤。'};
+ // After undo C, B, A, the next redo must be A, not the last-removed C.
+ const earliest=candidates.reduce((a,b)=>b.result.redoStartedAt<a.result.redoStartedAt?b:a);
+ const groupId=earliest.result.redoGroupId;
+ const targets=candidates.filter(s=>s.result.redoGroupId===groupId);
+ const results=await Promise.all(targets.map(async s=>({
+  frameId:s.frameId,result:await frameMessage(chrome,tabId,s.frameId,{
+   type:'REDO_LAST_ANNOTATION',groupId})
+ })));
+ const redoneFrames=results.filter(s=>s.result?.ok).length;
+ if(!redoneFrames)return {ok:false,error:'重做所需的原始网页节点已经变化，未执行不安全的重做。'};
+ return {ok:true,groupId,redoneFrames,
+  changed:results.reduce((n,s)=>n+(s.result?.changed||0),0),
+  skipped:results.filter(s=>!s.result?.ok).map(s=>s.frameId)};
+}
+
+export async function tabAnnotationHistoryState(chrome,tabId){
+ const frames=await activeFrames(chrome,tabId);
+ const states=await Promise.all(frames.map(async frameId=>({
+  frameId,result:await frameMessage(chrome,tabId,frameId,{type:'KRA_HISTORY_STATE'})
+ })));
+ const unique=(key,legacyId,legacyDepth)=>{
+  const groups=new Set();
+  for(const {frameId,result} of states){
+   if(!result?.ok)continue;
+   if(Array.isArray(result[key])){
+    for(const row of result[key])if(typeof row?.groupId==='string'&&row.groupId)
+     groups.add(row.groupId);
+   }else if(result[legacyDepth]>0&&result[legacyId])
+    groups.add(result[legacyId]);
+  }
+  return groups.size;
+ };
+ return {ok:true,undoDepth:unique('undoGroups','groupId','depth'),
+  redoDepth:unique('redoGroups','redoGroupId','redoDepth'),
+  inspectedFrames:states.filter(s=>s.result?.ok).length,
+  inaccessibleFrames:states.filter(s=>!s.result?.ok).map(s=>s.frameId)};
+}
+
+export async function invalidateRedoInTab(chrome,tabId,exceptFrameId=null){
+ const frames=await activeFrames(chrome,tabId);
+ const results=await Promise.all(frames.filter(id=>id!==exceptFrameId).map(async frameId=>({
+  frameId,result:await frameMessage(chrome,tabId,frameId,{type:'KRA_INVALIDATE_REDO'})
+ })));
+ return {ok:true,invalidatedFrames:results.filter(s=>s.result?.ok).length};
+}
+
 export async function restoreTabAnnotations(chrome,tabId){
  const frames=await activeFrames(chrome,tabId);
  const results=await Promise.all(frames.map(async frameId=>({
