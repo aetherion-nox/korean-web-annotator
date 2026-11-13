@@ -8,7 +8,7 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   if(typeof id!=='string'||!id||!Number.isInteger(tabId)||groups.has(id))
    throw Error('Invalid or duplicate merged-frame review group');
   const group={id,tabId,parts:[],closed:false,controller:new AbortController(),
-   session:null,runPromise:null,finished:false};
+   session:null,runPromise:null,finished:false,detachedPorts:new Set()};
   groups.set(id,group);return group;
  }
  function join(id,part){
@@ -21,10 +21,13 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   if(!Array.isArray(part.message.sentences))throw Error('Invalid frame sentences');
   if(group.parts.some(existing=>existing.frameId===part.frameId))
    throw Error('Frame already registered in merged batch');
-  group.parts.push(part);
+  group.parts.push({...part,group});
   return {joined:true,count:group.parts.length};
  }
  function send(part,event){
+  // Do not send stale annotation results into a frame that has navigated away.
+  const group=part.group;
+  if(group?.detachedPorts.has(part.port))return;
   try{part.port.postMessage({...event,operationId:part.operationId});}
   catch{/* A navigated/unloaded frame cannot accept old DOM changes. */}
  }
@@ -108,14 +111,27 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   return group.session.submit({...message,operationId:id});
  }
  function detach(id,part){
-  const group=groups.get(id);if(!group)return;
-  if(group.finished)return;
-  // Running a shared analysis against a navigated frame could misapply
-  // annotations. Abort the full group rather than silently losing one frame.
-  group.controller.abort();
-  for(const other of group.parts)if(other.port!==part.port)
-   send(other,{type:'ERROR',operationId:id,error:'合并审核的某个子框架已断开连接，整批已安全取消；请重新执行整页分析。'});
-  groups.delete(id);
+  const group=groups.get(id);if(!group||group.finished)return;
+  const leaving=group.parts.find(p=>p.port===part.port&&p.frameId===part.frameId);
+  if(!leaving||group.detachedPorts.has(part.port))return;
+  // The top-level frame owns the manual editor. Losing that document means
+  // every answer would be applied against an untrusted/new page: abort.
+  if(leaving.frameId===0||group.host?.port===leaving.port){
+   abort(id,'主页面已离开或审核窗口已断线，不能将旧答案应用到新页面。');
+   return;
+  }
+  // Ads and article sidebars frequently unload while a user is composing a
+  // long manual answer. An unrelated child must not destroy the host's still
+  // pending batch. Skip results for that detached frame; other live frames
+  // retain their own DOM-bound validation and can finish the review.
+  group.detachedPorts.add(part.port);
+  if(!group.closed)group.parts=group.parts.filter(p=>p!==leaving);
+  const host=group.host||group.parts.find(p=>p.frameId===0);
+  if(host)send(host,{type:'DIAGNOSTIC',operationId:id,diagnostic:{
+   stage:'frames',level:'warning',
+   message:'一个子框架已离开，跳过该框架的后续写入；主页面的手动审核继续有效，不必重填整批答案。',
+   detail:JSON.stringify({frameId:leaving.frameId})
+  }});
  }
  function abort(id,reason='Shared page review cancelled'){
   const group=groups.get(id);
