@@ -5,4 +5,4 @@ export const SMART_SEGMENTATION_INSTRUCTIONS = [
   'Optional repairs is an array of objects. add/replace require sentence_id,op,old_target_ids,start,end,surface,choice_id; choice_id is an authentic Hanja/Latin origin spelling, never null or a dictionary key. delete uses sentence_id,op,old_target_ids,start,end,surface WITHOUT choice_id. This is the sole use of the repair-specific choice_id field; results contains raw values, not objects.',
   'add has old_target_ids=[] and annotates a genuinely omitted independent span. replace lists every affected original target ID and only the substring actually needing annotation; unchanged Korean remains in the DOM automatically, never create keep-only fragments. delete lists the exact obsolete original targets and removes their annotations without any replacement.',
   'All repair offsets use UTF-16 positions into sentences[].text. surface must match source text. Preserve original target IDs in old_target_ids; do not invent names, guess etymologies, override selections, or duplicate/conflict with earlier repairs.'
- ].join('\\n');
+ ].join('\n');
