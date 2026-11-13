@@ -89,7 +89,7 @@ test('dictionary-free sentence pipeline issues review requests and retains model
  const events=[],seen=[];
  const request=async(config,targets)=>{
   seen.push({dictionaryFree:config.dictionaryFree,targets});
-  return {results:targets.map(t=>({target_id:t.target_id,choice_id:'KEEP'}))};
+  return {results:targets.map(t=>(null))};
  };
  const options={operationId:'no-dictionary-test',sentences:[{id:'s',text}],
   modes:{hanja:true},progressiveAnnotation:true};
@@ -114,8 +114,7 @@ test('dictionary-free generated Hanja and Latin origins survive the full model r
  const response=async(config,targets)=>{
   seen.push({dictionaryFree:config.dictionaryFree,experimentalHanja:config.experimentalHanja,
    experimentalLoanword:config.experimentalLoanword,targets});
-  return {results:targets.map(t=>({target_id:t.target_id,
-   choice_id:t.surface==='경제'?'經濟':'computer'}))};
+  return {results:targets.map(t=>(t.surface==='경제'?'經濟':'computer'))};
  };
  await runSentencePipeline({
   operationId:'no-dictionary-literal-origins',sentences:[{id:'s',text}],
