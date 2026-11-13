@@ -48,15 +48,15 @@ test('page-only recovery rejects direct Hanja string when experimental mode meta
  assert.equal(task.manualRequest,'batch1');
 });
 
-test('disconnected page recovery accepts missing batch_id only with matching IDs and count',async()=>{
+test('disconnected page recovery requires batch identity and exact positional count',async()=>{
  const {context,task,entry}=environment();
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[]})),/不完整/);
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['c0']})),/target_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:['c0']})),/batch_id/);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'wrong',results:['c0']})),/batch_id/);
  assert.equal(task.manualRequest,'batch1');assert.equal(entry.annotations.length,0);
  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['c0']}));
  assert.equal(task.manualRequest,'batch2');
- await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[null]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch2',results:[null]}));
  assert.equal(task.completed,true);assert.equal(entry.annotations.length,1);
 });
 test('missing batch_id does not bypass experimental-origin eligibility checks',async()=>{
@@ -94,7 +94,7 @@ test('disconnected recovery fails closed for prohibited names and malformed Hanz
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['game']})),/无效答案/);
  meta.eligible=true;
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['韓字']})),/无效答案/);
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:['game',extra:true]})),/无效答案/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{value:'game',extra:true}]})),/无效答案/);
  assert.equal(entry.annotations.length,0);assert.equal(task.manualRequest,'batch1');
 });
 
