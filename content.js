@@ -896,8 +896,7 @@
     const meta=binding?.literalOrigin;
     if(!meta?.eligible||typeof choiceId!=='string'||!choiceId||choiceId.length>160||
        choiceId!==choiceId.trim()||/[<>\x00-\x1f\x7f]/u.test(choiceId)||
-       /^(?:KEEP|[cnxp]\d+)$/i.test(choiceId)||
-       Object.keys(row).sort().join(',')!=='choice_id,target_id')return null;
+       /^(?:[cnxp]\d+)$/i.test(choiceId))return null;
     const hanja=/^[\p{Script=Han}]+$/u.test(choiceId)&&meta.hanja===true&&task.modes.hanja===true;
     const loanword=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u.test(choiceId)&&
       /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&task.modes.loanword===true;
@@ -1123,28 +1122,23 @@
   // Construct a retry prompt from the original shared pool, keeping the
   // same batch ID and only the sentences/candidates the missing targets need.
   function manualRetryPrompt(task,missing,reasons){
-    const batch=task.manualBackup?.requestId||task.manualRequest;
-    const intro='本批其他 '+(task.manualRecoveryAccepted?.size||0)+' 个目标已通过校验并保留。'+
-      '只回答以下 '+missing.length+' 个 target_id，不要重发已经完成的目标。'+
-      '请逐条核对词义、词性、词源；不能确定时返回 KEEP。'+
-      '保持 batch_id='+batch+' 不变；输出只含 batch_id、results（必要时 repairs），不要复制 format、sentences、candidates、targets。'+
-      '\n错误原因：\n'+missing.map(b=>b.target_id+'：'+(reasons.get(b.target_id)||'缺少有效答案')).join('\n')+'\n\n';
-    const original=task.manualOriginalPrompt||'';
-    const begin=original.indexOf('{"format":"shared-pools-v3"');
+    const backup=task.manualBackup,batch=backup?.requestId||task.manualRequest;
+    const indices=missing.map(b=>backup.bindings.indexOf(b)),original=task.manualOriginalPrompt||'';
+    const begin=original.indexOf('{"format":"shared-pools-v4"');
+    const intro='positional-v1 部分补交（只回答以下原始索引，不要移动、重排或重新编号）：'+
+      indices.join('、')+'。\n返回 {"batch_id":"'+batch+'","partial":true,"results":[[原始索引,答案],...]}。'+
+      '保留韩文使用 JSON null；只有经过有效修复的旧目标才能使用 false。\n错误原因：'+
+      missing.map((b,i)=>indices[i]+': '+(reasons.get(b.target_id)||'缺少有效答案')).join('；')+'\n\n';
     if(begin>=0)try{
-      const old=JSON.parse(original.slice(begin)),ids=new Set(missing.map(b=>b.target_id));
-      const targets=(old.targets||[]).filter(t=>ids.has(t.target_id));
-      if(targets.length===missing.length){
-        const candidateIds=new Set(targets.flatMap(t=>Object.values(t.options||{})).filter(x=>typeof x==='string'));
-        const sentenceIds=new Set(targets.map(t=>t.sentence_id));
-        return intro+original.slice(0,begin)+JSON.stringify({...old,
-          targets,sentences:(old.sentences||[]).filter(a=>sentenceIds.has(a.sentence_id)),
-          candidates:(old.candidates||[]).filter(a=>candidateIds.has(a.candidate_id)),batch_id:batch});
-      }
+      const old=JSON.parse(original.slice(begin)),want=new Set(indices);
+      const targets=(old.targets||[]).flatMap((t,i)=>want.has(i)?[{index:i,...t}]:[]);
+      const candidateIds=new Set(targets.flatMap(t=>Object.values(t.options||{})).filter(x=>typeof x==='string'));
+      const sentenceIds=new Set(targets.map(t=>t.sentence_id));
+      return original.slice(0,begin)+intro+JSON.stringify({...old,batch_id:batch,
+        targets,candidates:(old.candidates||[]).filter(x=>candidateIds.has(x.candidate_id)),
+        sentences:(old.sentences||[]).filter(x=>sentenceIds.has(x.sentence_id))});
     }catch{}
-    return intro+'请参照原批提示词，只回答这些目标：'+JSON.stringify({
-      batch_id:batch,targets:missing.map(b=>({target_id:b.target_id,surface:b.surface,
-        options:(b.choices||[]).map(o=>o.choice_id)}))});
+    return intro+original;
   }
 
   async function applyManualRecovery(task,text,{advance=true,paint=true}={}){
@@ -1153,9 +1147,8 @@
     if(typeof text!=='string'||text.length>16*1024*1024)throw Error('请提供不超过 16 MiB 的完整 JSON 结果。');
     let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
     let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
-    // A supplied wrong batch_id is unsafe; a missing batch_id is tolerated
-    // only with matching target IDs and source spans.
-    if(response&&Object.hasOwn(response,'batch_id')&&response.batch_id!==backup.requestId)
+    // Without IDs on individual answers, batch identity is mandatory.
+    if(response?.batch_id!==backup.requestId)
       throw Error('batch_id 与当前批次不一致，未应用任何答案。');
     if(!Array.isArray(response?.results))throw Error('结果缺少 results 数组。');
     if(response.repairs!==undefined&&!Array.isArray(response.repairs))
@@ -1170,35 +1163,38 @@
       await validatePageManualRepairs(task,response):{accepted:[],rejected:[]};
     const stage=stagePageRepairs(task,repairResult.accepted,entries);
     const {retired,groups}=stage;
-    const reasons=new Map(stage.reasons),unknown=[];
+    const reasons=new Map(stage.reasons);
     for(const item of repairResult.rejected)for(const id of item.old_target_ids||[])
       if(!retired.has(id))reasons.set(id,'分词修复校验失败：'+item.reason);
     task.manualRecoveryRepairs=stage.applied.map(r=>({
       sentence_id:r.sentence_id,op:r.op,old_target_ids:r.old_target_ids,
-      start:r.start,end:r.end,surface:r.surface,choice_id:r.choice_id
+      start:r.start,end:r.end,surface:r.surface,
+      ...(r.op==='delete'?{}:{choice_id:r.choice_id})
     }));
-    const incoming=new Map();
-    for(const row of response.results){
-      if(!bindings.has(row?.target_id)){
-        unknown.push(String(row?.target_id??'(缺失)'));continue;
-      }
-      if(!incoming.has(row.target_id))incoming.set(row.target_id,[]);
-      incoming.get(row.target_id).push(row);
-    }
+    const positional=await import(chrome.runtime.getURL('positional-results.js'));
+    const targets=backup.bindings.map(b=>({
+      target_id:b.target_id,
+      scan_only:(backup.repairValidation?.targets||[]).some(t=>t.target_id===b.target_id&&t.scan_only===true)
+    }));
+    const parsed=positional.parsePositionalResults(targets,response,{
+      allowPartial:true,smartSegmentation:backup.smartSegmentation===true,retired
+    });
+    if(parsed.malformed)throw Error('positional-v1 results 长度或原始位置错误，拒绝按顺序猜测缺失项。');
     const saved=new Map(task.manualRecoveryAccepted||[]);
-    for(const [id,rows] of incoming){
-      if(saved.has(id))continue; // Never overwrite a previously verified choice.
-      if(rows.length!==1){
-        reasons.set(id,'重复 target_id（本次出现 '+rows.length+' 条）');continue;
-      }
-      const row=rows[0],binding=bindings.get(id);
-      let choice=binding.choices.find(o=>o.choice_id===row?.choice_id);
+    for(const [index,reason] of parsed.problems)
+      reasons.set(backup.bindings[index]?.target_id||String(index),reason);
+    for(const [index,value] of parsed.values){
+      const binding=backup.bindings[index],id=binding.target_id;
+      if(saved.has(id)||retired.has(id)||targets[index].scan_only)continue;
       const sentence=sourceSentences.get(binding.sentenceId)||entries.get(binding.sentenceId);
-      if(!choice&&sentence)
-        try{choice=await manualLiteralChoice(binding,row?.choice_id,sentence,task,row);}
+      let choice=value===null?
+        binding.choices.find(o=>o.choice_id==='KEEP'):
+        binding.choices.find(o=>o.choice_id===value&&o.choice_id!=='KEEP');
+      if(!choice&&typeof value==='string'&&sentence)
+        try{choice=await manualLiteralChoice(binding,value,sentence,task);}
         catch{choice=null;}
       if(!choice){
-        reasons.set(id,'无效 choice_id：'+String(row?.choice_id??'(缺失)'));continue;
+        reasons.set(id,'无效答案 '+JSON.stringify(value));continue;
       }
       saved.set(id,{binding,choice});
     }
@@ -1268,7 +1264,7 @@
       const message='本批结果不完整：已验证 '+(verified.size+retired.size)+'/'+bindings.size+' 条，页面已预览 '+count+
         ' 个标注；剩余 '+missing.length+' 条待补交：'+details+
         (missing.length>8?'；其余见补交提示词':'')+
-        (unknown.length?'。已忽略未知或跨批 target_id '+unknown.slice(0,4).join('、'):'')+
+
         (repairResult.rejected.length?'。已安全拒绝 '+repairResult.rejected.length+' 条无效修复':'')+
         '。请只提交新提示词中的目标。';
       if(count)status('已预览 '+count+' 个标注，仍有 '+missing.length+' 个目标待补交');
