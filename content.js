@@ -1482,6 +1482,23 @@
       finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`,true);
       configureRecovery();
       if(!ranges)pageCompleted=true;configureAutomaticAnnotation();
+      // Catch sections hydrated during the original analysis (or just after
+      // it) without enabling unlimited post-completion model requests.
+      // The user's "stop after page complete" setting still controls
+      // CONTINUOUS future monitoring; this is one bounded settling pass.
+      if(!ranges&&!task.startedAutomatically&&!task.manualPanelShown&&
+         uiSettings.stopAutoAfterPageComplete!==false){
+        const generation=sequence,originalUrl=task.startPageUrl;
+        setTimeout(()=>{
+          if(sequence!==generation||!pageCompleted||currentTask||location.href!==originalUrl)return;
+          const unseen=collectTextNodes(null,false,true,false);
+          if(!unseen.size)return;
+          addDiagnostic({stage:'scan',level:'info',
+            message:`页面初次标注后的异步加载补扫：新发现 ${unseen.size} 个韩文文本节点，仅补扫一次。`,
+            detail:JSON.stringify({late_nodes:unseen.size,source:'hydration-grace'})});
+          startAnnotation({automatic:true,modes:task.modes});
+        },1200);
+      }
       addDiagnostic({message:`完成：${count} 个标注`,detail:JSON.stringify(result.stats||{})});
       publishState();
     });
