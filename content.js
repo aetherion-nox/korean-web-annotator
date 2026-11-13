@@ -696,6 +696,56 @@
     return [...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
   }
 
+  // Cheap, read-only child-frame preflight. Do not build prompts or mutate DOM
+  // for empty/hidden tracker frames. The actual annotation pass still performs
+  // its own complete source/selection validation.
+  function probeKoreanFrame() {
+    if(!document.body)return {ok:true,eligible:false,reason:'no-body'};
+    try{
+      if(window!==window.top&&
+         (window.innerWidth<24||window.innerHeight<20))
+        return {ok:true,eligible:false,reason:'zero-size-frame'};
+      const outer=window.frameElement;
+      if(outer&&(outer.hidden||outer.getAttribute('aria-hidden')==='true'||
+         outer.getBoundingClientRect().width<24||outer.getBoundingClientRect().height<20))
+        return {ok:true,eligible:false,reason:'hidden-frame'};
+    }catch{
+      // Cross-origin frames may not expose frameElement: check the own DOM.
+    }
+    let checked=0,hidden=0,eligible=0;
+    const isHidden=element=>{
+      const seen=new Set();
+      for(let node=element;node&&!seen.has(node);
+          node=node.parentElement||node.getRootNode?.().host){
+        seen.add(node);
+        if(node.hidden||node.hasAttribute?.('inert')||
+           node.getAttribute?.('aria-hidden')==='true')return true;
+        const style=document.defaultView?.getComputedStyle?.(node);
+        if(style?.display==='none'||style?.visibility==='hidden'||
+           style?.visibility==='collapse'||style?.contentVisibility==='hidden')
+          return true;
+      }
+      return false;
+    };
+    for(const root of openTextRoots()){
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      let node;
+      while((node=walker.nextNode())){
+        checked++;
+        if(!/[가-힣]/u.test(node.data))continue;
+        const parent=node.parentElement;
+        if(parent?.closest('script,style,noscript,input,textarea,select,option,ruby,'+
+           '.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
+           '.kra-floating-ball,.kra-manual-reopen'))continue;
+        if(isHidden(parent)){hidden++;continue;}
+        eligible++;
+        // Enough evidence to start analysis; no need to walk all ad scripts.
+        return {ok:true,eligible:true,reason:'visible-korean',checked,hidden,eligibleNodes:eligible};
+      }
+    }
+    return {ok:true,eligible:false,reason:'no-visible-korean',checked,hidden,eligibleNodes:0};
+  }
+
   function contextState() {
     const ranges=captureSelection();return {ok:true,hasAnnotations:Boolean(document.querySelector(OWN_RUBY)),hasSelection:Boolean(ranges),selectionUnannotated:Boolean(ranges&&collectTextNodes(ranges).size)};
   }
@@ -1519,6 +1569,13 @@
     switch (message?.type) {
       case 'KRA_PING': respond({ ok: true, version: VERSION }); break;
       case 'KRA_CONTEXT_STATE': respond(contextState()); break;
+      case 'KRA_FRAME_PROBE': respond(probeKoreanFrame()); break;
+      case 'KRA_FRAME_DISPATCH_DIAGNOSTIC':
+        if(window===window.top)addDiagnostic({stage:'frames',
+          level:message.detail?.inaccessible||message.detail?.failed?'warning':'info',
+          message:String(message.summary||'iframe 扫描完成'),
+          detail:JSON.stringify(message.detail||{})});
+        respond({ok:true});break;
       case 'START_ANNOTATION': if(message.uiSettings)applySettings(message.uiSettings);Promise.resolve(startAnnotation(message)).then(respond,error=>respond({ok:false,error:error.message}));return true;
       case 'RESTORE_ANNOTATION': restorePage();respond({ok:true});break;
       case 'UNDO_LAST_ANNOTATION':respond(undoLast());break;
