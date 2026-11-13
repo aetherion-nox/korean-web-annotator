@@ -82,6 +82,35 @@ jobs:
               if index>=0:print('TEXT NEAR',marker,repr(rawtext[max(0,index-90):index+950]))
             print('scripts',[(s.get('src') or ('INLINE:'+str(len(s.get_text())))) for s in soup.find_all('script')][:35])
           PY
+      - name: Inspect client-rendered comment DOM in headless Chrome
+        shell: bash
+        run: |
+          CHROME=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+          echo "Chrome: ${CHROME:-not installed}"
+          if [ -z "$CHROME" ]; then exit 0; fi
+          timeout 50 "$CHROME" --headless --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --no-first-run --virtual-time-budget=13000 \
+            --dump-dom 'https://www.chosun.com/international/international_general/2026/11/12/4JHDVTVHR5GLZDG7GPJRYZMXQM/?outputType=native' \
+            > html/chosun-article-native-rendered.html 2>html/browser-errors.log || true
+          python3 - <<'PY'
+          from pathlib import Path
+          from bs4 import BeautifulSoup
+          import re
+          file=Path('html/chosun-article-native-rendered.html')
+          if not file.exists():quit()
+          data=file.read_bytes();html=data.decode('utf-8','replace')
+          soup=BeautifulSoup(html,'html.parser')
+          print('RENDERED size:',len(data),'title:',(soup.title.get_text() if soup.title else '-'))
+          print('RENDERED comment region count:',len(soup.select('#div_comment')))
+          print('RENDERED comment class counts:',len(soup.select('[class*="comment"]')))
+          print('RENDERED iframe src:',[i.get('src') for i in soup.select('iframe')][:15])
+          for i,div in enumerate(soup.select('#div_comment')[:3]):
+            print('RENDERED comment text',i,repr(re.sub(r'\\s+',' ',div.get_text(' ',strip=True))[:1500]))
+            print('RENDERED comment direct HTML',i,str(div)[:2000])
+          print('RENDERED terms:',{t:html.count(t) for t in ['최신순','관심순','후원순','답글','comment-list','comment-feed','100자평']})
+          log=Path('html/browser-errors.log')
+          if log.exists():print('Browser log end:',log.read_text(errors='replace')[-1500:])
+          PY
       - name: Archive downloaded HTML for inspection
         uses: actions/upload-artifact@v4
         with:
