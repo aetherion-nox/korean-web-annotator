@@ -80,3 +80,7 @@ html[data-kra-copy-mode="annotation"] .kra-ruby > rt { user-select:text; }
 
 /* Deliberately subtle: model-origin annotations are not dictionary attestations. */
 ruby.kra-ruby[data-kra-source="model-unverified"] { text-decoration-line:underline !important;text-decoration-style:dotted !important;text-decoration-color:#b57928 !important;text-underline-offset:3px !important; }
+
+/* Multi-step Undo/Redo is shown beside per-action controls; no page layout changes. */
+.kra-mobile-selection-bar .kra-history-steps { display:block !important; margin-top:3px !important; font:11px/1.3 system-ui,sans-serif !important; color:#c4d1e3 !important; }
+.kra-mobile-selection-bar button:disabled { opacity:.45 !important; cursor:default !important; }
