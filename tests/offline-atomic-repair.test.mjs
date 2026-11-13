@@ -76,7 +76,7 @@ test('disconnected review accepts repair-only answer without old target result a
 test('invalid repair in disconnected mode cannot retire the original or write a false annotation',async()=>{
  const {dom,document,context,task}=setup();
  const bad={results:[],repairs:[{...repaired.repairs[0],choice_id:'韓國'}]};
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify(bad)),/不完整/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',...bad})),/不完整/);
  assert.equal(task.manualRecoveryRepairs.length,0);
  assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
  assert.equal(task.finished,false);
