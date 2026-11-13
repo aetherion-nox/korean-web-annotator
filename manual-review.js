@@ -5,6 +5,8 @@ import {filterReviewTarget} from './review-pos.js';
 import {explainLiteralOriginRejection} from './experimental-options.js';
 import {describeBatchBudget} from './batch-budget.js';
 import {validateSegmentationRepairs} from './segmentation-repairs.js';
+import {parsePositionalResults,choiceFromValue} from './positional-results.js';
+import {buildReviewInstructions} from './review-payload.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
 // Keep an oversized single dictionary entry intact rather than losing senses.
@@ -54,27 +56,26 @@ export function prepareManualRequest(config,targets){
 }
 
 // Preserve the original shared pools and restrict retry work to unsolved IDs.
-function manualRetryPrompt(original,batchId,remaining,reasons,acceptedCount){
- const ids=new Set(remaining.map(t=>t.target_id));
- const lead='此前已验证并保存 '+acceptedCount+' 条答案。本次只回答以下 '+remaining.length+
-   ' 个 target_id；不要重发已完成目标。逐条核对原句、候选释义与词性；拿不准返回 KEEP。'+
-   ' 禁止更改 target_id；复制 batch_id '+batchId+'；只输出 JSON 对象（batch_id、results，必要时 repairs），'+
-   '不要复制 format、sentences、candidates 或 targets。\n错误原因：\n'+
-   remaining.map(t=>t.target_id+'：'+(reasons.get(t.target_id)||'该目标未返回有效答案')).join('\n')+'\n\n';
- const begin=original.indexOf('{"format":"shared-pools-v3"');
- if(begin<0)return lead+original;
+// Retry targets preserve original zero-based positional indices.
+function manualRetryPrompt(current,missing,reasons){
+ const indices=missing.map(t=>current.wireTargets.indexOf(t)),original=current.originalPrompt;
+ const begin=original.indexOf('{"format":"shared-pools-v4"');
+ const lead=buildReviewInstructions(current.reviewConfig)+'\n'+[
+  'PARTIAL RETRY OVERRIDE: Return only JSON {"batch_id":"current","partial":true,"results":[[originalIndex,value],...]}.',
+  'Use original 0-based indices; do not renumber the shortened target list. JSON null means retain original; false requires validated repair.',
+  'Required batch_id: '+current.requestId+'. Already saved: '+current.acceptedRows.size,
+  'Missing original indices: '+indices.join(', ')+'. Reasons: '+missing.map((t,i)=>indices[i]+':'+(reasons.get(t.target_id)||'not answered')).join(' | ')
+ ].join('\n');
+ if(begin<0)return lead+'\n'+original;
  try{
-   const old=JSON.parse(original.slice(begin));
-   const selected=(old.targets||[]).filter(t=>ids.has(t.target_id));
-   if(selected.length!==remaining.length)return lead+original;
-   const candidateIds=new Set(selected.flatMap(t=>Object.values(t.options||{})).filter(x=>typeof x==='string'));
-   const sentenceIds=new Set(selected.map(t=>t.sentence_id));
-   const payload={...old,
-     sentences:(old.sentences||[]).filter(s=>sentenceIds.has(s.sentence_id)),
-     candidates:(old.candidates||[]).filter(c=>candidateIds.has(c.candidate_id)),
-     targets:selected,batch_id:batchId};
-   return lead+original.slice(0,begin)+JSON.stringify(payload);
- }catch{return lead+original;}
+  const old=JSON.parse(original.slice(begin)),wanted=new Set(indices);
+  const targets=(old.targets||[]).flatMap((t,i)=>wanted.has(i)?[{index:i,...t}]:[]);
+  const candidateIds=new Set(targets.flatMap(t=>Object.values(t.options||{})).filter(x=>typeof x==='string'));
+  const sentenceIds=new Set(targets.map(t=>t.sentence_id));
+  return lead+'\n'+JSON.stringify({...old,batch_id:current.requestId,
+   targets,candidates:(old.candidates||[]).filter(c=>candidateIds.has(c.candidate_id)),
+   sentences:(old.sentences||[]).filter(t=>sentenceIds.has(t.sentence_id))});
+ }catch{return lead+'\n'+original;}
 }
 
 export function createManualReviewSession({operationId,post,signal}={}){
@@ -91,7 +92,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
     const abort=()=>{clear();reject(activeSignal.reason||new DOMException('Operation aborted','AbortError'));};
     pending={requestId,targets,wireTargets,originalPrompt:prepared.text,acceptedRows:new Map(),savedRepairs:[],
       experimentalHanja:config.experimentalHanja===true,experimentalLoanword:config.experimentalLoanword===true,hanjaReadingCheck:config.hanjaReadingCheck!==false,
-      reviewPosFilter:config.reviewPosFilter,smartSegmentation:config.smartSegmentation===true,
+      reviewPosFilter:config.reviewPosFilter,smartSegmentation:config.smartSegmentation===true,reviewConfig:config,
       repairContext:config.context,repairModes:config.repairModes,
       repairScopes:new Map(targets.map((target,i)=>[wireTargets[i].target_id,config.repairScopes?.get(target.target_id)])),
       resolve:response=>{clear();resolve(response);}};
