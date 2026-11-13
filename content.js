@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.55.4-primary-toolbar-only';
+  const VERSION = '1.1.56.0-positional-null';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -1325,7 +1325,7 @@
     if(event.type==='MANUAL_REVIEW_ERROR'){
       clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
       if(Array.isArray(event.acceptedRows)&&!task.mergedGroup){
-        const answer=JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
+        const answer=JSON.stringify({batch_id:event.requestId,partial:true,results:event.acceptedRows,
           ...(event.acceptedRepairs?{repairs:event.acceptedRepairs}:{})});
         panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
         void applyManualRecovery(task,answer).catch(error=>{
@@ -1355,20 +1355,23 @@
     }else{
       clearTimeout(task.manualTimer);
       const submitted=Array.isArray(event.acceptedRows)?
-        JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
+        JSON.stringify({batch_id:event.requestId,partial:true,results:event.acceptedRows,
            ...(event.acceptedRepairs?{repairs:event.acceptedRepairs}:{})}):
         (task.manualSubmitted?.requestId===event.requestId?task.manualSubmitted.text:panel.querySelector('.kra-manual-response').value);
       // The background already validated any model-origin string. Do not
       // overwrite it with a page-only recovery that lacks these options.
       let requiresBackground=false;
       try{
-        const known=new Map((task.manualBackup?.bindings||[]).map(b=>[b.target_id,b]));
-        const parsed=JSON.parse(submitted);
+        const bindings=task.manualBackup?.bindings||[],parsed=JSON.parse(submitted);
+        const values=parsed.partial===true?
+          (parsed.results||[]).map(pair=>Array.isArray(pair)?pair:[-1,undefined]):
+          (parsed.results||[]).map((value,i)=>[i,value]);
         requiresBackground=parsed.repairs!==undefined&&(!Array.isArray(parsed.repairs)||parsed.repairs.length>0)||
-         parsed.results?.some(row=>{
-          const binding=known.get(row?.target_id);
-          return binding&&!binding.choices.some(o=>o.choice_id===row?.choice_id);
-        })===true;
+         values.some(([index,value])=>{
+          const binding=bindings[index];
+          return !binding||(typeof value==='string'&&
+            !binding.choices.some(o=>o.choice_id===value&&o.choice_id!=='KEEP'));
+        });
       }catch{}
       if(!task.mergedGroup&&!requiresBackground)void applyManualRecovery(task,submitted,{advance:false,paint:false})
         .catch(error=>addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message}));
