@@ -29,7 +29,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
  const notes=[
   'MANUAL REVIEW: Answer one JSON object containing batch_id and results, plus optional repairs only when smart segmentation is enabled.',
   'Result rows use ONLY the exact field names t and c: {"t":"t0","c":"c0"} or {"t":"t1","c":null}. The t value matches target_id in the request. c is a local dictionary key or an enabled literal origin, not a pooled candidate ID.',
-  'Use real JSON null (without quotes) to leave text unchanged. A Latin string spelling "KEEP", if it is truly the original word and direct loanword origins are enabled, is a normal origin string, not a keep instruction.',
+  'Use real JSON null (without quotes) to leave text unchanged. Any genuine enabled Latin etymology is a normal origin string, never a keep instruction.',
   config.smartSegmentation===true?
    'Return results for targets not superseded by validated repairs; omit those retired by a valid repair and scan_only placeholders. A failed repair does NOT retire the original target. Repair objects use their separately specified field names.':
    'Return exactly one t/c result for each target; no duplicates or invented IDs.',
