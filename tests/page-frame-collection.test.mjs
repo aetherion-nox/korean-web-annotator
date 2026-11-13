@@ -40,7 +40,7 @@ test('unavailable frame inventory retains the original full safe wait',()=>{
 
 function fixture(initialFrames=[{frameId:0,url:'https://fixture.test/a',documentId:'main'}]){
  const source=fs.readFileSync(new URL('../service-worker.js',import.meta.url),'utf8');
- const start=source.indexOf('function scheduleFrameCollectionFinalization(');
+ const start=source.indexOf('async function inspectChildFrames(');
  const end=source.indexOf('async function startPageFromPopup(',start);
  assert.ok(start>0&&end>start);
  const callbacks={},timers=new Map(),runs=[],starts=[],clock={now:1000};
