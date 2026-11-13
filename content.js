@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.2-page-access';
+  const VERSION = '1.1.56.3-manual-lifecycle';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -1392,7 +1392,7 @@
         task.pendingAcceptedRecovery=pending;
         void pending.finally(()=>{
           if(task.pendingAcceptedRecovery===pending)task.pendingAcceptedRecovery=null;
-          if(task.manualRequest===requestId)task.manualRequest=null;
+          if(task.manualRequest===requestId&&!task.manualLocalOnly)task.manualRequest=null;
         });
       }else task.manualRequest=null;
       panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
@@ -1420,6 +1420,8 @@
     const manual=document.querySelector('.kra-manual-review');
     if(manual?.dataset.operationId===task.operationId){
       manual.querySelector('.kra-manual-apply').disabled=true;manual.querySelector('.kra-manual-import').disabled=true;manual.querySelector('.kra-manual-cancel').disabled=true;manual.querySelector('.kra-manual-status').textContent=reason;
+      // Only successful completion auto-collapses the editor; preserve the
+      // prompt/response for later inspection and copying via the reopen control.
       if(completed){manual.hidden=true;refreshManualReopen();}
     }
     clearInterval(task.keepalive);
@@ -1518,7 +1520,12 @@
       status('分析连接中断，请重试', 0);
       finishTask(task);
     });
-    port.onMessage.addListener(result => {
+    port.onMessage.addListener(async result => {
+      // An accepted manual batch is persisted asynchronously before the
+      // worker advances or sends DONE. Wait for that checkpoint, otherwise
+      // finishTask() can clear the backup and reject a valid late answer.
+      if(result.type==='DONE'&&task.pendingAcceptedRecovery)
+        await task.pendingAcceptedRecovery;
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
       if(task.manualLocalOnly)return;
       if(result.type==='MANUAL_REVIEW_PLAN'){
@@ -1546,6 +1553,14 @@
         return;
       }
       if (result.type !== 'RESULTS' && result.type !== 'DONE') return;
+      if(result.type==='DONE'&&task.manualRequest){
+        if(recoverManualConnection(task,'后台已结束，但本批答案尚未确认；切换到页面备份继续应用。'))return;
+        // A merged batch may include targets from other documents, so never
+        // silently treat the main frame alone as the completed review.
+        const reason='跨框架审核的后台已结束，但仍有未应用的答案。已保留输入，请勿误认为全部完成；请重新开始跨框架审核。';
+        addDiagnostic({level:'warning',message:reason});
+        finishTask(task,reason,false);return;
+      }
       globalThis.__KRA_PIPELINE_STATUS__ = { ...globalThis.__KRA_PIPELINE_STATUS__,
         scan:task.scan,stats: result.stats, engine_version: result.engine_version,
         dictionary_metadata: result.dictionary_metadata };
