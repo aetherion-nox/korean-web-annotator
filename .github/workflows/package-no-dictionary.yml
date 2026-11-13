@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - feature/v1.1.56.0-positional-null-results
-    paths:
-      - .github/workflows/package-no-dictionary.yml
   workflow_dispatch:
 permissions:
   contents: write
@@ -61,7 +59,7 @@ jobs:
               required=['manifest.json','content.js','service-worker.js','no-dictionary-analysis.js',
                   'browser-worker.js','engine-page.js','runtime/models/nounchr.mdl','runtime/python-sources.json']
               assert all('Korean-Web-Annotator/'+p in z.namelist() for p in required)
-              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.55.4'
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.0'
           assert dest.stat().st_size>90_000_000, 'Incomplete Kiwi runtime'
           print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
           PY
