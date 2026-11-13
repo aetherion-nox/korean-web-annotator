@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.9-multistep-undo-redo';
+const CONTENT_SCRIPT_VERSION = '1.1.56.10-dynamic-comment-hydration';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
