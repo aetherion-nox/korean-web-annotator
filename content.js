@@ -1298,6 +1298,16 @@
   function panelStatus(message){const panel=document.querySelector('.kra-manual-review');if(panel)panel.querySelector('.kra-manual-status').textContent=message;}
 
   function handleManualEvent(task,event){
+    // Persist an accepted batch before switching to the next one. Otherwise a
+    // dynamic import in page-only recovery can race with worker messages and
+    // invalidate the saved answer by changing manualRequest/manualBackup.
+    if(event.type==='MANUAL_REVIEW_REQUEST'&&task.pendingAcceptedRecovery){
+      const pending=task.pendingAcceptedRecovery;
+      void pending.finally(()=>{
+        if(currentTask===task&&!task.finished)handleManualEvent(task,event);
+      });
+      return;
+    }
     const panel=manualPanel();
     if(event.type==='MANUAL_REVIEW_REQUEST'){
       clearTimeout(task.manualTimer);task.manualLocalOnly=false;task.manualRecoveryAccepted=new Map();task.manualOriginalPrompt=event.text;task.manualBackup={requestId:event.requestId,bindings:event.bindings,
@@ -1373,9 +1383,17 @@
             !binding.choices.some(o=>o.choice_id===value&&o.choice_id!=='KEEP'));
         });
       }catch{}
-      if(!task.mergedGroup&&!requiresBackground)void applyManualRecovery(task,submitted,{advance:false,paint:false})
-        .catch(error=>addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message}));
-      task.manualRequest=null;panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
+      if(!task.mergedGroup&&!requiresBackground){
+        const requestId=event.requestId;
+        const pending=applyManualRecovery(task,submitted,{advance:false,paint:false})
+          .catch(error=>addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message}));
+        task.pendingAcceptedRecovery=pending;
+        void pending.finally(()=>{
+          if(task.pendingAcceptedRecovery===pending)task.pendingAcceptedRecovery=null;
+          if(task.manualRequest===requestId)task.manualRequest=null;
+        });
+      }else task.manualRequest=null;
+      panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }
 
