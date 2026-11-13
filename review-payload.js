@@ -28,7 +28,7 @@ export function buildReviewInstructions(config={}){
 export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,{...config,batchId});
  const notes=[
-  'MANUAL REVIEW: Return only one JSON object with batch_id and results, plus repairs when smart segmentation is enabled.',
+  'MANUAL REVIEW: Return only one JSON object with batch_id and results'+(config.smartSegmentation===true?', plus optional repairs.':'.'),
   'Full answer: results is a fixed-length positional array matching the input targets order (0-based). Each entry is a string or actual JSON null.',
   config.smartSegmentation===true?
    'Use JSON false ONLY for scan_only or original targets replaced/deleted by a valid repair. Never remove their array positions.':
