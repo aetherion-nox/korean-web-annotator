@@ -23,13 +23,11 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  const experimental=experimentalHanja===true||experimentalLoanword===true;
  const config={reviewPosFilter,experimentalHanja,experimentalLoanword,dictionaryFree,smartSegmentation};
  const input=manual?buildManualPrompt(context,wire,batchId,config):buildReviewInstructions(config)+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
- // Model returns only results[].choice_id. Allow a plausible literal Hanja
- // spelling in that SAME field for eligible experimental targets. No separate
- // experimental_options list and no invented 100-byte proposal per target.
+ // Estimate the compact {t,c} response, with a true JSON null for unchanged text.
  const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),results:wire.map(t=>{
-  const longest=t.options.reduce((answer,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(answer).length?o.choice_id:answer,'KEEP');
+  const longest=t.options.filter(o=>o.type!=='keep').reduce((answer,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(answer).length?o.choice_id:answer,'');
   const proposed=experimental&&canProposeExperimentalOption(t)?'漢'.repeat(Math.min(24,Math.max(8,[...t.surface].length*2))):'';
-  return {target_id:t.target_id,choice_id:JSON.stringify(proposed).length>JSON.stringify(longest).length?proposed:longest};
+  return {t:t.target_id,c:JSON.stringify(proposed).length>JSON.stringify(longest).length?proposed:(longest||null)};
  }),...(smartSegmentation?{repairs:wire.filter((t,i)=>i%4===0).slice(0,64).map(t=>({
    sentence_id:'s0',op:t.scan_only?'add':'replace',old_target_ids:t.scan_only?[]:[t.target_id],
    start:t.start,end:t.end,surface:t.surface.slice(0,24),choice_id:'漢字詞源'
