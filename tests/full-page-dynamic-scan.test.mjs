@@ -99,7 +99,7 @@ test('continued dynamic monitoring reacts to tab visibility toggles and nested s
   startAnnotation:args=>{started.push(args);return {ok:true}}
  });
  vm.runInContext(source.slice(source.indexOf('  function configureAutomaticAnnotation()'),
-  source.indexOf("  document.addEventListener('selectionchange'")),ctx);
+  source.indexOf("  if(typeof window==='undefined'||window===window.top)document.addEventListener('selectionchange'")),ctx);
  ctx.configureAutomaticAnnotation();
  dom.window.document.querySelector('#tab').hidden=false;
  await new Promise(resolve=>setImmediate(resolve));
@@ -126,7 +126,7 @@ test('stop-after-completion switch still prevents continuous observer and model 
   startAnnotation:()=>{throw Error('continuous scan must not start')}
  });
  vm.runInContext(source.slice(source.indexOf('  function configureAutomaticAnnotation()'),
-  source.indexOf("  document.addEventListener('selectionchange'")),ctx);
+  source.indexOf("  if(typeof window==='undefined'||window===window.top)document.addEventListener('selectionchange'")),ctx);
  ctx.configureAutomaticAnnotation();
  dom.window.document.querySelector('p').textContent='새 기사';
  await new Promise(resolve=>setImmediate(resolve));
