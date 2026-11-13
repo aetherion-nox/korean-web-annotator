@@ -11,6 +11,9 @@ import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
+import {
+ FRAME_COLLECTION_MAX_MS,FRAME_NAVIGATION_DEBOUNCE_MS,nextFrameCollectionDelay
+} from './page-frame-collection.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
@@ -318,14 +321,14 @@ async function initializeExistingWebTabs() {
 const pendingPopupPageStarts=new Map();
 const activeFrameScans=new Map();
 const FRAME_DISCOVERY_GRACE_MS=15000;
-const MERGE_COLLECTION_MS=4800;
 const mergedFrameReviews=createMergedFrameReviewCoordinator({
  run:(message,post,signal,session)=>runStreamingAnnotation(message,post,signal,session),
  createSession:config=>createManualReviewSession(config)
 });
 
-async function inspectChildFrames(tabId,run){
- if(activeFrameScans.get(tabId)!==run||run.finalizing||Date.now()>run.until)return null;
+async function inspectChildFrames(tabId,run,finalPass=false){
+ if(activeFrameScans.get(tabId)!==run||
+    (run.finalizing&&!finalPass)||Date.now()>run.until)return null;
  const list=await chrome.webNavigation.getAllFrames({tabId});
  if(!Array.isArray(list))return {discovered:0,started:0,unavailable:true};
  const report=await dispatchChildFrameBatch(list,{
@@ -345,34 +348,73 @@ async function inspectChildFrames(tabId,run){
  }
  return report;
 }
-function queueChildFrameScan(tabId,run,delay=650){
+function scheduleFrameCollectionFinalization(tabId,run,report=run.lastFrameReport){
+ if(activeFrameScans.get(tabId)!==run||run.finalizing)return;
+ const delay=nextFrameCollectionDelay({
+  deadline:run.collectionDeadline,now:Date.now(),
+  discovered:report?.discovered||0,unavailable:report?.unavailable===true,
+  lastEventAt:run.lastFrameEventAt
+ });
+ clearTimeout(run.finalizer);
+ run.finalizer=setTimeout(()=>{
+  if(activeFrameScans.get(tabId)!==run||run.finalizing)return;
+  run.finalizing=true;
+  clearTimeout(run.timer);
+  // Drain in-flight registrations and take one final frame snapshot before
+  // the sole shared dictionary/LLM/manual analysis begins.
+  run.serial=run.serial.then(async()=>{
+   await inspectChildFrames(tabId,run,true);
+   mergedFrameReviews.finalize(run.groupId).catch(error=>
+    console.warn('[KRA merged frame review]',error.message));
+  }).catch(error=>{
+   mergedFrameReviews.abort(run.groupId,error.message);
+  }).finally(()=>{
+   if(activeFrameScans.get(tabId)===run)activeFrameScans.delete(tabId);
+  });
+ },delay);
+}
+function queueChildFrameScan(tabId,run,delay=FRAME_NAVIGATION_DEBOUNCE_MS){
  if(activeFrameScans.get(tabId)!==run||run.finalizing||Date.now()>run.until)return;
+ run.lastFrameEventAt=Date.now();
+ // Newly navigating child frames must be allowed to register in this group.
+ scheduleFrameCollectionFinalization(tabId,run);
  clearTimeout(run.timer);
  run.timer=setTimeout(()=>{
   if(activeFrameScans.get(tabId)!==run||run.finalizing||Date.now()>run.until)return;
-  run.serial=run.serial.then(()=>inspectChildFrames(tabId,run)).catch(error=>
-   console.warn('[KRA frame discovery]',error.message));
+  run.serial=run.serial.then(async()=>{
+   const report=await inspectChildFrames(tabId,run);
+   if(report){
+    run.lastFrameReport=report;
+    scheduleFrameCollectionFinalization(tabId,run,report);
+   }
+  }).catch(error=>console.warn('[KRA frame discovery]',error.message));
  },delay);
 }
 chrome.webNavigation?.onDOMContentLoaded?.addListener(details=>{
  if(!details||details.frameId===0)return;
  const run=activeFrameScans.get(details.tabId);
- if(run)queueChildFrameScan(details.tabId,run,500);
+ if(run)queueChildFrameScan(details.tabId,run);
 });
 chrome.webNavigation?.onCommitted?.addListener(details=>{
- if(details?.frameId!==0)return;
+ if(!details)return;
  const run=activeFrameScans.get(details.tabId);
- if(run){
-  clearTimeout(run.timer);clearTimeout(run.finalizer);
-  mergedFrameReviews.abort(run.groupId,'网页已导航，取消已过时的跨框架审核。');
-  activeFrameScans.delete(details.tabId);
+ if(!run)return;
+ if(details.frameId!==0){
+  queueChildFrameScan(details.tabId,run);
+  return;
  }
+ clearTimeout(run.timer);clearTimeout(run.finalizer);
+ mergedFrameReviews.abort(run.groupId,'网页已导航，取消已过时的跨框架审核。');
+ activeFrameScans.delete(details.tabId);
 });
 
 async function startWholePageForTab(tabId,settings){
  const uiSettings=sanitizeUiSettings(settings.uiSettings);
  const groupId='frame-group-'+tabId+'-'+crypto.randomUUID();
- const run={groupId,until:Date.now()+FRAME_DISCOVERY_GRACE_MS,started:new Set(),
+ const startedAt=Date.now();
+ const run={groupId,until:startedAt+FRAME_DISCOVERY_GRACE_MS,
+  collectionDeadline:startedAt+FRAME_COLLECTION_MAX_MS,
+  lastFrameEventAt:0,lastFrameReport:null,started:new Set(),
   serial:Promise.resolve(),timer:null,finalizer:null,finalizing:false,modes:settings.modes,
   forceRegenerate:Boolean(settings.forceRegenerate),uiSettings,
   trigger:settings.trigger||'popup'};
@@ -399,26 +441,12 @@ async function startWholePageForTab(tabId,settings){
   console.warn('[KRA frame discovery]',error.message);
   return {discovered:0,started:0,failed:1,error:error.message};
  });
- // Collect all frame START messages into one source-shared analysis.
- // Hydration gets one bounded collection window, rather than independent
- // manual prompts or repeated API context for every iframe.
- queueChildFrameScan(tabId,run,950);
- run.finalizer=setTimeout(()=>{
-  if(activeFrameScans.get(tabId)!==run)return;
-  run.finalizing=true;clearTimeout(run.timer);
-  run.serial=run.serial.then(async()=>{
-   // Final pass after the DOM hydration grace; no new frames after closure.
-   run.finalizing=false;
-   await inspectChildFrames(tabId,run);
-   run.finalizing=true;
-   mergedFrameReviews.finalize(groupId).catch(error=>
-    console.warn('[KRA merged frame review]',error.message));
-  }).catch(error=>{
-   mergedFrameReviews.abort(groupId,error.message);
-  }).finally(()=>{
-   if(activeFrameScans.get(tabId)===run)activeFrameScans.delete(tabId);
-  });
- },MERGE_COLLECTION_MS);
+ // All initially visible child frames have finished probing/registration.
+ // A stable single-frame article starts promptly; active iframes receive a
+ // quiet period, capped by the original 4.8-second safety limit.
+ // Post-completion comment hydration remains an independent 15-second watch.
+ run.lastFrameReport=children;
+ scheduleFrameCollectionFinalization(tabId,run,children);
  return {...main,frameSummary:children};
 }
 
