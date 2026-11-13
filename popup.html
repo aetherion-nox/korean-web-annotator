@@ -51,8 +51,10 @@
       <button id="selectionButton" class="primary" data-i18n="annotateSelection">标注所选文字</button>
       <button id="runButton" data-i18n="annotatePage">一键标注整页</button>
       <button id="reviewSelectionButton">模型重审选区</button>
-      <button id="undoButton" data-i18n="undo">撤销上次标注</button>
-      <button id="restoreButton" data-i18n="restore">还原全部</button>
+      <button id="undoButton" data-i18n="undo">撤销一步</button>
+      <button id="redoButton" data-i18n="redo">重做一步</button>
+      <p id="historySteps" class="history-steps" role="status" aria-live="polite">撤销 0 步 · 重做 0 步</p>
+      <button id="restoreButton" class="danger-subtle" data-i18n="restore">清除全部标注</button>
       <button id="clearCacheButton" class="danger-subtle" data-i18n="clearCache">清除标注缓存</button>
     </div>
 
