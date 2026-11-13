@@ -1,4 +1,4 @@
-name: Inspect Chosun Article HTML and Rendered DOM (one-off)
+name: Inspect Chosun Article HTML, Rendered DOM and Frames (one-off)
 on:
   push:
     branches:
