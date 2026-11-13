@@ -1,4 +1,4 @@
-name: Verify and Package Unified Cross-Frame Review Batches v10 (final regression)
+name: Verify and Package Unified Cross-Frame Review Batches v10 (final verified rerun)
 on:
   push:
     branches:
