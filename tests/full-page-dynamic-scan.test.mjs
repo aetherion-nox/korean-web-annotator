@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import {createParagraphPlan} from '../paragraph-plan.js';
+import {runSentencePipeline} from '../annotation-pipeline.js';
 const {JSDOM}=createRequire(import.meta.url)('jsdom');
 const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
 
@@ -132,4 +133,18 @@ test('stop-after-completion switch still prevents continuous observer and model 
  assert.equal(ctx.automaticObserver,null);
  assert.equal(started.length,0);
  dom.window.close();
+});
+
+
+test('5,001 distinct paragraph sentences pass the worker pipeline without a new truncation failure',async()=>{
+ const identity={engine_version:'scan-fixture',dictionary_fingerprint:'scan-fixture'};
+ const sentences=Array.from({length:5001},(_,i)=>({id:'p'+i,text:'학교'}));
+ let analyzed=0,done=false;
+ await runSentencePipeline({operationId:'huge-page',sentences,modes:{hanja:true,loanword:false}},
+  event=>{if(event.type==='DONE')done=true;},{
+   status:async()=>identity,
+   analyze:async()=>{analyzed++;return {...identity,annotations:[],targets:[],stats:{pending:0}};}
+  });
+ assert.equal(done,true);
+ assert.ok(analyzed>=1);
 });
