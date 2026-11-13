@@ -1777,7 +1777,13 @@
       record.inserted=nodes;record.snapshots=nodes.map(n=>n.cloneNode(true));
       record.undoneState=null;changed++;
     }
-    if(!changed&&!operation.recoveryAfter?.size)
+    // A site may mutate or remove the old nodes between Undo and Redo.
+    // A recovery snapshot only authorizes replay if its original source
+    // survives verbatim, never merely because a Map still has entries.
+    const recoverable=Boolean(operation.recoveryAfter?.size&&
+      typeof sourceOf==='function'&&[...operation.recoveryAfter].some(([block,after])=>
+        after.size&&block.element?.isConnected&&sourceOf(block.element).text===block.text));
+    if(!changed&&!recoverable)
       return {ok:false,error:'网页已更改原文；无法安全重做此步骤。'};
     if(operation.recoveryAfter)for(const [block,after]of operation.recoveryAfter)
       if(recoveryBlocks.has(block))block.annotations=new Map(after);
