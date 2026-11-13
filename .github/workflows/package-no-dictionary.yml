@@ -1,4 +1,4 @@
-name: Verify and Package Positional-v1 Null Protocol v1.1.56.0 (final safety audit)
+name: Verify and Package Positional-v1 Null Protocol v1.1.56.0 (candidate release validation)
 on:
   push:
     branches:
