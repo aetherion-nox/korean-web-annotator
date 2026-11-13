@@ -1842,12 +1842,10 @@
     task.operation.startedAt=Date.now();
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;
       if(history.length>HISTORY_LIMIT)history.shift();
-      if(redoStack.length){
-        redoStack.length=0;
-        // A new action in any frame invalidates the abandoned redo branch
-        // throughout this tab; it must never linger in an unrelated iframe.
-        void send({type:'KRA_HISTORY_NEW_BRANCH',groupId:task.operation.groupId});
-      }
+      redoStack.length=0;
+      // Every new successful annotation action invalidates other frames'
+      // undone branch, even when this frame itself had no redo steps.
+      void send({type:'KRA_HISTORY_NEW_BRANCH',groupId:task.operation.groupId});
       refreshTabHistoryCounter();}return count;};
     task.paint=paint;
     task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!
