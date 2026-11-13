@@ -1380,7 +1380,7 @@
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
     const task = { operationId, port, entries, paragraphPlan, modes, scan, startedAutomatically:message.automatic===true,
-      startPageUrl:location.href, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges,
+      startPageUrl:typeof location!=='undefined'?location.href:document.location?.href||'', finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges,
       operation:[], historyRecorded:false };
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
     task.paint=paint;
