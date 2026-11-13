@@ -13,9 +13,19 @@ import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
-import {undoTabAnnotations,restoreTabAnnotations} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.56.8-committed-dynamic-recovery';
+import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
+const CONTENT_SCRIPT_VERSION='1.1.56.9-multistep-undo-redo';
 const UNDO_LAST_MENU_ID='kra-undo-last';
+// Serialize history-changing requests in each tab so rapid Undo/Redo clicks
+// cannot observe or consume the same step twice.
+const historyQueue=new Map();
+function serializeHistory(tabId,callback){
+ const previous=historyQueue.get(tabId)||Promise.resolve();
+ const next=previous.catch(()=>{}).then(callback);
+ historyQueue.set(tabId,next);
+ void next.finally(()=>{if(historyQueue.get(tabId)===next)historyQueue.delete(tabId);}).catch(()=>{});
+ return next;
+}
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
 let cacheLoaded=false;
@@ -85,15 +95,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     recoverMergedManualBatch(sender.tab.id,message).then(sendResponse,error=>sendResponse({ok:false,error:String(error.message||error)}));
     return true;
   }
-  if(message?.type==='KRA_UNDO_TAB'||message?.type==='KRA_RESTORE_TAB'){
+  if(message?.type==='KRA_HISTORY_NEW_BRANCH'){
+    if(sender.id!==chrome.runtime.id||!Number.isInteger(sender.tab?.id)){
+      sendResponse({ok:false,error:'无效的标注历史更新。'});return;
+    }
+    serializeHistory(sender.tab.id,()=>
+      invalidateRedoInTab(chrome,sender.tab.id,sender.frameId)
+    ).then(sendResponse,error=>sendResponse({ok:false,error:String(error.message||error)}));
+    return true;
+  }
+  if(['KRA_UNDO_TAB','KRA_REDO_TAB','KRA_RESTORE_TAB','KRA_HISTORY_TAB'].includes(message?.type)){
     if(sender.id!==chrome.runtime.id){
       sendResponse({ok:false,error:'无效的网页标注请求。'});return;
     }
     const tabPromise=Number.isInteger(sender.tab?.id)?Promise.resolve(sender.tab.id):
       chrome.tabs.query({active:true,currentWindow:true}).then(tabs=>tabs[0]?.id);
-    tabPromise.then(tabId=>message.type==='KRA_UNDO_TAB'?
-      undoTabAnnotations(chrome,tabId):restoreTabAnnotations(chrome,tabId)
-    ).then(sendResponse,error=>sendResponse({ok:false,error:String(error.message||error)}));
+    tabPromise.then(tabId=>serializeHistory(tabId,()=>{
+      switch(message.type){
+        case 'KRA_UNDO_TAB':return undoTabAnnotations(chrome,tabId);
+        case 'KRA_REDO_TAB':return redoTabAnnotations(chrome,tabId);
+        case 'KRA_RESTORE_TAB':return restoreTabAnnotations(chrome,tabId);
+        case 'KRA_HISTORY_TAB':return tabAnnotationHistoryState(chrome,tabId);
+      }
+    })).then(sendResponse,error=>sendResponse({ok:false,error:String(error.message||error)}));
     return true;
   }
   if(message?.type==='KRA_START_PAGE_FROM_POPUP'){
