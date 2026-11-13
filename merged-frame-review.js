@@ -43,7 +43,19 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
    for(const [part,results] of byPart)send(part,{...event,results});
    return;
   }
-  if(['MANUAL_REVIEW_PLAN','MANUAL_REVIEW_REQUEST','MANUAL_REVIEW_ERROR','MANUAL_REVIEW_ACCEPTED'].includes(event.type)){
+  if(event.type==='MANUAL_REVIEW_PLAN'){
+   // The main frame receives enough trusted geometry to recover each live
+   // frame after Chrome retires the MV3 service worker during long manual
+   // model work. Child frames are only told to retain their local DOM task.
+   const frameRouting=[...group.owners].map(([sentenceId,{part,id}])=>({
+     sentenceId,frameId:part.frameId,operationId:part.operationId,localId:id
+   }));
+   if(group.host)send(group.host,{...event,frameRouting});
+   for(const part of group.parts)if(part!==group.host)
+    send(part,{type:'MANUAL_REVIEW_STANDBY'});
+   return;
+  }
+  if(['MANUAL_REVIEW_REQUEST','MANUAL_REVIEW_ERROR','MANUAL_REVIEW_ACCEPTED'].includes(event.type)){
    if(group.host)send(group.host,event);
    return;
   }
