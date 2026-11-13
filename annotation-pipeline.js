@@ -106,7 +106,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {analysis,localKey}=item;
   item.result={accepted:[],unresolved:analysis.targets};
   if(config && analysis.targets.length){
-   const fingerprint=JSON.stringify([config.hanjaReadingCheck!==false,smartSegmentation?'id-review-v21-single-pass-segmentation-repair':experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
+   const fingerprint=JSON.stringify([config.hanjaReadingCheck!==false,smartSegmentation?'positional-v1-smart-segmentation':experimental?'positional-v1-literal-origin':'positional-v1-dictionary',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
    item.reviewFingerprint=fingerprint;
    item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
    const cached=!experimental&&!smartSegmentation&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
@@ -189,7 +189,14 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    item.result.unresolved=item.analysis.targets.filter(t=>
      !answered.has(t.target_id)&&!retired.has(t.target_id)&&!t.scan_only);
    const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,item.analysis.targets,batch.context]);
-   if(!experimental&&!smartSegmentation&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({target_id:a.target.target_id,choice_id:a.option.choice_id}))});
+   if(!experimental&&!smartSegmentation&&!config.manualReview&&
+     item.result.unresolved.length===0&&item.result.accepted.length===item.analysis.targets.length){
+      const byTarget=new Map(item.result.accepted.map(a=>[a.target.target_id,a.option]));
+      cache.set(effectiveReviewKey,{results:item.analysis.targets.map(t=>{
+       const option=byTarget.get(t.target_id);
+       return option.type==='keep'?null:option.choice_id;
+      })});
+     }
   }
   await persist(cache);
  }
