@@ -731,10 +731,74 @@
     return value + escapeHTML(entry.text.slice(cursor));
   }
 
+  function findRepaintedTextNode(entry){
+    const anchor=entry.recoveryAnchor;
+    if(!anchor||entry.isRuby)return null;
+    const {block,start}=anchor;
+    if(!block?.text||!block.tag)return null;
+    const candidates=[];
+    // A React re-render can replace just the text node while preserving its
+    // span, or replace the entire comment card/span. Rebind only if the exact
+    // unannotated source text and original offsets still identify one node.
+    if(block.element?.isConnected&&sourceOf(block.element).text===block.text){
+      candidates.push(block.element);
+    }else{
+      const scope=block.scope?.isConnected?block.scope:
+        document.querySelectorAll(block.selector)[block.scopeIndex];
+      if(!scope)return null;
+      for(const element of scope.querySelectorAll(block.tag)){
+        if(sourceOf(element).text===block.text)candidates.push(element);
+      }
+    }
+    if(!candidates.length)return null;
+    const contextual=candidates.filter(element=>recoveryContext(element)===block.context);
+    const matches=contextual.length===1?contextual:
+      candidates.length===1?candidates:[];
+    if(matches.length!==1)return null;
+    const element=matches[0],source=sourceOf(element);
+    const runs=source.runs.filter(run=>!run.owned&&run.start===start&&
+      run.node?.nodeType===3&&run.node.data===entry.text&&
+      run.node.parentElement?.closest('ruby,input,textarea,select,[contenteditable="true"]')===null);
+    if(runs.length!==1)return null;
+    block.element=element;
+    block.context=recoveryContext(element);
+    return runs[0].node;
+  }
+
   function insertConversions(entries, operation) {
     const range = document.createRange();
-    for (const [node, entry] of entries) {
+    for (const [originalNode, entry] of entries) {
       if (entry.invalidated || (!entry.annotations.length && !entry.renderRecord && !(entry.isRuby && entry.modelReviewed))) continue;
+      let node=entry.node||originalNode;
+      // A site's reactive renderer may replace a comment span between
+      // analysis and conversion. A unique exact source match can safely
+      // receive the same committed result without a fresh model request.
+      // Never move a provisional model preview onto a different node.
+      const oldRecord=entry.renderRecord;
+      const stale=oldRecord?
+        !(oldRecord.parent?.isConnected&&oldRecord.inserted.length&&
+          oldRecord.inserted.every((n,i)=>n.isConnected&&n.parentNode===oldRecord.parent&&
+            n.isEqualNode(oldRecord.snapshots[i])&&
+            (i===0||oldRecord.inserted[i-1].nextSibling===n))):
+        !node.isConnected||!node.parentNode||(!entry.isRuby&&node.data!==entry.text);
+      if(stale&&!entry.isRuby&&!entry.hasPreview){
+        const replacement=findRepaintedTextNode(entry);
+        if(replacement){
+          entry.node=node=replacement;
+          if(oldRecord){
+            // Keep this logical user action's undo/redo record current.
+            oldRecord.parent=node.parentNode;
+            oldRecord.original=node;
+            oldRecord.originalSnapshot=node.cloneNode(true);
+            oldRecord.inserted=[node];
+            oldRecord.snapshots=[node.cloneNode(true)];
+            entry.renderHTML=null;
+          }
+        }
+      }
+      // If a temporary preview was lost, let the committed result retry the
+      // new node later instead of permanently invalidating the entry.
+      if(stale&&entry.hasPreview)continue;
       // If no new review or local conversion actually replaces an existing
       // ruby, preserve its old annotation instead of inventing a no-op undo.
       const html=entry.isRuby&&!entry.modelReviewed&&!entry.localAnnotations?.length?entry.originalOuterHTML:conversionHTML(entry);
