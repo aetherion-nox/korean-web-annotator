@@ -499,30 +499,96 @@
 
   // Furiganator's TreeWalker -> conversion Map -> single fragment insertion pass.
   // Korean rt contains Hangul, so exclude the entire ruby subtree on later runs.
-  function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false) {
-    const entries = new Map();
-    if (!document.body) return entries;
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!/[가-힣]/u.test(node.data) || !/\S/u.test(node.data)) return NodeFilter.FILTER_REJECT;
-        if (['TEXTAREA', 'RUBY', 'RT', 'INPUT', 'SCRIPT', 'NOSCRIPT', 'SELECT', 'OPTION', 'STYLE'].includes(node.parentNode?.tagName)) return NodeFilter.FILTER_REJECT;
-        if (node.parentElement?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,.kra-floating-ball')) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
+  function openTextRoots(root=document.body) {
+    if(!root)return [];
+    const roots=[root],seen=new WeakSet();
+    // TreeWalker doesn't descend into open Shadow DOM. Include those roots
+    // explicitly, including nested ones. Closed roots cannot be inspected.
+    for(let i=0;i<roots.length;i++){
+      for(const element of roots[i].querySelectorAll('*')){
+        const shadow=element.shadowRoot;
+        if(shadow&&!seen.has(shadow)){seen.add(shadow);roots.push(shadow);}
       }
-    });
-    let node;
-    while ((node = walker.nextNode()) && entries.size < MAX_ENTRIES) {
-      const selected=selectedIntervals(node,node.data,ranges,false);
-      if(!selected.length||automatic&&(seenSources.has(node.data)||isKnownRecoverySource(node)))continue;
-      entries.set(node, { node, text: node.data, annotations: [], selected, recoveryAnchor:trackRecovery?recoveryAnchor(node):null, id: String(entries.size) });
     }
-    if(includeOwned)for(const node of document.querySelectorAll(OWN_RUBY)){
-      if(entries.size>=MAX_ENTRIES)break;
-      const text=node.dataset.kraOriginal||'';
-      const selected=selectedIntervals(node,text,ranges,true);
-      if(!text||!selected.length)continue;
-      entries.set(node,{node,text,annotations:[],selected,recoveryAnchor:trackRecovery?recoveryAnchor(node):null,isRuby:true,originalHTML:node.innerHTML,originalOuterHTML:node.outerHTML,id:String(entries.size)});
+    return roots;
+  }
+
+  function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false) {
+    const entries=new Map();
+    const stats={textNodes:0,hangulNodes:0,eligibleNodes:0,selectedNodes:0,
+      skippedHidden:0,skippedExcluded:0,skippedProcessed:0,skippedSelection:0,
+      recoveryCapReached:0,shadowRoots:0};
+    if(!document.body){lastScanStats=stats;return entries;}
+    const roots=openTextRoots();
+    stats.shadowRoots=Math.max(0,roots.length-1);
+    const visibilityCache=new WeakMap();
+    const visibilityReason=element=>{
+      if(!element||element.nodeType!==1)return '';
+      if(visibilityCache.has(element))return visibilityCache.get(element);
+      let reason='';
+      if(element.matches('ruby,script,style,noscript,input,textarea,select,option,'+
+         '.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
+         '.kra-floating-ball,.kra-manual-reopen,[contenteditable="true"]'))
+        reason='excluded';
+      else if(element.hidden||element.hasAttribute('inert')||
+         element.getAttribute('aria-hidden')==='true')reason='hidden';
+      else {
+        // Offscreen content is eligible. Exclude only actually hidden trees.
+        const css=document.defaultView?.getComputedStyle?.(element);
+        if(css?.display==='none'||css?.visibility==='hidden'||
+           css?.visibility==='collapse'||css?.contentVisibility==='hidden')
+          reason='hidden';
+      }
+      if(!reason){
+        const root=element.getRootNode?.();
+        reason=visibilityReason(element.parentElement||root?.host);
+      }
+      visibilityCache.set(element,reason);
+      return reason;
+    };
+    const cache=trackRecovery?{
+      identity:pageIdentity(),sources:new WeakMap(),contexts:new WeakMap(),
+      scopePositions:new Map(),detachedByKey:new Map()
+    }:null;
+    if(cache)for(const block of recoveryBlocks)if(!block.element.isConnected){
+      const key=JSON.stringify([block.text,block.context,block.tag,block.selector,block.scopeIndex]);
+      const list=cache.detachedByKey.get(key)||[];
+      list.push(block);cache.detachedByKey.set(key,list);
     }
+    for(const root of roots){
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      let node;
+      while((node=walker.nextNode())){
+        stats.textNodes++;
+        if(!/[가-힣]/u.test(node.data)||!/\S/u.test(node.data))continue;
+        stats.hangulNodes++;
+        const reason=visibilityReason(node.parentElement);
+        if(reason){stats[reason==='excluded'?'skippedExcluded':'skippedHidden']++;continue;}
+        stats.eligibleNodes++;
+        const selected=selectedIntervals(node,node.data,ranges,false);
+        if(!selected.length){stats.skippedSelection++;continue;}
+        // Track exact DOM nodes and their current source versions, NOT a
+        // global string. Two recommendation cards may have identical text.
+        if(automatic&&(analyzedNodeVersions.get(node)===node.data||
+           isKnownRecoverySource(node))){stats.skippedProcessed++;continue;}
+        stats.selectedNodes++;
+        const anchor=trackRecovery?recoveryAnchor(node,cache):null;
+        if(trackRecovery&&!anchor)stats.recoveryCapReached++;
+        entries.set(node,{node,text:node.data,annotations:[],selected,
+          recoveryAnchor:anchor,id:String(entries.size)});
+      }
+      if(includeOwned)for(const node of root.querySelectorAll(OWN_RUBY)){
+        if(visibilityReason(node.parentElement))continue;
+        const text=node.dataset.kraOriginal||'';
+        const selected=selectedIntervals(node,text,ranges,true);
+        if(!text||!selected.length)continue;
+        entries.set(node,{node,text,annotations:[],selected,
+          recoveryAnchor:trackRecovery?recoveryAnchor(node,cache):null,
+          isRuby:true,originalHTML:node.innerHTML,originalOuterHTML:node.outerHTML,
+          id:String(entries.size)});
+      }
+    }
+    lastScanStats=stats;
     return entries;
   }
 
