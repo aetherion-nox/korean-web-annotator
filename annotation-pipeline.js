@@ -13,7 +13,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const reviewLocalConversions=!reviewAll&&(message.reviewLocalConversions===true||smartSegmentation);
  const bypassCache=selectionReview || message.forceRegenerate;
  enabled=enabled || reviewAll || smartSegmentation;
- if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>5000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
+ if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>20000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
  const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false,filterDictionaryPeople:message.filterDictionaryPeople!==false};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
  const stats={model_accepted:0,model_keep:0,model_literal_origins:0,repair_applied:0,repair_rejected:0,repair_offset_corrected:0,local_determined:0,pending:0,model_resolved:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
