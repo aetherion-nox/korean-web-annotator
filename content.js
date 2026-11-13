@@ -1365,7 +1365,13 @@
     if(!message.automatic){toolbarDismissed=false;diagnostics.length=0;}
     const ranges=message.ranges||null;
     const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
+    const scan={...(lastScanStats||{}),collected:entries.size};
     if(entries.size)pageHasHangul=true;
+    if(!message.automatic||entries.size||scan.skippedHidden||scan.skippedProcessed){
+      addDiagnostic({stage:'scan',level:scan.recoveryCapReached?'warning':'info',
+        message:`网页文本扫描：检测 ${scan.textNodes} 个文本节点，含韩文 ${scan.hangulNodes}，进入分析 ${entries.size}；隐藏跳过 ${scan.skippedHidden}，已有标注/已处理跳过 ${scan.skippedProcessed}，开放式 Shadow DOM ${scan.shadowRoots}。`,
+        detail:JSON.stringify({...scan,source:'DOM',mode:message.automatic?'incremental':'initial'})});
+    }
     if (!entries.size) { status('没有未标注的韩语文字', 100); return { ok: true, started: false }; }
     let paragraphPlan;
     try{paragraphPlan=createParagraphPlan(entries,sourceOf,BLOCK_TAGS);}catch(error){return {ok:false,error:error.message};}
@@ -1373,7 +1379,9 @@
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
-    const task = { operationId, port, entries, paragraphPlan, modes, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges, operation:[], historyRecorded:false };
+    const task = { operationId, port, entries, paragraphPlan, modes, scan, startedAutomatically:message.automatic===true,
+      startPageUrl:location.href, finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges,
+      operation:[], historyRecorded:false };
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
     task.paint=paint;
     task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!
@@ -1416,7 +1424,9 @@
         return;
       }
       if (result.type !== 'RESULTS' && result.type !== 'DONE') return;
-      globalThis.__KRA_PIPELINE_STATUS__ = { stats: result.stats, engine_version: result.engine_version, dictionary_metadata: result.dictionary_metadata };
+      globalThis.__KRA_PIPELINE_STATUS__ = { ...globalThis.__KRA_PIPELINE_STATUS__,
+        scan:task.scan,stats: result.stats, engine_version: result.engine_version,
+        dictionary_metadata: result.dictionary_metadata };
       const changedEntries=new Map();
       for (const item of (result.results||[]).flatMap(item=>task.paragraphPlan.projectResult(item,{source:result.source,provisional:result.provisional}))) {
         const entry = byId.get(item.id);
@@ -1449,7 +1459,12 @@
         m+(node.isConnected&&node.matches?.(OWN_RUBY)?1:0)+
         (node.isConnected?(node.querySelectorAll?.(OWN_RUBY)?.length||0):0),0),0);
       const invalidated=[...entries.values()].filter(e=>e.invalidated===true).length;
-      const display={model_accepted:result.stats?.model_accepted||0,
+      const display={dom_scanned_nodes:task.scan?.textNodes||0,
+        dom_hangul_nodes:task.scan?.hangulNodes||0,
+        dom_submitted_nodes:task.scan?.collected||0,
+        local_candidates:result.stats?.pending||0,
+        local_conversions:result.stats?.local_determined||0,
+        model_accepted:result.stats?.model_accepted||0,
         model_keep:result.stats?.model_keep||0,
         model_literal_origins:result.stats?.model_literal_origins||0,
         projected_annotations:expected,rendered_annotations:count,
