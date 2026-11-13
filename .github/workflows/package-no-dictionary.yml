@@ -1,4 +1,4 @@
-name: Verify and Package Dynamic Full-Page Korean Text Scan v8
+name: Verify and Package Dynamic Full-Page Korean Text Scan v8 (final regression)
 on:
   push:
     branches:
