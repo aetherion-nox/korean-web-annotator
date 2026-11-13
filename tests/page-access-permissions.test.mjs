@@ -11,7 +11,7 @@ test('website host permissions cover HTTP/HTTPS top frames and cross-origin ifra
  assert.equal(pkg.version,manifest.version);
  assert.ok(manifest.host_permissions?.includes('https://*/*'));
  assert.ok(manifest.host_permissions?.includes('http://*/*'));
- assert.equal(manifest.optional_host_permissions,undefined,'Do not overlap required and optional web host permissions');
+ assert.equal(manifest.optional_host_permissions,undefined);
  const scripts=manifest.content_scripts;
  assert.equal(scripts.length,1);
  assert.deepEqual(scripts[0].matches,['http://*/*','https://*/*']);
@@ -20,30 +20,31 @@ test('website host permissions cover HTTP/HTTPS top frames and cross-origin ifra
  assert.equal(scripts[0].match_origin_as_fallback,true);
 });
 
-test('popup, worker and content script have exactly matching live script version',()=>{
+test('popup, worker and content script share the current content-script version',()=>{
  const version='1.1.56.2-page-access';
- assert.match(popup,/const CONTENT_SCRIPT_VERSION = '1\\.1\\.56\\.2-page-access';/);
- assert.match(worker,/const CONTENT_SCRIPT_VERSION='1\\.1\\.56\\.2-page-access';/);
- assert.match(content,/const VERSION = '1\\.1\\.56\\.2-page-access';/);
- for(const file of [popup,worker,content])assert.ok(file.includes(version));
- assert.doesNotMatch(popup,/1\\.1\\.55\\.4-primary-toolbar-only/);
- assert.doesNotMatch(worker,/1\\.1\\.55\\.4-primary-toolbar-only/);
+ assert.ok(popup.includes("const CONTENT_SCRIPT_VERSION = '"+version+"';"));
+ assert.ok(worker.includes("const CONTENT_SCRIPT_VERSION='"+version+"';"));
+ assert.ok(content.includes("const VERSION = '"+version+"';"));
+ for(const script of [popup,worker,content]){
+  assert.ok(script.includes(version));
+  assert.ok(!script.includes('1.1.55.4-primary-toolbar-only'));
+ }
 });
 
 test('permission-denied injections report actionable site-access guidance',()=>{
  for(const script of [popup,worker]){
-  assert.match(script,/chrome\\.scripting\\.insertCSS/);
-  assert.match(script,/chrome\\.scripting\\.executeScript/);
-  assert.match(script,/Extension manifest must request permission/);
-  assert.match(script,/网站访问权限|访问当前网站/);
-  assert.match(script,/chrome:\\/\\//);
+  assert.ok(script.includes('chrome.scripting.insertCSS'));
+  assert.ok(script.includes('chrome.scripting.executeScript'));
+  assert.ok(script.includes('Extension manifest must request permission'));
+  assert.ok(script.includes('网站访问权限')||script.includes('访问当前网站'));
+  assert.ok(script.includes('chrome://'));
  }
- assert.match(worker,/dispatchChildFrameBatch/);
- assert.match(worker,/ensureContentScriptInFrame\\(tabId,frame\\.frameId\\)/);
+ assert.ok(worker.includes('dispatchChildFrameBatch'));
+ assert.ok(worker.includes('ensureContentScriptInFrame(tabId,frame.frameId)'));
 });
 
 test('API configuration verifies persistent website permissions without optional-request prompts',()=>{
- assert.match(options,/async function requestEndpointPermission/);
- assert.match(options,/chrome\\.permissions\\.contains\\(\\{origins:\\[originPattern\\]\\}\\)/);
- assert.doesNotMatch(options,/chrome\\.permissions\\.request\\(\\{ origins:\\[originPattern\\] \\}\\)/);
+ assert.ok(options.includes('async function requestEndpointPermission'));
+ assert.ok(options.includes('chrome.permissions.contains({origins:[originPattern]})'));
+ assert.ok(!options.includes('chrome.permissions.request({ origins:[originPattern] })'));
 });
