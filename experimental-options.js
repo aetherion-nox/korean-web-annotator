@@ -77,7 +77,7 @@ export function literalOriginOption(target,choiceId,config={}){
     /[<>\x00-\x1f\x7f]/u.test(choiceId)||RESERVED.test(choiceId)||!canProposeExperimentalOption(target))return null;
  // A known dictionary choice key MUST be resolved by dictionary
  // selection, never interpreted as an invented etymology.
- if(target.options?.some(o=>o.choice_id===choiceId))return null;
+ if(target.options?.some(o=>o.type!=='keep'&&o.choice_id===choiceId))return null;
  let type;
  if(CJK.test(choiceId)&&config.experimentalHanja===true)type='hanja';
  else if(LOANWORD.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId)&&config.experimentalLoanword===true)type='loanword';
@@ -106,7 +106,7 @@ export function explainLiteralOriginRejection(target,choiceId,config={}){
  if(!canProposeExperimentalOption(target))return 'protected_name_or_partial_word';
  if(typeof choiceId!=='string'||!choiceId||choiceId.length>160||choiceId!==choiceId.trim()||RESERVED.test(choiceId))
   return 'invalid_choice_id';
- if(target.options?.some(o=>o.choice_id===choiceId))return 'known_choice_key';
+ if(target.options?.some(o=>o.type!=='keep'&&o.choice_id===choiceId))return 'known_choice_key';
  if(/\p{Script=Han}/u.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId))
   return 'mixed_script_requires_segments';
  if(CJK.test(choiceId)){
