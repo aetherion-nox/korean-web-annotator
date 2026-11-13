@@ -51,7 +51,7 @@ export function choicePreviewParser(targets,onPreview,batchId,resolveExtra=()=>n
   if(accepted.length)onPreview([...accepted]);
   // Consume only fully separated values, retaining the incomplete string.
   offset=begin;
-  text=text.slice(offset);offset=0;
+  text=text.slice(offset);offset=0;quoted=false;escaped=false;
   if(closed&&index!==targets.length)onPreview([]);
  };
 }
