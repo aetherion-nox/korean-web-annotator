@@ -211,6 +211,8 @@
         const ruby=range.createContextualFragment(conversionHTML({text:a.surface,annotations:[{...a,start:0,end:a.surface.length}]})).firstChild;
         const parent=node.parentNode;for(const n of [node,prefix,ruby,suffix])ownDomChanges.add(n);
         node.before(prefix,ruby,suffix);node.remove();prefixes.set(a.node,prefix);
+        analyzedNodeVersions.set(prefix,prefix.data);
+        analyzedNodeVersions.set(suffix,suffix.data);
         const original=document.createTextNode(a.surface);
         for(let i=a.operation.length-1;i>=0;i--)if(a.operation[i].inserted.every(n=>!n.isConnected))a.operation.splice(i,1);
         a.operation.push({parent,original,originalSnapshot:original.cloneNode(true),inserted:[ruby],snapshots:[ruby.cloneNode(true)]});
@@ -652,6 +654,11 @@
       record.inserted[0].before(fragment);
       for(const old of record.inserted)old.remove();
       record.inserted=inserted;record.snapshots=inserted.map(n=>n.cloneNode(true));
+      // Remaining Hangul text fragments belong to the just-reviewed source.
+      // Remember these precise nodes, not the text string shared by other cards.
+      if(typeof analyzedNodeVersions!=='undefined')
+        for(const insertedNode of inserted)if(insertedNode.nodeType===3)
+          analyzedNodeVersions.set(insertedNode,insertedNode.data);
       if(!entry.renderRecord){entry.renderRecord=record;operation.push(record);}
       entry.renderHTML=html;
       seenSources.add(entry.text);
@@ -1178,7 +1185,11 @@
     }
     const complete=!task.experimentalRecoveryIncomplete&&Boolean(task.manualPlan?.length)&&task.manualPlan.every(batch=>task.manualApplied.has(batch.requestId));
     const message=`本批答案已在页面校验并应用，当前显示 ${count} 个标注。${complete?'全部手动批次已完成。':'本批已恢复，但缺少后续批次备份，请保留答案。'}`;
-    if(complete){for(const entry of task.entries.values())seenSources.add(entry.text);if(task.wholePage)pageCompleted=true;}
+    if(complete){for(const entry of task.entries.values()){
+      seenSources.add(entry.text);
+      if(typeof analyzedNodeVersions!=='undefined'&&entry.node?.nodeType===3&&entry.node.isConnected&&entry.node.data===entry.text)
+        analyzedNodeVersions.set(entry.node,entry.text);
+    }if(task.wholePage)pageCompleted=true;}
     finishTask(task,message,complete);status(message);if(complete)configureAutomaticAnnotation();publishState();
   }
 
@@ -1424,7 +1435,11 @@
       addDiagnostic({stage:'render',level:expected>actual?'warning':'info',
         message:`模型审核 ${display.model_accepted} 项（KEEP ${display.model_keep}、直接词源 ${display.model_literal_origins}）；投射 ${expected} 处，写入 ${count} 处，目前仍连接 DOM ${actual} 处。`,
         detail:JSON.stringify(display)});
-      for(const entry of entries.values())seenSources.add(entry.text);
+      for(const entry of entries.values()){
+        seenSources.add(entry.text);
+        if(!entry.invalidated&&entry.node?.nodeType===3&&entry.node.isConnected&&entry.node.data===entry.text)
+          analyzedNodeVersions.set(entry.node,entry.text);
+      }
       status(`完成：${count} 个标注`, 100);
       finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`,true);
       configureRecovery();
