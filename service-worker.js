@@ -10,7 +10,8 @@ import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
 import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.55';
+import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
+const CONTENT_SCRIPT_VERSION='1.1.55.4-multiframe';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -254,30 +255,103 @@ async function initializeExistingWebTabs() {
   await Promise.allSettled(tasks);
 }
 
-// This work belongs to the worker, so closing the popup cannot interrupt dispatch.
+// User-initiated multi-frame dispatch. A short grace window discovers late
+// iframe navigations but cannot cause indefinite background model requests.
 const pendingPopupPageStarts=new Map();
+const activeFrameScans=new Map();
+const FRAME_DISCOVERY_GRACE_MS=15000;
+
+async function inspectChildFrames(tabId,run){
+ if(activeFrameScans.get(tabId)!==run||Date.now()>run.until)return null;
+ const list=await chrome.webNavigation.getAllFrames({tabId});
+ if(!Array.isArray(list))return {discovered:0,started:0,unavailable:true};
+ const report=await dispatchChildFrameBatch(list,{
+  started:run.started,concurrency:3,
+  ensure:async frame=>ensureContentScriptInFrame(tabId,frame.frameId),
+  probe:async frame=>chrome.tabs.sendMessage(tabId,{type:'KRA_FRAME_PROBE'},{frameId:frame.frameId}),
+  start:async frame=>chrome.tabs.sendMessage(tabId,{
+   type:'START_ANNOTATION',modes:run.modes,deepAnalysis:true,
+   forceRegenerate:run.forceRegenerate,requestConcurrency:4,uiSettings:run.uiSettings
+  },{frameId:frame.frameId})
+ });
+ if(report.started||report.failed||report.inaccessible){
+  chrome.tabs.sendMessage(tabId,{type:'KRA_FRAME_DISPATCH_DIAGNOSTIC',
+   summary:`子框架扫描：发现 ${report.discovered}，新启动 ${report.started}，无可见韩文 ${report.empty}，无法访问 ${report.inaccessible}，失败 ${report.failed}。`,
+   detail:{...report,trigger:run.trigger}},{frameId:0}).catch(()=>{});
+ }
+ return report;
+}
+function queueChildFrameScan(tabId,run,delay=650){
+ if(activeFrameScans.get(tabId)!==run||Date.now()>run.until)return;
+ clearTimeout(run.timer);
+ run.timer=setTimeout(()=>{
+  if(activeFrameScans.get(tabId)!==run||Date.now()>run.until)return;
+  run.serial=run.serial.then(()=>inspectChildFrames(tabId,run)).catch(error=>
+   console.warn('[KRA frame discovery]',error.message));
+ },delay);
+}
+chrome.webNavigation?.onDOMContentLoaded?.addListener(details=>{
+ if(!details||details.frameId===0)return;
+ const run=activeFrameScans.get(details.tabId);
+ if(run)queueChildFrameScan(details.tabId,run,500);
+});
+chrome.webNavigation?.onCommitted?.addListener(details=>{
+ if(details?.frameId!==0)return;
+ const run=activeFrameScans.get(details.tabId);
+ if(run){clearTimeout(run.timer);activeFrameScans.delete(details.tabId);}
+});
+
+async function startWholePageForTab(tabId,settings){
+ const uiSettings=sanitizeUiSettings(settings.uiSettings);
+ const run={until:Date.now()+FRAME_DISCOVERY_GRACE_MS,started:new Set(),
+  serial:Promise.resolve(),timer:null,modes:settings.modes,
+  forceRegenerate:Boolean(settings.forceRegenerate),uiSettings,
+  trigger:settings.trigger||'popup'};
+ const previous=activeFrameScans.get(tabId);
+ if(previous)clearTimeout(previous.timer);
+ await ensureContentScriptInFrame(tabId,0);
+ const main=await chrome.tabs.sendMessage(tabId,{
+  type:'START_ANNOTATION',modes:run.modes,forceRegenerate:run.forceRegenerate,
+  deepAnalysis:true,requestConcurrency:4,uiSettings
+ },{frameId:0});
+ if(!main?.ok)throw new Error(main?.error||'无法启动整页标注。');
+ activeFrameScans.set(tabId,run);
+ run.serial=run.serial.then(()=>inspectChildFrames(tabId,run));
+ const children=await run.serial.catch(error=>{
+  console.warn('[KRA frame discovery]',error.message);
+  return {discovered:0,started:0,failed:1,error:error.message};
+ });
+ // Capture iframe hydration without overriding the user's post-completion
+ // auto-annotation preference.
+ queueChildFrameScan(tabId,run,1700);
+ setTimeout(()=>{
+  if(activeFrameScans.get(tabId)!==run)return;
+  run.serial=run.serial.then(()=>inspectChildFrames(tabId,run)).catch(()=>{});
+ },4800);
+ setTimeout(()=>{
+  if(activeFrameScans.get(tabId)===run){
+   clearTimeout(run.timer);activeFrameScans.delete(tabId);
+  }
+ },FRAME_DISCOVERY_GRACE_MS+100);
+ return {...main,frameSummary:children};
+}
+
 async function startPageFromPopup(message){
-  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
-  if(!tab?.id)throw new Error('没有找到当前标签页。');
-  if(pendingPopupPageStarts.has(tab.id))return pendingPopupPageStarts.get(tab.id);
-  const operation=(async()=>{
-    const uiSettings=sanitizeUiSettings(message.uiSettings);
-    const persist=chrome.storage.local.get('uiSettings').then(({uiSettings:stored={}})=>
-      chrome.storage.local.set({uiSettings:{...stored,...uiSettings,clearCacheOnExit:message.uiSettings?.clearCacheOnExit??true}})
-    ).catch(()=>{});
-    try{
-      await ensureContentScriptInFrame(tab.id,0);
-      const result=await chrome.tabs.sendMessage(tab.id,{
-        type:'START_ANNOTATION',modes:message.modes,forceRegenerate:Boolean(message.forceRegenerate),
-        deepAnalysis:true,requestConcurrency:4,uiSettings
-      },{frameId:0});
-      if(!result?.ok)throw new Error(result?.error||'无法启动整页标注。');
-      // Persist concurrently with dispatch rather than blocking task startup.
-      await persist;
-      return result;
-    }finally{pendingPopupPageStarts.delete(tab.id);}
-  })();
-  pendingPopupPageStarts.set(tab.id,operation);return operation;
+ const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+ if(!tab?.id)throw new Error('没有找到当前标签页。');
+ if(pendingPopupPageStarts.has(tab.id))return pendingPopupPageStarts.get(tab.id);
+ const operation=(async()=>{
+  const uiSettings=sanitizeUiSettings(message.uiSettings);
+  const persist=chrome.storage.local.get('uiSettings').then(({uiSettings:stored={}})=>
+   chrome.storage.local.set({uiSettings:{...stored,...uiSettings,
+    clearCacheOnExit:message.uiSettings?.clearCacheOnExit??true}})
+  ).catch(()=>{});
+  try{
+   const response=await startWholePageForTab(tab.id,{...message,uiSettings,trigger:'popup'});
+   await persist;return response;
+  }finally{pendingPopupPageStarts.delete(tab.id);}
+ })();
+ pendingPopupPageStarts.set(tab.id,operation);return operation;
 }
 
 async function ensureContextMenu() {
