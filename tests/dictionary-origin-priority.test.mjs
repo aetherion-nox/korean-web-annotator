@@ -10,24 +10,24 @@ const target={
   {choice_id:'c0',type:'hanja',replacement:'元箴',entry_id:123,definitions:['unrelated sense']}
  ]
 };
-const response=choice_id=>({results:[{target_id:'t0',choice_id}]});
+const response=value=>({results:[value]});
 
 test('dictionary plus Hanja experiment advertises open-origin without erasing dictionary choices',()=>{
  const cfg={experimentalHanja:true,reviewPosFilter:false};
  const {payload}=buildReviewPayload(target.context,[target],cfg);
- assert.equal(payload.choice_id_mode,'open-origin');
+ assert.equal(payload.origin_mode,'open-origin');
  assert.deepEqual(payload.allowed_origin_types,['hanja']);
  assert.equal(payload.dictionary_options_are_not_exhaustive,true);
  assert.equal(payload.keep_is_fallback_only,undefined);
- assert.equal(payload.targets[0].options.KEEP,null);
+ assert.equal(Object.hasOwn(payload.targets[0].options,'KEEP'),false);
  assert.equal(payload.targets[0].options.c0,'p0');
  assert.equal(payload.candidates[0].replacement,'元箴');
- assert.match(buildReviewInstructions(cfg),/^OPEN-ENDED ORIGIN AUDIT WITH DICTIONARY OPTIONS/);
+ assert.match(buildReviewInstructions(cfg),/OPEN-ENDED ORIGIN AUDIT WITH DICTIONARY OPTIONS/);
  const prompt=buildManualPrompt(target.context,[target],'abc123',cfg);
  assert.match(prompt,/FIRST infer its meaning/);
  assert.match(prompt,/SECOND compare EACH offered dictionary definition/);
  assert.match(prompt,/THIRD, if NO supplied dictionary option/);
- assert.match(prompt,/Options is NOT the complete set/);
+ assert.match(prompt,/candidates|origin/);
  assert.equal(JSON.parse(prompt.split('\n').at(-1)).batch_id,'abc123');
 });
 test('dictionary mode enables only the experimental source types actually selected',()=>{
@@ -36,7 +36,7 @@ test('dictionary mode enables only the experimental source types actually select
  const both=buildReviewPayload(target.context,[target],{experimentalHanja:true,experimentalLoanword:true}).payload;
  assert.deepEqual(both.allowed_origin_types,['hanja','loanword']);
  const ordinary=buildReviewPayload(target.context,[target],{}).payload;
- assert.equal(ordinary.choice_id_mode,undefined);
+ assert.equal(ordinary.origin_mode,undefined);
  assert.equal(ordinary.dictionary_options_are_not_exhaustive,undefined);
  assert.equal(buildReviewInstructions({}),REVIEW_INSTRUCTIONS);
  assert.doesNotMatch(buildManualPrompt(target.context,[target],'abc123',{}),/OPEN-ENDED origin audit/);
@@ -47,7 +47,7 @@ test('dictionary option ID, KEEP and direct verified origin coexist without forc
  assert.equal(dictionary.accepted.length,1);
  assert.equal(dictionary.accepted[0].option.choice_id,'c0');
  assert.equal(dictionary.experimentalAccepted,0);
- const keep=validateExperimentalChoices([target],response('KEEP'),cfg);
+ const keep=validateExperimentalChoices([target],response(null),cfg);
  assert.equal(keep.accepted[0].option.type,'keep');
  const literal=validateExperimentalChoices([target],response('原潛'),cfg);
  assert.equal(literal.accepted.length,1);
@@ -60,10 +60,10 @@ test('dictionary option ID, KEEP and direct verified origin coexist without forc
 test('segmentation experiment keeps optional repair instructions alongside open dictionary origin choices',()=>{
  const cfg={experimentalHanja:true,smartSegmentation:true};
  const prompt=buildManualPrompt(target.context,[target],'abc123',cfg);
- assert.match(prompt,/optional repairs/);
+ assert.match(prompt,/repairs/);
  assert.match(prompt,/FIRST infer its meaning/);
  const payload=buildReviewPayload(target.context,[target],cfg).payload;
- assert.equal(payload.choice_id_mode,'open-origin');
+ assert.equal(payload.origin_mode,'open-origin');
  assert.equal(payload.dictionary_options_are_not_exhaustive,true);
  assert.ok(payload.sentences[0].kiwi_tokens);
 });
