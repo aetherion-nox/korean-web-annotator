@@ -80,7 +80,7 @@ test('invalid literal-origin choices report separate alignment, reading, mixed-s
  const res=validateExperimentalChoices([t],{results:['韓']},cfg);
  assert.equal(res.rejectionCounts.hanja_reading_conflict,1);
 });
-test('conflict-free empty-ID replacement can be safely normalized to add, not an overlapping replacement',()=>{
+test('wrong-op empty-ID replacement must be rejected; a genuine add remains valid and cannot overlap',()=>{
  const context='경제 컴퓨터',t={...target('경제'),context};
  const configs={smartSegmentation:true,context,repairModes:{loanword:true,hanja:false},
   repairScopes:new Map([['t0',{text:context,allTargets:[t],localAnnotations:[],protected_ranges:[],
@@ -88,9 +88,10 @@ test('conflict-free empty-ID replacement can be safely normalized to add, not an
  const repair={sentence_id:'s0',op:'replace',old_target_ids:[],start:3,end:6,
   surface:'컴퓨터',choice_id:'computer'};
  const good=validateSegmentationRepairs([t],{repairs:[repair]},configs);
- assert.equal(good.accepted.length,1,JSON.stringify(good.rejected));
- assert.equal(good.accepted[0].op,'add');
- assert.equal(good.accepted[0].normalizedFromEmptyReplace,true);
+ assert.equal(good.accepted.length,0);
+ const added=validateSegmentationRepairs([t],{repairs:[{...repair,op:'add'}]},configs);
+ assert.equal(added.accepted.length,1,JSON.stringify(added.rejected));
+ assert.equal(added.accepted[0].op,'add');
  const overlap=validateSegmentationRepairs([t],{repairs:[{...repair,start:0,end:2,surface:'경제'}]},configs);
  assert.equal(overlap.accepted.length,0);
  assert.ok(overlap.rejected.length);
