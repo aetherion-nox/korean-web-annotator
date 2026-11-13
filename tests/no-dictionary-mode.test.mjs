@@ -69,7 +69,7 @@ test('model instruction and manual prompts identify no dictionary and still use 
  assert.match(prompt,/KEEP is only a fallback/);
  assert.match(prompt,/write the actual Hanja or Latin origin directly as choice_id/);
  const payload=buildReviewPayload(text,targets,cfg).payload;
- assert.equal(payload.format,'shared-pools-v3');
+ assert.equal(payload.format,'shared-pools-v4');
  assert.deepEqual(payload.candidates,[]);
  assert.deepEqual(payload.targets[0].options,{KEEP:null});
  assert.equal(payload.choice_id_mode,'open-origin');
@@ -89,7 +89,7 @@ test('dictionary-free sentence pipeline issues review requests and retains model
  const events=[],seen=[];
  const request=async(config,targets)=>{
   seen.push({dictionaryFree:config.dictionaryFree,targets});
-  return {results:targets.map(t=>({target_id:t.target_id,choice_id:'KEEP'}))};
+  return {results:targets.map(t=>({t:t.target_id,c:null}))};
  };
  const options={operationId:'no-dictionary-test',sentences:[{id:'s',text}],
   modes:{hanja:true},progressiveAnnotation:true};
@@ -114,8 +114,8 @@ test('dictionary-free generated Hanja and Latin origins survive the full model r
  const response=async(config,targets)=>{
   seen.push({dictionaryFree:config.dictionaryFree,experimentalHanja:config.experimentalHanja,
    experimentalLoanword:config.experimentalLoanword,targets});
-  return {results:targets.map(t=>({target_id:t.target_id,
-   choice_id:t.surface==='경제'?'經濟':'computer'}))};
+  return {results:targets.map(t=>({t:t.target_id,
+   c:t.surface==='경제'?'經濟':'computer'}))};
  };
  await runSentencePipeline({
   operationId:'no-dictionary-literal-origins',sentences:[{id:'s',text}],

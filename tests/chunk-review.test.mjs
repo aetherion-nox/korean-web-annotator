@@ -33,7 +33,7 @@ test('pipeline adds model-only neighbors without polluting local cache or source
  for(const before of ['첫 상황.','다른 상황.','다른 상황.']){
   await runSentencePipeline({operationId:'op',sentences:[{id:'s',text:'학교',adjacentContext:{before,after:'끝.'}}],context:'원문.',modes:{hanja:true}},e=>events.push(e),{
    cache,status:async()=>identity,analyze:async text=>({...identity,annotations:[],targets:[target(text)],stats:{pending:1}}),enabled:true,
-   modelConfig:async()=>({batchContextTier:'32k',request:async(config,targets)=>{requests.push(targets);return {results:targets.map(t=>({target_id:t.target_id,choice_id:'c0'}))};}})
+   modelConfig:async()=>({batchContextTier:'32k',request:async(config,targets)=>{requests.push(targets);return {results:targets.map(t=>({t:t.target_id,c:'c0'}))};}})
   });
  }
  assert.equal(requests.length,2);assert.equal(requests[0][0].adjacent_context.before,'첫 상황.');assert.equal(requests[1][0].adjacent_context.before,'다른 상황.');
@@ -44,7 +44,7 @@ test('pipeline adds model-only neighbors without polluting local cache or source
 });
 test('real API serializer retains neighbor evidence after model target sanitizing',async()=>{
  const savedFetch=globalThis.fetch;let wire;
- globalThis.fetch=async(url,init)=>{wire=JSON.parse(init.body);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({results:[{target_id:'t0',choice_id:'KEEP'}]})}}]}),{headers:{'content-type':'application/json'}});};
+ globalThis.fetch=async(url,init)=>{wire=JSON.parse(init.body);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({results:[{t:'t0',c:null}]})}}]}),{headers:{'content-type':'application/json'}});};
  try{
   const t={...target(),adjacent_context:{before:'前段韩语证据',after:'后段韩语证据'}};
   const result=await reviewTargets({enableModelReview:true,provider:'deepseek',model:'fixture',endpoint:'https://example.invalid/chat/completions',logger:{start:async()=>1,finish:async()=>{}}},[t]);

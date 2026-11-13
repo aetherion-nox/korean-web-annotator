@@ -15,7 +15,7 @@ const target1={target_id:'local-1',start:3,end:5,surface:'게임',context:senten
  {choice_id:'KEEP',type:'keep',entry_id:null,replacement:'게임',definitions:[]},
  {choice_id:'n0',type:'nonconversion',entry_id:2,replacement:'게임',definitions:['native sense']}]};
 const data=(targets=[])=>({...identity,annotations:[],targets,stats:{pending:targets.length}});
-const answer=targets=>({results:targets.map((t,i)=>({target_id:t.target_id,choice_id:i===0?'原潛':'n0'}))});
+const answer=targets=>({results:targets.map((t,i)=>({t:t.target_id,c:i===0?'原潛':'n0'}))});
 
 test('pipeline uses one request for literal-origin and ordinary keys together',async()=>{
  const calls=[],events=[];
@@ -41,11 +41,11 @@ test('manual review remaps raw choice_id to local target ID with no proposal arr
  assert.equal(JSON.parse(request.text.split('\n').at(-1)).batch_id,request.requestId);
  assert.equal(request.budget.outputLimit,131072);
  const response={batch_id:request.requestId,results:[
-  {target_id:'t0',choice_id:'原潛'},{target_id:'t1',choice_id:'n0'}]};
+  {t:'t0',c:'原潛'},{t:'t1',c:'n0'}]};
  assert.equal(session.submit({operationId:'manual',requestId:request.requestId,text:JSON.stringify(response)}),true);
  const mapped=await pending;
- assert.deepEqual(mapped.results.map(r=>r.target_id),['local-0','local-1']);
- assert.equal(mapped.results[0].choice_id,'原潛');
+ assert.deepEqual(mapped.results.map(r=>r.t),['local-0','local-1']);
+ assert.equal(mapped.results[0].c,'原潛');
  assert.ok(!('experimental_options' in mapped));
 });
 
@@ -55,10 +55,10 @@ test('manual rejects unknown ID and old experimental array while allowing correc
  const pending=session.request({context:sentence,experimentalHanja:true},[target0]);
  const id=events[0].requestId;
  const submit=payload=>session.submit({operationId:'manual-bad',requestId:id,text:JSON.stringify({batch_id:id,...payload})});
- assert.equal(submit({results:[{target_id:'t0',choice_id:'x0'}]}),false);
- assert.equal(submit({results:[{target_id:'t0',choice_id:'原潛'}],experimental_options:[]}),false);
- assert.equal(submit({results:[{target_id:'t0',choice_id:'原潛'}]}),true);
- assert.equal((await pending).results[0].choice_id,'原潛');
+ assert.equal(submit({results:[{t:'t0',c:'x0'}]}),false);
+ assert.equal(submit({results:[{t:'t0',c:'原潛'}],experimental_options:[]}),false);
+ assert.equal(submit({results:[{t:'t0',c:'原潛'}]}),true);
+ assert.equal((await pending).results[0].c,'原潛');
  assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_ERROR').length,2);
 });
 
@@ -67,7 +67,7 @@ test('API sends results-only protocol and configurable max_tokens (DeepSeek)',as
  globalThis.fetch=async(url,init)=>{
   wire=JSON.parse(init.body);
   return new Response(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{
-   content:JSON.stringify({results:[{target_id:'local-0',choice_id:'原潛'}]})}}]}),
+   content:JSON.stringify({results:[{t:'local-0',c:'原潛'}]})}}]}),
    {headers:{'content-type':'application/json'}});
  };
  try{
@@ -96,7 +96,7 @@ test('OpenAI Chat/Responses and Anthropic use the correct configured output limi
    let wire;
    globalThis.fetch=async(_,options)=>{
     wire=JSON.parse(options.body);
-    const text=JSON.stringify({results:[{target_id:'local-0',choice_id:'KEEP'}]});
+    const text=JSON.stringify({results:[{t:'local-0',c:null}]});
     const body=item.provider==='anthropic'?{stop_reason:'end_turn',content:[{type:'text',text}]}:
       item.endpoint.endsWith('/responses')?{status:'completed',output:[{type:'message',content:[{type:'output_text',text}]}]}:
       {choices:[{index:0,finish_reason:'stop',message:{content:text}}]};
@@ -118,7 +118,7 @@ test('stream previews valid raw Hanja and dictionary choices from completed rows
  for(let i=10;i<message.length;i+=8)parser(message.slice(i,i+8));
  assert.deepEqual(events.at(-1),['原潛','n0']);
  const badEvents=[],bad=experimentalChoicePreviewParser([target0],{experimentalHanja:true},rows=>badEvents.push(rows));
- bad(JSON.stringify({results:[{target_id:'local-0',choice_id:'x0'}]}));
+ bad(JSON.stringify({results:[{t:'local-0',c:'x0'}]}));
  assert.ok(badEvents.every(rows=>rows.length===0));
 });
 

@@ -232,7 +232,7 @@ test('manual mode returns normal target choices and repairs in a single response
  const f=fixture(text,[t]);
  const awaiting=session.request(f.config,[t]);
  const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
- const message={batch_id:request.requestId,results:[{target_id:'t0',choice_id:'c0'}],
+ const message={batch_id:request.requestId,results:[{t:'t0',c:'c0'}],
   repairs:[row('s0','replace',['t0'],0,2,text,'game')]};
  assert.equal(session.submit({operationId:'manual-repair',requestId:request.requestId,text:JSON.stringify(message)}),true);
  const resolved=await awaiting;
@@ -250,7 +250,7 @@ test('pipeline uses exactly one model call and valid repair supersedes old dicti
   analyze:async(_text,modes)=>{assert.equal(modes.smartSegmentation,true);return {...identity,annotations:[],targets:[t],
     repair_context:{kiwi_tokens:[],protected_ranges:[]},stats:{pending:1}};},
   modelConfig:async()=>({smartSegmentation:true,batchContextTier:'32k',model:'fixture',endpoint:'fixture://model',
-   request:async(config,rows)=>{calls.push(rows);return {results:[{target_id:rows[0].target_id,choice_id:'c0'}],
+   request:async(config,rows)=>{calls.push(rows);return {results:[{t:rows[0].target_id,c:'c0'}],
     repairs:[row('s0','replace',[rows[0].target_id],0,2,text,'game')]};}})
  });
  assert.equal(calls.length,1);
@@ -269,7 +269,7 @@ test('pipeline can inspect a whole Hangul sentence even if local dictionary prod
   analyze:async()=>({...identity,annotations:[],targets:[],repair_context:{kiwi_tokens:[],protected_ranges:[]},stats:{pending:0}}),
   modelConfig:async()=>({smartSegmentation:true,model:'fixture',endpoint:'fixture://model',
    request:async(_,rows)=>{calls++;assert.equal(rows[0].scan_only,true);return {
-    results:[{target_id:rows[0].target_id,choice_id:'KEEP'}],
+    results:[{t:rows[0].target_id,c:null}],
     repairs:[row('s0','add',[],0,2,text,'game')]
    };}})
  });
@@ -286,7 +286,7 @@ test('invalid repair does not invalidate a normal choice or cause a second model
   enabled:true,cache:new Map(),status:async()=>identity,
   analyze:async()=>({...identity,targets:[t],annotations:[],repair_context:{kiwi_tokens:[],protected_ranges:[]},stats:{pending:1}}),
   modelConfig:async()=>({smartSegmentation:true,model:'fixture',endpoint:'fixture://model',
-   request:async(_,rows)=>{calls++;return {results:[{target_id:rows[0].target_id,choice_id:'c0'}],
+   request:async(_,rows)=>{calls++;return {results:[{t:rows[0].target_id,c:'c0'}],
      repairs:[row('s999','add',[],0,2,text,'學校')]};}})
  });
  assert.equal(calls,1);

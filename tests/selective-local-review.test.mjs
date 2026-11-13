@@ -19,7 +19,7 @@ function setup({model=true,selective=true,answer='c0',localKept=false}={}){
    targets:localKept?[]:modes.reviewLocalConversions?[target]:[],
    stats:{local_determined:localKept?0:modes.reviewLocalConversions?0:1,pending:localKept?0:modes.reviewLocalConversions?1:0}};
  };
- const fakeRequest=async(_,targets)=>({results:targets.map(t=>({target_id:t.target_id,choice_id:answer}))});
+ const fakeRequest=async(_,targets)=>({results:targets.map(t=>({t:t.target_id,c:answer}))});
  const modelConfig=async()=>({model:'test',endpoint:'test://local',request:fakeRequest,reviewPosFilter:false});
  const options={status:async()=>({...identity,dictionary_metadata:{}}),analyze,enabled:model,modelConfig,
   cache:new Map(),persist:async()=>{}};

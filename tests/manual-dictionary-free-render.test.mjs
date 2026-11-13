@@ -45,8 +45,8 @@ function environment(){
 }
 
 const valid=[
- {target_id:'t0',choice_id:'經濟'},
- {target_id:'t1',choice_id:'computer'}
+ {t:'t0',c:'經濟'},
+ {t:'t1',c:'computer'}
 ];
 test('partial no-dictionary accepted raw origins actually render as DOM rubies',async()=>{
  const {dom,document,context,task}=environment();
@@ -61,7 +61,7 @@ test('partial no-dictionary accepted raw origins actually render as DOM rubies',
  assert.deepEqual(rubies.map(x=>x.querySelector('rt').textContent),['경제','computer']);
  assert.match(document.querySelector('.kra-manual-prompt').value,/t2/);
  assert.equal(task.manualRequest,'batch1');
- await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{target_id:'t2',choice_id:'文化'}]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t2',c:'文化'}]}));
  assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,3);
  assert.equal(task.finished,true);
  dom.window.close();

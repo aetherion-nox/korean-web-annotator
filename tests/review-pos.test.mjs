@@ -36,9 +36,9 @@ test('manual and API export use identical allowed keys and validation rejects re
  const wire=modelTargets([t]);assert.deepEqual(wire[0].options.map(o=>o.choice_id),['KEEP','c0','n0']);
  const manual=JSON.parse(buildManualPrompt('가',[t],'batch').split('\n').at(-1));
  assert.deepEqual(manual.targets[0].options,packed(t).targets[0].options);
- assert.equal(validateChoices([t],{results:[{target_id:'t0',choice_id:'c1'}]}).accepted.length,0);
- assert.equal(validateChoices([t],{results:[{target_id:'t0',choice_id:'KEEP'}]}).accepted.length,1);
- assert.equal(validateChoices([t],{results:[{target_id:'t0',choice_id:'n0'}]}).accepted.length,1);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]}).accepted.length,0);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:null}]}).accepted.length,1);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'n0'}]}).accepted.length,1);
  assert.equal(modelTargets([target('MAG',[option('c0','명사')])])[0].pos_conflict,true);
 });
 test('merged choices use their own dictionary headword span, never the last token of a different word',()=>{
@@ -51,7 +51,7 @@ test('switch off preserves API, manual and validation candidates without conflic
  const p=buildReviewPayload('가',[t],config).payload;
  assert.deepEqual(Object.keys(p.targets[0].options),['KEEP','c0','c1']);assert.equal(p.targets[0].pos_conflict,undefined);
  assert.deepEqual(modelTargets([t],config)[0].options.map(o=>o.choice_id),['KEEP','c0','c1']);
- assert.equal(validateChoices([t],{results:[{target_id:'t0',choice_id:'c1'}]},config).accepted.length,1);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]},config).accepted.length,1);
  const manual=JSON.parse(buildManualPrompt('가',[t],'batch',config).split('\n').at(-1));
  assert.deepEqual(Object.keys(manual.targets[0].options),['KEEP','c0','c1']);
 });
@@ -64,7 +64,7 @@ test('pipeline separates on/off model caches and applies request configuration',
   await runSentencePipeline({operationId:'op',sentences:[{id:'s',text:'가'}],modes:{hanja:true}},e=>events.push(e),{
    cache,enabled:true,status:async()=>identity,analyze:async()=>({...identity,annotations:[],targets:[t],stats:{}}),
    modelConfig:async()=>({endpoint:'https://fixture.test',model:'fixture',reviewPosFilter,request:async(config,targets)=>{
-    sent.push(targets[0].options.map(o=>o.choice_id));return {results:[{target_id:targets[0].target_id,choice_id:reviewPosFilter?'c0':'c1'}]};
+    sent.push(targets[0].options.map(o=>o.choice_id));return {results:[{t:targets[0].target_id,c:reviewPosFilter?'c0':'c1'}]};
    }})
   });
   assert.ok(events.some(e=>e.type==='RESULTS'&&e.source==='model'&&e.results[0].annotations.length===1));
@@ -80,8 +80,8 @@ test('manual review session honors the captured switch for prompt and answer val
   const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
   const prompt=JSON.parse(request.text.split('\n').at(-1));
   assert.deepEqual(Object.keys(prompt.targets[0].options),reviewPosFilter?['KEEP','c0']:['KEEP','c0','c1']);
-  assert.equal(session.submit({operationId:'op',requestId:request.requestId,text:JSON.stringify({batch_id:request.requestId,results:[{target_id:'t0',choice_id:reviewPosFilter?'c0':'c1'}]})}),true);
-  assert.equal((await pending).results[0].choice_id,reviewPosFilter?'c0':'c1');
+  assert.equal(session.submit({operationId:'op',requestId:request.requestId,text:JSON.stringify({batch_id:request.requestId,results:[{t:'t0',c:reviewPosFilter?'c0':'c1'}]})}),true);
+  assert.equal((await pending).results[0].c,reviewPosFilter?'c0':'c1');
  }
 });
 
@@ -93,9 +93,9 @@ test('NNB keeps only explicit dependent POS and unknown senses across API and ma
  assert.deepEqual(modelTargets([t])[0].options.map(o=>o.choice_id),expected);
  const manual=JSON.parse(buildManualPrompt(context,[t],'batch').split('\n').at(-1));
  assert.deepEqual(Object.keys(manual.targets[0].options),expected);assert.equal(manual.sentences[0].text,context);
- assert.equal(validateChoices([t],{results:[{target_id:'t0',choice_id:'c3'}]}).accepted.length,0);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]}).accepted.length,0);
  assert.deepEqual(modelTargets([t],{reviewPosFilter:false})[0].options.map(o=>o.choice_id),t.options.map(o=>o.choice_id));
- assert.equal(validateChoices([t],{results:[{target_id:'t0',choice_id:'c3'}]},{reviewPosFilter:false}).accepted.length,1);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]},{reviewPosFilter:false}).accepted.length,1);
  const conflicted=packed(target('NNB',[option('c0','명사'),option('n0','名詞','nonconversion')]));
  assert.equal(conflicted.targets[0].pos_conflict,true);assert.deepEqual(Object.keys(conflicted.targets[0].options),['KEEP','c0','n0']);
  // Ordinary noun occurrences still keep the broader noun category.

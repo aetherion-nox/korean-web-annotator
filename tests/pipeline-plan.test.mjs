@@ -10,7 +10,7 @@ test('all batch backups reach page before first request; exact IDs match live se
   events.push(e);
   if(e.type==='MANUAL_REVIEW_REQUEST'){
    const backup=plan.find(b=>b.requestId===e.requestId);assert.equal(e.text,backup.text);assert.deepEqual(e.bindings,backup.bindings);
-   const response={batch_id:e.requestId,results:e.bindings.map(b=>({target_id:b.target_id,choice_id:'KEEP'}))};
+   const response={batch_id:e.requestId,results:e.bindings.map(b=>({t:b.target_id,c:null}))};
    queueMicrotask(()=>session.submit({operationId:'op',requestId:e.requestId,text:JSON.stringify(response)}));
   }
  }});
