@@ -1144,7 +1144,7 @@
     }catch{}
     return intro+'请参照原批提示词，只回答这些目标：'+JSON.stringify({
       batch_id:batch,targets:missing.map(b=>({target_id:b.target_id,surface:b.surface,
-        options:(b.choices||[]).map(o=>o.choice_id)}))});
+        options:(b.choices||[]).filter(o=>o.choice_id!=='KEEP').map(o=>o.choice_id)}))});
   }
 
   async function applyManualRecovery(task,text,{advance=true,paint=true}={}){
