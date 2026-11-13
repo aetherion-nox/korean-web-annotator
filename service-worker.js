@@ -12,7 +12,7 @@ import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.55.4-primary-toolbar-only';
+const CONTENT_SCRIPT_VERSION='1.1.56.2-page-access';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -441,6 +441,12 @@ async function handlePageContextMenu(info,tab){
  await refreshPageMenu(tab.id);
 }
 
+function actionablePageAccessError(error){
+ const message=String(error?.message||error||'');
+ if(/Cannot access contents of (?:the page|url)|Extension manifest must request permission|Cannot access a chrome:\/\/|Cannot access a chrome-extension:\/\/|The extensions gallery cannot be scripted|Cannot script the New Tab Page|The pages of a browser extension cannot be scripted/i.test(message))
+  return new Error('无法访问此页面：普通网站请在扩展详情的「网站访问权限」中允许访问该站点（或所有网站），然后刷新网页；chrome://、浏览器扩展页、商店等受保护页面不支持注入。');
+ return error;
+}
 async function ensureContentScriptInFrame(tabId, frameId = 0) {
   const messageOptions = { frameId };
   try {
@@ -451,8 +457,10 @@ async function ensureContentScriptInFrame(tabId, frameId = 0) {
   }
 
   const target = { tabId, frameIds: [frameId] };
-  await chrome.scripting.insertCSS({ target, files: ['content.css'] });
-  await chrome.scripting.executeScript({ target, files: ['content.js'] });
+  try{
+   await chrome.scripting.insertCSS({ target, files: ['content.css'] });
+   await chrome.scripting.executeScript({ target, files: ['content.js'] });
+  }catch(error){throw actionablePageAccessError(error);}
   const injected = await chrome.tabs.sendMessage(tabId, { type: 'KRA_PING' }, messageOptions);
   if (!injected?.ok || injected.version !== CONTENT_SCRIPT_VERSION) {
     throw new Error('内容脚本没有正确启动，请刷新当前网页后重试。');
