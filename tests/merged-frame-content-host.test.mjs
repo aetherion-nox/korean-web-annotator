@@ -19,7 +19,7 @@ function environment(){
   document:{querySelector:()=>null,location:{href:'https://example.test/article'}},
   location:{href:'https://example.test/article'},chrome:{runtime:{connect:()=>port,getURL:s=>s}},
   collectTextNodes:()=>new Map(),lastScanStats:{textNodes:0,hangulNodes:0},
-  cancelTask:()=>{},addDiagnostic:()=>{},status:(x)=>status.push(x),
+  cancelTask:()=>{},stopHydrationGrace:()=>{},startHydrationGrace:()=>{},addDiagnostic:()=>{},status:(x)=>status.push(x),
   sourceOf:()=>{},BLOCK_TAGS:'p',setInterval:()=>11,
   clearInterval:()=>{},clearTimeout:()=>{},getToolbar:()=>({}),
   seenSources:new Set(),publishState:()=>{},configureRecovery:()=>{}
@@ -47,6 +47,8 @@ test('ordinary single-frame empty page keeps no-work fast exit without opening s
  assert.equal(result.ok,true);assert.equal(result.started,false);
  assert.equal(e.starts.length,0);
 });
-test('merged API task does not launch a second independent main-frame hydration pass',()=>{
- assert.match(source,/if\(!ranges&&!task\.mergedGroup&&!task\.startedAutomatically/);
+test('merged whole-page task permits only a bounded post-completion hydration grace',()=>{
+ assert.match(source,/if\\(!ranges\\)startHydrationGrace\\(task\\)/);
+ assert.match(source,/if\\(!task\\.wholePage\\|\\|task\\.startedAutomatically\\|\\|task\\.manualPanelShown/);
+ assert.match(source,/hydrationGraceDeadline=setTimeout\\(stopHydrationGrace,15000\\)/);
 });
