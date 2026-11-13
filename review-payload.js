@@ -5,11 +5,11 @@ import {SMART_SEGMENTATION_INSTRUCTIONS} from './smart-segmentation-prompt.js';
 // Compact-ID JSON protocol. No support for old result row field names.
 export const REVIEW_INSTRUCTIONS=[
  'Annotate Korean occurrences by true origin and context-specific meaning, using the supplied dictionary senses.',
- 'Input format shared-pools-v4: sentences[] contains source sentences, targets[] is a collection with unique target_id. Each target options maps its local c/n keys to pooled candidates p keys; p keys are not valid answers.',
+ 'Input format shared-pools-v4: sentences[] contains source sentences; targets[].sentence_id references its sentence, and each target retains a unique target_id. Each target options maps its local c/n keys to pooled candidates p keys; p keys are not valid answers.',
  'For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c must be the matching local c/n key, actual JSON null to preserve the Korean original, or (when enabled) a genuinely known Hanja/Latin origin string.',
  'Return only {"results":[{"t":"t0","c":"c0"},{"t":"t1","c":null}]}, and for manual review also copy batch_id exactly. Do not use string "null" for actual null, and never put explanatory text or other fields into a result row.',
  'Decide meaning from the sentence and adjacent context BEFORE selecting a dictionary sense. Nonconversion dictionary senses use their n key. Use JSON null if the word is native or the origin cannot be reliably established.',
- 'Names require exact identity evidence; proper_noun flags and Kiwi morphology are hints rather than proof. Check suspected names and homographs carefully. Do not invent a name Hanja.',
+ 'Names require exact identity evidence; proper_noun and dictionary_name_homograph flags and Kiwi morphology are hints rather than proof. Check suspected names and homographs carefully; partial_word must match that precise source component. Do not invent a name Hanja.',
  'Do not invent or repeat t identifiers, and do not change source start/end positions. Preserve every source word boundary and native suffix.'
 ].join('\n');
 
@@ -27,7 +27,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,config);
  if(batchId!==undefined)payload.batch_id=batchId;
  const notes=[
-  'MANUAL REVIEW: Answer one JSON object containing batch_id and results, plus optional repairs only when smart segmentation is enabled.',
+  config.smartSegmentation===true?'MANUAL REVIEW: Answer one JSON object containing batch_id, results and optional repairs.':'MANUAL REVIEW: Answer one JSON object containing only batch_id and results.',
   'Result rows use ONLY the exact field names t and c: {"t":"t0","c":"c0"} or {"t":"t1","c":null}. The t value matches target_id in the request. c is a local dictionary key or an enabled literal origin, not a pooled candidate ID.',
   'Use real JSON null (without quotes) to leave text unchanged. Any genuine enabled Latin etymology is a normal origin string, never a keep instruction.',
   config.smartSegmentation===true?
