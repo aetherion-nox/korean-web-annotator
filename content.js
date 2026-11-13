@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.7-manual-scroll-to-answer';
+  const VERSION = '1.1.56.8-committed-dynamic-recovery';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -672,7 +672,26 @@
       // If no new review or local conversion actually replaces an existing
       // ruby, preserve its old annotation instead of inventing a no-op undo.
       const html=entry.isRuby&&!entry.modelReviewed&&!entry.localAnnotations?.length?entry.originalOuterHTML:conversionHTML(entry);
-      if(entry.renderHTML===html||!entry.renderRecord&&entry.isRuby&&html===entry.originalOuterHTML)continue;
+      if(entry.renderHTML===html){
+        // Streaming previews are painted before they are committed. Once
+        // accepted, the DOM output can be byte-identical: skipping this path
+        // previously left recoveryBlocks empty, so the site's next React
+        // re-render permanently erased the visible annotation.
+        //
+        // Commit the source-bound recovery snapshot only after acceptance;
+        // never save an unreviewed preview or claim a detached DOM node.
+        if(entry.renderRecord&&!entry.hasPreview){
+          const record=entry.renderRecord;
+          const valid=record.parent?.isConnected&&record.inserted.length&&
+            record.inserted.every((n,i)=>n.isConnected&&n.parentNode===record.parent&&
+              n.isEqualNode(record.snapshots[i])&&
+              (i===0||record.inserted[i-1].nextSibling===n));
+          if(valid)rememberRecovery(entry,operation);
+          else entry.invalidated=true;
+        }
+        continue;
+      }
+      if(!entry.renderRecord&&entry.isRuby&&html===entry.originalOuterHTML)continue;
       let record=entry.renderRecord;
       if(record){
         // Only replace the exact contiguous fragment this operation inserted.
