@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.8-committed-dynamic-recovery';
+  const VERSION = '1.1.56.9-multistep-undo-redo';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -31,6 +31,8 @@
   const analyzedNodeVersions = new WeakMap();
   let lastScanStats = null;
   const history = [];
+  const redoStack = [];
+  const HISTORY_LIMIT=100;
   const diagnostics = [];
   const recoveryBlocks = new Set();
   const recoveryByElement = new WeakMap();
@@ -792,6 +794,20 @@
     send({ type: 'KRA_CONTEXT_UPDATE', state: contextState() });
   }
 
+  function refreshTabHistoryCounter(){
+    // Render tab-wide logical steps, not the sum of frame-local snapshots.
+    if(typeof window!=='undefined'&&window!==window.top)return;
+    const el=toolbar?.querySelector('.kra-history-steps');
+    if(!el)return;
+    void send({type:'KRA_HISTORY_TAB'}).then(reply=>{
+      if(!el.isConnected||!reply?.ok)return;
+      el.textContent='撤销 '+reply.undoDepth+' 步 · 重做 '+reply.redoDepth+' 步';
+      const undo=toolbar.querySelector('.kra-mobile-undo'),redo=toolbar.querySelector('.kra-mobile-redo');
+      if(undo)undo.disabled=reply.undoDepth===0;
+      if(redo)redo.disabled=reply.redoDepth===0;
+    });
+  }
+
   function getToolbar() {
     // Explicit UI boundary; keep frame-local DOM conversion and messaging
     // but prevent embedded documents from creating control overlays.
@@ -801,7 +817,7 @@
     toolbar.className = 'kra-mobile-selection-bar';
     toolbar.setAttribute('role', 'toolbar');
     toolbar.setAttribute('aria-label', '韩语网页标注');
-    toolbar.innerHTML = '<div class="kra-task-status"><span class="kra-task-label" role="status">准备标注</span><progress class="kra-task-progress" max="100" value="0"></progress></div><div class="kra-mobile-actions"><button class="kra-mobile-page" type="button">标注整页</button><button class="kra-mobile-primary" type="button">重新标注选区</button><button class="kra-mobile-review" type="button">模型重审选区</button><button class="kra-manual-open" type="button" hidden>手动审核</button><button class="kra-mobile-undo" type="button">撤销</button><button class="kra-diagnostic-button" type="button">诊断</button><button class="kra-mobile-restore" type="button">还原</button><button class="kra-mobile-close" type="button" aria-label="关闭">×</button></div>';
+    toolbar.innerHTML = '<div class="kra-task-status"><span class="kra-task-label" role="status">准备标注</span><progress class="kra-task-progress" max="100" value="0"></progress><span class="kra-history-steps">撤销 0 步 · 重做 0 步</span></div><div class="kra-mobile-actions"><button class="kra-mobile-page" type="button">标注整页</button><button class="kra-mobile-primary" type="button">重新标注选区</button><button class="kra-mobile-review" type="button">模型重审选区</button><button class="kra-manual-open" type="button" hidden>手动审核</button><button class="kra-mobile-undo" type="button">撤销</button><button class="kra-mobile-redo" type="button">重做</button><button class="kra-diagnostic-button" type="button">诊断</button><button class="kra-mobile-restore" type="button">清除全部</button><button class="kra-mobile-close" type="button" aria-label="关闭">×</button></div>';
     // The main toolbar and popup must share the same multi-frame coordinator.
     // Direct startAnnotation() here would silently revert to main-frame-only.
     toolbar.querySelector('.kra-mobile-page').addEventListener('click', () => {
@@ -817,19 +833,29 @@
     toolbar.querySelector('.kra-mobile-undo').addEventListener('click',()=>{
       void send({type:'KRA_UNDO_TAB'}).then(result=>{
         if(!result?.ok)status(result?.error||'没有可撤销的标注',0);
-        else status('已撤销上一轮实际标注，恢复此前标注',0);
+        else status('已撤销一步标注',0);
+        refreshTabHistoryCounter();
+      });
+    });
+    toolbar.querySelector('.kra-mobile-redo').addEventListener('click',()=>{
+      void send({type:'KRA_REDO_TAB'}).then(result=>{
+        if(!result?.ok)status(result?.error||'没有可重做的标注',0);
+        else status('已重做一步标注',0);
+        refreshTabHistoryCounter();
       });
     });
     toolbar.querySelector('.kra-diagnostic-button').addEventListener('click',toggleDiagnostics);
     toolbar.querySelector('.kra-manual-open').addEventListener('click',()=>{const panel=document.querySelector('.kra-manual-review');if(panel){panel.hidden=!panel.hidden;refreshManualReopen();}});
     toolbar.querySelector('.kra-mobile-restore').addEventListener('click',()=>{
       void send({type:'KRA_RESTORE_TAB'}).then(result=>{
-        status(result?.ok?'已还原本页及可访问子框架的全部标注':
-          result?.error||'无法还原标注',result?.ok?100:0);
+        status(result?.ok?'已清除本页及可访问子框架的全部标注（重置撤销历史）':
+          result?.error||'无法清除标注',result?.ok?100:0);
+        refreshTabHistoryCounter();
       });
     });
     toolbar.querySelector('.kra-mobile-close').addEventListener('click',dismissToolbar);
     document.body.append(toolbar);
+    refreshTabHistoryCounter();
     return toolbar;
   }
 
@@ -1666,7 +1692,7 @@
 
   function restorePage() {
     resetRecovery();
-    cancelTask();pageCompleted=false;configureAutomaticAnnotation();history.length=0;seenSources.clear();
+    cancelTask();pageCompleted=false;configureAutomaticAnnotation();history.length=0;redoStack.length=0;seenSources.clear();
     // A full restore removes extension rubies in THIS frame, including
     // open Shadow DOM. The tab coordinator calls every accessible frame.
     let removed=0;
@@ -1680,43 +1706,86 @@
   }
 
   function latestUndoState() {
-    const operation=history.at(-1);
-    return {ok:true,groupId:operation?.groupId||null,
-      startedAt:operation?.startedAt||0,depth:history.length};
+    const current=history.at(-1),undone=redoStack.at(-1);
+    return {ok:true,groupId:current?.groupId||null,
+      startedAt:current?.startedAt||0,depth:history.length,
+      redoGroupId:undone?.groupId||null,redoStartedAt:undone?.startedAt||0,
+      redoDepth:redoStack.length,
+      undoGroups:history.map(op=>({groupId:op.groupId,startedAt:op.startedAt})),
+      redoGroups:redoStack.map(op=>({groupId:op.groupId,startedAt:op.startedAt}))};
+  }
+
+  function sameLiveNodes(record,nodes,snapshots){
+    return record.parent?.isConnected&&nodes?.length>0&&
+      nodes.every((node,i)=>node.isConnected&&node.parentNode===record.parent&&
+        node.isEqualNode(snapshots[i])&&
+        (i===0||nodes[i-1].nextSibling===node));
   }
 
   function undoLast(groupId=null) {
-    // An operation belongs to a single user action, shared by all selected
-    // frames. Do not accidentally undo an older unrelated selection.
     const operation=history.at(-1);
     if(!operation)return {ok:false,error:'没有可撤销的标注'};
     if(groupId!==null&&operation.groupId!==groupId)
-      return {ok:false,skipped:true,error:'当前框架的最后一次标注不属于此轮操作'};
+      return {ok:false,skipped:true,error:'其他框架的历史步骤不属于本次撤销'};
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
-    // Cancelling a streaming task may finalize a committed preview and append
-    // another history entry. Never pop that entry and then undo an unrelated
-    // older one picked before the cancellation.
     if(history.at(-1)!==operation)
-      return {ok:false,error:'标注任务刚刚写入了新结果；请再次点击撤销以选择最新的一次操作。'};
-    history.pop();
-    for(const [block,before]of operation.recoveryBefore||[])
-      if(recoveryBlocks.has(block))block.annotations=new Map(before);
+      return {ok:false,error:'任务刚刚写入新结果，请再次点击撤销最新的步骤。'};
     let changed=0;
     for(const record of [...operation].reverse()){
-      if(!record.parent?.isConnected||!record.inserted.length||
-         !record.inserted.every((node,i)=>node.isConnected&&node.parentNode===record.parent&&
-           node.isEqualNode(record.snapshots[i])&&(i===0||record.inserted[i-1].nextSibling===node)))continue;
-      record.inserted[0].before(record.original.isEqualNode(record.originalSnapshot)?
-        record.original:record.originalSnapshot.cloneNode(true));
+      if(!sameLiveNodes(record,record.inserted,record.snapshots))continue;
+      const original=record.original.isEqualNode(record.originalSnapshot)?
+        record.original:record.originalSnapshot.cloneNode(true);
+      for(const node of [...record.inserted,original])ownDomChanges.add(node);
+      record.inserted[0].before(original);
       for(const node of record.inserted)node.remove();
+      record.undoneState={node:original,snapshot:original.cloneNode(true)};
       changed++;
     }
+    // Persist both sides of each recovery record. Dynamic React redraws may
+    // remove the actual nodes; the source-bound recovery cache restores them.
+    if(operation.recoveryBefore?.size){
+      operation.recoveryAfter=new Map([...operation.recoveryBefore.keys()].map(block=>
+        [block,new Map(block.annotations)]));
+      for(const [block,before]of operation.recoveryBefore)
+        if(recoveryBlocks.has(block))block.annotations=new Map(before);
+    }
+    if(!changed&&!operation.recoveryBefore?.size)
+      return {ok:false,error:'网页已经替换了此步骤涉及的节点；无法安全撤销。'};
+    history.pop();redoStack.push(operation);
     configureRecovery();
-    // If a reactive site replaced the exact nodes, only recover the prior
-    // stored markup at matching source text and original span geometry.
     if(changed<operation.length)restoreKnownAnnotations();
-    status(changed?'已撤销上次标注，恢复之前的标注':'旧节点已变化，已恢复可验证的旧标注',0);
-    publishState();return {ok:true,changed};
+    status('已撤销一步标注',0);publishState();refreshTabHistoryCounter();
+    return {ok:true,changed,depth:history.length,redoDepth:redoStack.length};
+  }
+
+  function redoLast(groupId=null) {
+    const operation=redoStack.at(-1);
+    if(!operation)return {ok:false,error:'没有可重做的标注'};
+    if(groupId!==null&&operation.groupId!==groupId)
+      return {ok:false,skipped:true,error:'其他框架的历史步骤不属于本次重做'};
+    cancelTask();pageCompleted=false;configureAutomaticAnnotation();
+    if(redoStack.at(-1)!==operation)
+      return {ok:false,error:'期间有新的标注完成，不能再重做旧步骤。'};
+    let changed=0;
+    for(const record of operation){
+      const state=record.undoneState;
+      if(!state||!sameLiveNodes(record,[state.node],[state.snapshot]))continue;
+      const nodes=record.inserted.map((n,i)=>
+        n.isEqualNode(record.snapshots[i])?n:record.snapshots[i].cloneNode(true));
+      for(const node of [...nodes,state.node])ownDomChanges.add(node);
+      state.node.before(...nodes);state.node.remove();
+      record.inserted=nodes;record.snapshots=nodes.map(n=>n.cloneNode(true));
+      record.undoneState=null;changed++;
+    }
+    if(!changed&&!operation.recoveryAfter?.size)
+      return {ok:false,error:'网页已更改原文；无法安全重做此步骤。'};
+    if(operation.recoveryAfter)for(const [block,after]of operation.recoveryAfter)
+      if(recoveryBlocks.has(block))block.annotations=new Map(after);
+    redoStack.pop();history.push(operation);
+    configureRecovery();
+    if(changed<operation.length)restoreKnownAnnotations();
+    status('已重做一步标注',0);publishState();refreshTabHistoryCounter();
+    return {ok:true,changed,depth:history.length,redoDepth:redoStack.length};
   }
 
   function startSelection(reviewAll) {
@@ -1771,7 +1840,15 @@
     // transaction; selection and automatic tasks use their own operationId.
     task.operation.groupId=message.mergeGroupId||operationId;
     task.operation.startedAt=Date.now();
-    const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
+    const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;
+      if(history.length>HISTORY_LIMIT)history.shift();
+      if(redoStack.length){
+        redoStack.length=0;
+        // A new action in any frame invalidates the abandoned redo branch
+        // throughout this tab; it must never linger in an unrelated iframe.
+        void send({type:'KRA_HISTORY_NEW_BRANCH',groupId:task.operation.groupId});
+      }
+      refreshTabHistoryCounter();}return count;};
     task.paint=paint;
     task.reconcile=()=>{for(const entry of entries.values())if(entry.hasPreview){entry.modelAnnotations=entry.committedModelAnnotations||[];entry.modelReviewed=entry.committedModelReviewed||false;entry.hasPreview=false;const model=entry.modelAnnotations;entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!
            [...model,...(entry.modelReviewedRanges||[])].some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
@@ -1945,6 +2022,8 @@
       case 'START_ANNOTATION': if(message.uiSettings)applySettings(message.uiSettings);Promise.resolve(startAnnotation(message)).then(respond,error=>respond({ok:false,error:error.message}));return true;
       case 'RESTORE_ANNOTATION': respond(restorePage());break;
       case 'UNDO_LAST_ANNOTATION':respond(undoLast(message.groupId??null));break;
+      case 'REDO_LAST_ANNOTATION':respond(redoLast(message.groupId??null));break;
+      case 'KRA_INVALIDATE_REDO':redoStack.length=0;refreshTabHistoryCounter();respond({ok:true});break;
       case 'APPLY_UI_SETTINGS':applySettings(message.uiSettings||{});respond({ok:true});break;
       case 'APPLY_FLOATING_BALL_POSITION':applySettings({floatingBallPosition:message.position});respond({ok:true});break;
       case 'START_SELECTION_ANNOTATION':{const ranges=captureSelection();Promise.resolve(ranges?startAnnotation({...message,ranges}):{ok:false,error:'请先选中需要标注的文字。'}).then(respond,error=>respond({ok:false,error:error.message}));return true;}
