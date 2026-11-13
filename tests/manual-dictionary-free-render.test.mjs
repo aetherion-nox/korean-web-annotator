@@ -30,27 +30,24 @@ function environment(){
  panel.dataset.operationId='op';panel.dataset.requestId='batch1';
  const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
  const errors=[];
- const context={document,OWN_RUBY:'ruby[kra-annotated="true"]',currentTask:task,
+ const context={chrome:{runtime:{getURL:name=>new URL('../'+name,import.meta.url).href}},document,OWN_RUBY:'ruby[kra-annotated="true"]',currentTask:task,
   ownDomChanges:new WeakSet(),seenSources:new Set(),rememberRecovery(){},uiSettings:{},
   getToolbar:()=>panel,manualPanel:()=>panel,refreshManualReopen(){},publishState(){},
   configureRecovery(){},configureAutomaticAnnotation(){},status(){},addDiagnostic(d){errors.push(d);},
   clearTimeout(){},clearInterval(){},setTimeout:()=>1,finishTask(t){t.finished=true;},console};
  vm.createContext(context);
- vm.runInContext(source.slice(source.indexOf('  function loanwordDisplay'),source.indexOf('  function contextState')),context);
+ vm.runInContext(source.slice(source.indexOf('  function loanwordDisplay'),source.indexOf('  function contextState')),context,{importModuleDynamically:specifier=>import(specifier)});
  vm.runInContext(source.slice(source.indexOf('  function recoverManualConnection'),
-   source.indexOf('  function status(',source.indexOf('  function recoverManualConnection'))),context);
+   source.indexOf('  function status(',source.indexOf('  function recoverManualConnection'))),context,{importModuleDynamically:specifier=>import(specifier)});
  task.paint=()=>{context.insertConversions(entries,task.operation);
   return document.querySelectorAll('p ruby[kra-annotated="true"]').length;};
  return {dom,document,context,task,panel,errors};
 }
 
-const valid=[
- {target_id:'t0',choice_id:'經濟'},
- {target_id:'t1',choice_id:'computer'}
-];
+const valid=[[0,'經濟'],[1,'computer']];
 test('partial no-dictionary accepted raw origins actually render as DOM rubies',async()=>{
  const {dom,document,context,task}=environment();
- const pending={batch_id:'batch1',results:[...valid]};
+ const pending={batch_id:'batch1',partial:true,results:valid};
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify(pending)),/已验证 2\/3/);
  assert.equal(task.manualRecoveryAccepted.size,2,'both generated choices must survive page validation');
  const rubies=[...document.querySelectorAll('p ruby[kra-annotated="true"]')];
@@ -59,9 +56,9 @@ test('partial no-dictionary accepted raw origins actually render as DOM rubies',
  assert.deepEqual(rubies.map(x=>x.getAttribute('data-kra-source')),['model-unverified','model-unverified']);
  assert.deepEqual(rubies.map(x=>x.firstChild.textContent),['經濟','컴퓨터']);
  assert.deepEqual(rubies.map(x=>x.querySelector('rt').textContent),['경제','computer']);
- assert.match(document.querySelector('.kra-manual-prompt').value,/t2/);
+ assert.match(document.querySelector('.kra-manual-prompt').value,/2/);
  assert.equal(task.manualRequest,'batch1');
- await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{target_id:'t2',choice_id:'文化'}]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',partial:true,results:[[2,'文化']]}));
  assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,3);
  assert.equal(task.finished,true);
  dom.window.close();
