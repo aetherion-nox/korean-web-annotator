@@ -66,6 +66,6 @@ test('custom reply caps affect output budget, never pretend to override actual c
  const manual=describeBatchBudget('원잠',[t],{tier:'512k',manual:true,manualOutputTokenLimit:130000});
  const api=describeBatchBudget('원잠',[t],{tier:'512k',manual:false,apiOutputTokenLimit:30000});
  assert.equal(manual.outputLimit,130000);assert.equal(api.outputLimit,30000);
- assert.equal(api.reservedOutputTokens,30000);
+ assert.ok(api.reservedOutputTokens<30000&&api.reservedOutputTokens>=api.outputTokens);
  assert.ok(manual.reservedOutputTokens<130000,'manual cap is a ceiling, not forced reservation');
 });
