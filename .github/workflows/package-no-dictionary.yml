@@ -1,4 +1,4 @@
-name: Verify and Package Positional-v1 Null Protocol v1.1.56.0
+name: Verify and Package Positional-v1 Null Protocol v1.1.56.0 (fixture migration)
 on:
   push:
     branches:
