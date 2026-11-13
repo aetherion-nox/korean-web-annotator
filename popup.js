@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.55.4-primary-toolbar-only';
+const CONTENT_SCRIPT_VERSION = '1.1.56.2-page-access';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -224,8 +224,15 @@ async function applyUiSettingsToActivePage(uiSettings) {
 async function getActiveTab() { const [tab] = await chrome.tabs.query({active:true,currentWindow:true}); if (!tab?.id) throw new Error(t('noTab')); return tab; }
 async function ensureContentScript(tabId) {
   try { const existing = await chrome.tabs.sendMessage(tabId,{type:'KRA_PING'}); if (existing?.ok && existing.version===CONTENT_SCRIPT_VERSION) return; } catch {}
-  await chrome.scripting.insertCSS({target:{tabId},files:['content.css']});
-  await chrome.scripting.executeScript({target:{tabId},files:['content.js']});
+  try{
+    await chrome.scripting.insertCSS({target:{tabId},files:['content.css']});
+    await chrome.scripting.executeScript({target:{tabId},files:['content.js']});
+  }catch(error){
+    const message=String(error?.message||error||'');
+    if(/Cannot access contents of (?:the page|url)|Extension manifest must request permission|Cannot access a chrome:\/\/|Cannot access a chrome-extension:\/\/|The extensions gallery cannot be scripted|Cannot script the New Tab Page/i.test(message))
+      throw new Error('无法访问此页面：请允许此扩展访问当前网站后刷新。chrome://、扩展管理页、商店等受保护页面无法标注。');
+    throw error;
+  }
   const injected = await chrome.tabs.sendMessage(tabId,{type:'KRA_PING'});
   if (!injected?.ok || injected.version!==CONTENT_SCRIPT_VERSION) throw new Error(t('scriptFailed'));
 }
