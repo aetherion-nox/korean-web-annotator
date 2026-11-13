@@ -12,6 +12,7 @@ import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
+import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 const CONTENT_SCRIPT_VERSION='1.1.56.3-manual-lifecycle';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
@@ -75,6 +76,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if(message?.type==='KRA_COPY_TEXT'){
     if(sender.id!==chrome.runtime.id){sendResponse({ok:false,error:'Invalid extension sender'});return;}
     copyTextToClipboard(message.text).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
+  }
+  if(message?.type==='KRA_MANUAL_OFFLINE_APPLY'){
+    if(sender.id!==chrome.runtime.id||sender.frameId!==0||!Number.isInteger(sender.tab?.id)){
+      sendResponse({ok:false,error:'仅原始顶层内容脚本可以恢复跨框架审核。'});return;
+    }
+    recoverMergedManualBatch(sender.tab.id,message).then(sendResponse,error=>sendResponse({ok:false,error:String(error.message||error)}));
+    return true;
   }
   if(message?.type==='KRA_START_PAGE_FROM_POPUP'){
     startPageFromPopup(message).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
@@ -615,6 +623,27 @@ async function runStreamingAnnotation(message,post,signal,manualSession){
    post({...event,results,completedCandidates:event.completedSentences===event.totalSentences?mapping.length:0,totalCandidates:mapping.length});
   }else post({...event,completedCandidates:event.completedSentences===event.totalSentences?mapping.length:0,totalCandidates:mapping.length});
  },signal,manualSession);
+}
+async function recoverMergedManualBatch(tabId,message){
+ const scope=message?.frameRouting;
+ if(typeof message.groupId!=='string'||!message.groupId.startsWith('frame-group-'))
+  throw Error('跨框架恢复任务身份无效。');
+ const frames=partitionMergedManualRecovery(scope,message.backup,message.response,message.originalPrompt);
+ // Two-phase validation: no frame commits until every still-open frame has
+ // verified its own operation identity and original paragraph DOM geometry.
+ for(const phase of ['validate','commit']){
+  for(const frame of frames){
+   let answer;
+   try{
+    answer=await chrome.tabs.sendMessage(tabId,{type:'KRA_MANUAL_OFFLINE_FRAME',phase,
+      groupId:message.groupId,frame},{frameId:frame.frameId});
+   }catch(error){
+    throw Error('第 '+frame.frameId+' 个框架已离开或无法连接：'+String(error.message||error));
+   }
+   if(!answer?.ok)throw Error('第 '+frame.frameId+' 个框架'+(phase==='validate'?'校验':'写入')+'失败：'+(answer?.error||'原页面已变化'));
+  }
+ }
+ return {ok:true,appliedFrames:frames.length};
 }
 async function handleAnnotateBatch(message){
  const final=new Map();let stats;
