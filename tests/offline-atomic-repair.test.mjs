@@ -43,22 +43,22 @@ function setup(){
  const panel=document.querySelector('.kra-manual-review');
  panel.dataset.operationId='op';panel.dataset.requestId='batch1';
  const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
- const context={document,OWN_RUBY:'ruby[kra-annotated="true"]',currentTask:task,
+ const context={chrome:{runtime:{getURL:name=>new URL('../'+name,import.meta.url).href}},document,OWN_RUBY:'ruby[kra-annotated="true"]',currentTask:task,
   ownDomChanges:new WeakSet(),seenSources:new Set(),rememberRecovery(){},uiSettings:{},
   getToolbar:()=>panel,manualPanel:()=>panel,refreshManualReopen(){},publishState(){},
   configureRecovery(){},configureAutomaticAnnotation(){},status(){},addDiagnostic(){},
   clearTimeout(){},clearInterval(){},setTimeout:()=>1,
   finishTask(t){t.finished=true;},console};
  vm.createContext(context);
- vm.runInContext(source.slice(source.indexOf('  function loanwordDisplay'),source.indexOf('  function contextState')),context);
+ vm.runInContext(source.slice(source.indexOf('  function loanwordDisplay'),source.indexOf('  function contextState')),context,{importModuleDynamically:specifier=>import(specifier)});
  vm.runInContext(source.slice(source.indexOf('  function recoverManualConnection'),
-  source.indexOf('  function status(',source.indexOf('  function recoverManualConnection'))),context);
+  source.indexOf('  function status(',source.indexOf('  function recoverManualConnection'))),context,{importModuleDynamically:specifier=>import(specifier)});
  task.paint=()=>{context.insertConversions(entries,task.operation);
   return document.querySelectorAll('p ruby[kra-annotated="true"]').length;};
  return {dom,document,context,task};
 }
 const repaired={
- results:[],repairs:[{sentence_id:'s0',op:'replace',old_target_ids:['t0'],
+ results:[false],repairs:[{sentence_id:'s0',op:'replace',old_target_ids:['t0'],
   start:0,end:2,surface:'과학',choice_id:'科學'}]
 };
 test('disconnected review accepts repair-only answer without old target result and renders Hanja stem',async()=>{
