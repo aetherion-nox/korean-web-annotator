@@ -390,7 +390,10 @@ async function handlePageContextMenu(info,tab){
  else if(action==='selection')await handleSelectionContextMenu(info,tab);
  else{
   const {uiSettings={}}=await chrome.storage.local.get('uiSettings');
-  const response=await chrome.tabs.sendMessage(tab.id,{type:'START_ANNOTATION',modes:{hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true},forceRegenerate:false},{frameId});
+  const modes={hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true};
+  const response=frameId===0?
+   await startWholePageForTab(tab.id,{modes,forceRegenerate:false,uiSettings,trigger:'context-menu'}):
+   await chrome.tabs.sendMessage(tab.id,{type:'START_ANNOTATION',modes,forceRegenerate:false},{frameId});
   if(!response?.ok)throw Error(response?.error||'无法启动整页标注。');
  }
  await refreshPageMenu(tab.id);
