@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {dispatchChildFrameBatch} from '../page-frame-dispatch.js';
+import {createMergedFrameReviewCoordinator} from '../merged-frame-review.js';
 const src=fs.readFileSync(new URL('../service-worker.js',import.meta.url),'utf8');
 const block=src.slice(src.indexOf('// User-initiated multi-frame dispatch.'),
  src.indexOf('\nasync function ensureContextMenu()'));
@@ -15,7 +16,8 @@ const load=({frames,probe,denied=[],main={ok:true,started:false}})=>{
     const frameId=options.frameId??0;
     if(message.type==='KRA_FRAME_PROBE')return probe(frameId);
     if(message.type==='START_ANNOTATION'){
-     launches.push({frameId,type:message.type,modes:message.modes});
+     launches.push({frameId,type:message.type,modes:message.modes,
+       mergeGroupId:message.mergeGroupId,mergeHost:message.mergeHost});
      return frameId===0?main:{ok:true,started:true};
     }
     if(message.type==='KRA_FRAME_DISPATCH_DIAGNOSTIC'){diagnostics.push(message);return {ok:true};}
@@ -32,8 +34,12 @@ const load=({frames,probe,denied=[],main={ok:true,started:false}})=>{
    onCommitted:{addListener:fn=>listeners.Committed=fn}
   }
  };
- const c={chrome,console,Date,setTimeout:fn=>{timers.push(fn);return timers.length;},
+ const c={chrome,console,Date,crypto:{randomUUID:()=>String(Math.random()).slice(2)},
+  setTimeout:fn=>{timers.push(fn);return timers.length;},
   clearTimeout:()=>{},sanitizeUiSettings:x=>x||{},
+  createMergedFrameReviewCoordinator,
+  runStreamingAnnotation:async()=>{},
+  createManualReviewSession:()=>({submit:()=>true}),
   ensureContentScriptInFrame:async(_tabId,frameId)=>{
    injections.push(frameId);
    if(denied.includes(frameId))throw Error('Cannot access contents of this frame: permission denied');
@@ -54,6 +60,8 @@ test('popup whole-page starts main and independently eligible Korean iframe, not
  assert.equal(result.ok,true);
  assert.equal(result.frameSummary.started,2);
  assert.deepEqual(f.launches.map(x=>x.frameId).sort(),[0,1,3]);
+ assert.equal(new Set(f.launches.map(x=>x.mergeGroupId)).size,1);
+ assert.equal(f.launches.filter(x=>x.mergeHost).length,1);
  assert.ok(f.diagnostics.some(x=>x.detail.started===2));
 });
 test('a child origin lacking host access is reported but never aborts the top frame',async()=>{
@@ -76,11 +84,14 @@ test('DOMContentLoaded-triggered second pass picks a late child without restarti
  frames.push({frameId:2,documentId:'two'});
  f.listeners.DOMLoaded({tabId:77,frameId:2});
  assert.ok(f.timers.length>0);
- // Two pending timer callbacks may exist; simulate the newest discovery.
+ // The newest timer represents a frame-discovery debounce.
  f.timers.at(-1)();
  await vm.runInContext('activeFrameScans.get(77).serial',f.c);
  assert.deepEqual(f.launches.map(x=>x.frameId).sort(),[0,1,2]);
  assert.equal(f.launches.filter(x=>x.frameId===1).length,1);
+ const groupId=f.launches[0].mergeGroupId;
+ assert.equal(vm.runInContext('mergedFrameReviews.state('+JSON.stringify(groupId)+')?.joined',f.c),0,
+   'the test simulates frame starts, not connected stream Ports');
 });
 test('navigation away cancels bounded discovery and avoids starting a previous-page child',async()=>{
  const f=load({frames:[{frameId:0}],probe:()=>({ok:true,eligible:true})});
