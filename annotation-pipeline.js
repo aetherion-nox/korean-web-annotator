@@ -19,7 +19,8 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,...(smartSegmentation?{smartSegmentation:true}:{}),engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
  const loading=progress=>emit('LOCAL_PROGRESS',progress);
- loading({stage:'dictionary'});
+ // Only the engine may report a dictionary initialization event.
+ // A cached or already-warm status lookup must not impersonate a full reload.
  identity=await status(signal,loading);
  const dictionaryFree=identity.dictionary_free===true;
  if(dictionaryFree&&!enabled)throw Error('无词典模式必须启用模型审核与实验性汉字词或外来语补全。');
