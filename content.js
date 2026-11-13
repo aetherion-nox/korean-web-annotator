@@ -438,7 +438,7 @@
       const relevant=records.some(record=>{
         if(isOwnMutation(record))return false;
         const parent=record.target.nodeType===1?record.target:record.target.parentElement;
-        if(parent?.closest('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
+        if(parent?.closest?.('ruby,.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
            '.kra-floating-ball,.kra-manual-reopen,script,style'))return false;
         if(record.type==='attributes'){
           // A hidden tab can become visible without any text-node mutation.
