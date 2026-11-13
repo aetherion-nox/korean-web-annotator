@@ -1,15 +1,15 @@
-name: Verify and Package Primary-Frame-Only Toolbar v11 (regression rerun)
+name: Verify and Package Positional-v1 Null Protocol v1.1.56.0
 on:
   push:
     branches:
-      - fix/v1.1.55.4-top-frame-toolbar-only
+      - feature/v1.1.56.0-positional-null-results
     paths:
       - .github/workflows/package-no-dictionary.yml
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: package-v1.1.55.4-top-frame-toolbar-only
+  group: package-v1.1.56.0-positional-null-results
   cancel-in-progress: false
 jobs:
   release:
@@ -26,10 +26,10 @@ jobs:
           import json
           from pathlib import Path
           m=json.loads(Path('manifest.json').read_text())
-          assert m['version']=='1.1.55.4'
+          assert m['version']=='1.1.56.0'
           assert Path('no-dictionary-analysis.js').is_file()
           assert 'experimentalHanja' in Path('service-worker.js').read_text()
-          print('Experimental no-dictionary patch based on v1.1.55.4')
+          print('Strict positional-v1 response protocol v1.1.56.0')
           PY
       - name: Restore pinned Kiwi and Python assets
         run: |
@@ -50,7 +50,7 @@ jobs:
                  and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
-          dest=root/'Korean-Web-Annotator-v1.1.55.4-top-frame-toolbar-only.zip'
+          dest=root/'Korean-Web-Annotator-v1.1.56.0-positional-null.zip'
           with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
               for p in sorted(files):
                   mode=zipfile.ZIP_STORED if p.suffix.lower()=='.mdl' else zipfile.ZIP_DEFLATED
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: no-dictionary-extension-zip
-          path: Korean-Web-Annotator-v1.1.55.4-top-frame-toolbar-only.zip
+          path: Korean-Web-Annotator-v1.1.56.0-positional-null.zip
           compression-level: 0
           if-no-files-found: error
   windows-verify-publish:
@@ -104,12 +104,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.55.4-top-frame-toolbar-only.1'
+          $tag='v1.1.56.0-positional.1'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.55.4 — one toolbar in top frame; merged iframe annotation intact (Windows compatible)' --prerelease --notes 'Fixes duplicate toolbars after multi-frame annotation: progress and visibility checks no longer create a toolbar or floating ball inside child iframes; only the top document owns controls. Top toolbar whole-page button now invokes the same shared manual/API multi-frame pipeline as the popup. Embedded frame DOM annotations and restoration remain active, and standalone iframe manual panels remain available for explicit selection. All accessible article/iframe sentences now feed one pooled local analysis and shared manual/API LLM batch, with distinct source IDs, bounded hydration collection, and original-frame DOM rendering. The main document owns the sole manual review window. API calls share the original context and output-token budget; nonmatching frame results never touch other DOM. Cross-frame offline application is conservatively disabled if the worker disconnects, while independent single-frame recovery stays available. Whole-page starts enumerate child frames and only start those with eligible visible Korean content, with bounded late frame discovery, document-aware deduplication and permission-safe skips. Match-origin fallback covers related frames. Includes the previous fixes for the old 3000-node whole-page truncation, cross-location identical-text deduplication and hidden/tab visibility handling. Detects open Shadow DOM, optionally observes visibility attribute changes and adds a bounded one-time asynchronous hydration follow-up without disabling stop-auto. Includes detailed DOM scan versus model/DOM render diagnostics. Atomic segmentation repairs now validate before old target choices, allow omitting results for safely superseded targets and scan-only placeholders, remove artificial KEEP fragments, reject KEEP additions, allow delete without origin, and preserve fallback old choices if repairs fail. Manual reviews, retries and disconnected-page recovery use the shared repair validator. Includes previous dictionary-backed experiment. Open-origin JSON mode explicitly allows genuine Hanja or Latin spellings only when an enabled source type has no matching dictionary candidate. Matching dictionary senses still use c/n choice IDs; KEEP remains fallback and all existing validators are unchanged. Includes default-on Hanja reading verification toggle, lexical alternate-reading checks, keeps all structural safety checks when disabled, prevents unsafe noun merging, preserves native suffixes, safely normalizes nonconflicting empty-ID repair additions, and reports distinct origin validation/render statistics. Includes previous manual DOM rendering fix. Includes prior open-origin protocol changes. Includes prior analyzeLocal import fix. Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.0 — positional JSON output and null fallback (Windows compatible)' --prerelease --notes 'Breaking model-answer protocol: only positional-v1 compact results arrays; true JSON null replaces model KEEP fallback; JSON false is reserved for safe segmentation repair or scan-only. Requires matching batch_id in API and manual mode, supports explicit original-index partial retries, keeps Hanja/Latin origin generation and shared cross-iframe API/manual batches. Output token reservation adapts to compact responses. Fixes duplicate toolbars after multi-frame annotation: progress and visibility checks no longer create a toolbar or floating ball inside child iframes; only the top document owns controls. Top toolbar whole-page button now invokes the same shared manual/API multi-frame pipeline as the popup. Embedded frame DOM annotations and restoration remain active, and standalone iframe manual panels remain available for explicit selection. All accessible article/iframe sentences now feed one pooled local analysis and shared manual/API LLM batch, with distinct source IDs, bounded hydration collection, and original-frame DOM rendering. The main document owns the sole manual review window. API calls share the original context and output-token budget; nonmatching frame results never touch other DOM. Cross-frame offline application is conservatively disabled if the worker disconnects, while independent single-frame recovery stays available. Whole-page starts enumerate child frames and only start those with eligible visible Korean content, with bounded late frame discovery, document-aware deduplication and permission-safe skips. Match-origin fallback covers related frames. Includes the previous fixes for the old 3000-node whole-page truncation, cross-location identical-text deduplication and hidden/tab visibility handling. Detects open Shadow DOM, optionally observes visibility attribute changes and adds a bounded one-time asynchronous hydration follow-up without disabling stop-auto. Includes detailed DOM scan versus model/DOM render diagnostics. Atomic segmentation repairs now validate before old target choices, allow omitting results for safely superseded targets and scan-only placeholders, remove artificial KEEP fragments, reject KEEP additions, allow delete without origin, and preserve fallback old choices if repairs fail. Manual reviews, retries and disconnected-page recovery use the shared repair validator. Includes previous dictionary-backed experiment. Open-origin JSON mode explicitly allows genuine Hanja or Latin spellings only when an enabled source type has no matching dictionary candidate. Matching dictionary senses still use c/n choice IDs; KEEP remains fallback and all existing validators are unchanged. Includes default-on Hanja reading verification toggle, lexical alternate-reading checks, keeps all structural safety checks when disabled, prevents unsafe noun merging, preserves native suffixes, safely normalizes nonconflicting empty-ID repair additions, and reports distinct origin validation/render statistics. Includes previous manual DOM rendering fix. Includes prior open-origin protocol changes. Includes prior analyzeLocal import fix. Experimental Kiwi-only lexical targets when no external dictionary is imported. Requires model review and an enabled Hanja or loanword literal-origin experiment. Keeps normal imported dictionary behavior. Includes partial manual recovery. Kiwi model files are ZIP STORED; Windows Expand-Archive verified.'
           }
           if($LASTEXITCODE -ne 0){throw 'GitHub Release failed'}
