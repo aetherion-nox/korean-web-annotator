@@ -100,3 +100,33 @@ test('a group-mismatched undo cannot consume an unrelated prior selection',()=>{
  assert.equal(f.events.includes('cancel'),false);
  f.dom.window.close();
 });
+
+test('undo refuses to pop an older record when task completion changes the history stack',()=>{
+ const f=fixture();
+ const previous=Object.assign([],{groupId:'older',startedAt:1});
+ f.history.push(previous);
+ const newcomer=Object.assign([],{groupId:'latest',startedAt:2});
+ f.c.cancelTask=()=>f.history.push(newcomer);
+ const result=f.c.undoLast('older');
+ assert.equal(result.ok,false);
+ assert.match(result.error,/新结果/);
+ assert.equal(f.history.length,2);
+ assert.equal(f.history[0],previous);
+ assert.equal(f.history[1],newcomer);
+ f.dom.window.close();
+});
+
+test('restore removes extension rubies from open Shadow DOM as well as main document',()=>{
+ const f=fixture();
+ const host=f.dom.window.document.createElement('section');
+ const shadow=host.attachShadow({mode:'open'});
+ shadow.innerHTML='<p><ruby kra-annotated="true" data-kra-original="언어">言語<rt>언어</rt></ruby></p>';
+ f.dom.window.document.body.append(host);
+ f.c.openTextRoots=()=>[f.dom.window.document.body,shadow];
+ const result=f.c.restorePage();
+ assert.equal(result.removed,2);
+ assert.equal(f.dom.window.document.querySelectorAll(own).length,0);
+ assert.equal(shadow.querySelectorAll(own).length,0);
+ assert.equal(shadow.textContent,'언어');
+ f.dom.window.close();
+});
