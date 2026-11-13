@@ -127,6 +127,69 @@ jobs:
                 except:pass
                 driver=None
           PY
+      - name: Request mobile HTML as Android Chrome and iPhone Safari
+        shell: bash
+        run: |
+          ANDROID='Mozilla/5.0 (Linux; Android 16; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36'
+          IPHONE='Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1'
+          BASE='https://www.chosun.com/international/international_general/2026/11/13/VJINOFPUKRDQNDSG2NFRVPHXHI/'
+          for agent in android iphone; do
+            if [ "$agent" = android ]; then UA="$ANDROID"; else UA="$IPHONE"; fi
+            for mode in native standard; do
+              if [ "$mode" = native ]; then URL="${BASE}?outputType=native"; else URL="$BASE"; fi
+              curl -L --compressed --connect-timeout 10 --max-time 30 \
+                -A "$UA" -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+                -H 'Accept-Language: ko-KR,ko;q=0.9' \
+                -w "MOBILE CURL agent=$agent mode=$mode http=%{http_code} size=%{size_download} final=%{url_effective}\n" \
+                -o "html/chosun-20261113-$agent-$mode.html" "$URL" || true
+            done
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          from bs4 import BeautifulSoup
+          import json
+          for file in sorted(Path('html').glob('chosun-20261113-*mobile*.html')):
+            print(file.name)
+          for file in sorted(Path('html').glob('chosun-20261113-android-*.html'))+sorted(Path('html').glob('chosun-20261113-iphone-*.html')):
+            txt=file.read_text(encoding='utf-8',errors='replace')
+            soup=BeautifulSoup(txt,'html.parser')
+            print('MOBILE SOURCE',file.name,'bytes',len(txt.encode('utf-8')),
+              'title',soup.title.get_text(' ',strip=True) if soup.title else '',
+              'comments',len(soup.select('#div_comment')),
+              'matches',{k:txt.count(k) for k in ['한림재','겁 많은 개가 먼저 짖는다고','미사일고 드론만','태평양전쟁 수준','최신순','관심순']},
+              'commentText',[e.get_text(' ',strip=True)[:1000] for e in soup.select('#div_comment')[:1]])
+          PY
+      - name: Render actual mobile view with Android emulation
+        shell: bash
+        run: |
+          timeout 65 python3 - <<'PY' || true
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.common.by import By
+          from pathlib import Path
+          import time
+          opts=Options()
+          for a in ('--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-first-run'):
+            opts.add_argument(a)
+          opts.add_experimental_option('mobileEmulation',{'deviceMetrics':{'width':393,'height':852,'pixelRatio':3},'userAgent':'Mozilla/5.0 (Linux; Android 16; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36'})
+          driver=None
+          try:
+            driver=webdriver.Chrome(options=opts)
+            driver.set_page_load_timeout(30)
+            url='https://www.chosun.com/international/international_general/2026/11/13/VJINOFPUKRDQNDSG2NFRVPHXHI/?outputType=native'
+            driver.get(url)
+            time.sleep(3)
+            el=driver.find_elements(By.ID,'div_comment')
+            print('MOBILE BROWSER url',driver.current_url,'commentContainers',len(el))
+            if el:driver.execute_script('arguments[0].scrollIntoView({block:"center"});window.scrollBy(0,200)',el[0])
+            time.sleep(10)
+            html=driver.page_source
+            Path('html/chosun-20261113-android-rendered.html').write_text(html,encoding='utf-8')
+            print('MOBILE RENDERED',len(html),'matches',{k:html.count(k) for k in ['한림재','겁 많은 개가 먼저 짖는다고','미사일고 드론만','태평양전쟁 수준','최신순','관심순']},'comments',[el.text[:1300] for el in driver.find_elements(By.ID,'div_comment')])
+          except Exception as e:print('MOBILE BROWSER ERROR',str(e)[:1000])
+          finally:
+            if driver:driver.quit()
+          PY
       - name: Upload HTML sources, rendered DOM and findings
         uses: actions/upload-artifact@v4
         with:
