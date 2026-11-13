@@ -183,7 +183,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
         error:'本批已保留 '+current.acceptedRows.size+'/'+current.wireTargets.length+
           ' 条有效答案，剩余 '+missing.length+' 条待补交：'+detail+
           (missing.length>12?'；其余见补交提示词':'')+
-          (unknown.length?'。已忽略 '+unknown.length+' 条未知或跨批 target_id':'')+
+
           '。请复制新的补交提示词，只回答剩余目标。',
         acceptedCount:current.acceptedRows.size+retired.size,
         acceptedRows:current.wireTargets.flatMap((t,i)=>
