@@ -44,6 +44,44 @@ jobs:
               if term in ('100자평','댓글','comment','iframe'):
                 for m in xs[:8]: print('    ...',re.sub(r'\s+',' ',html[max(0,m.start()-120):m.end()+170]))
           PY
+      - name: Parse exact comment region and embedded frames
+        shell: bash
+        run: |
+          python3 -m pip install --quiet beautifulsoup4
+          python3 - <<'PY'
+          from pathlib import Path
+          from bs4 import BeautifulSoup
+          import re
+          for file in sorted(Path('html').glob('*.html')):
+            soup=BeautifulSoup(file.read_bytes(),'html.parser')
+            print('\n###',file.name)
+            print('iframe details:',[(f.get('src'),f.get('id'),f.get('class')) for f in soup.find_all('iframe')])
+            print('comment-root ids:',[(e.name,e.get('id'),e.get('class')) for e in soup.find_all(id=re.compile('comment|reply',re.I))][:40])
+            print('comment elements total:',len(soup.select('[class*="comment"]')))
+            counts={}
+            for element in soup.select('[class*="comment"]'):
+              for cl in element.get('class',[]):
+                if 'comment' in cl:
+                  counts[cl]=counts.get(cl,0)+1
+            print('comment classes:',sorted(counts.items(),key=lambda kv:(-kv[1],kv[0]))[:70])
+            for i,item in enumerate(soup.find_all(string=re.compile('100자평'))):
+              if i>=4: break
+              p=item.parent
+              chain=[(x.name,x.get('class'),x.get('id')) for x in list(p.parents)[:6]]
+              print('100자평 heading',i,'ancestors:',chain)
+              container=p
+              for ancestor in list(p.parents)[:7]:
+                if ancestor.name in ('section','article') or any('comment-feed' in str(x) for x in ancestor.get('class',[])):
+                  container=ancestor
+              print('container text',re.sub(r'\s+',' ',container.get_text(' ',strip=True))[:1600])
+              print('container html',str(container)[:3400])
+            rawtext=soup.get_text(' ',strip=True)
+            for marker in ('100자평','최신순','관심순','후원순','답글','좋아요'):
+              print('TEXT',marker,'count',rawtext.count(marker))
+              index=rawtext.find(marker)
+              if index>=0:print('TEXT NEAR',marker,repr(rawtext[max(0,index-90):index+950]))
+            print('scripts',[(s.get('src') or ('INLINE:'+str(len(s.get_text())))) for s in soup.find_all('script')][:35])
+          PY
       - name: Archive downloaded HTML for inspection
         uses: actions/upload-artifact@v4
         with:
