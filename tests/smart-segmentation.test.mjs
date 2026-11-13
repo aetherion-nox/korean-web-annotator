@@ -16,7 +16,8 @@ const target=(id,text,start,end,choice='可')=>({
    entry_id:1,definitions:['a lexical sense']}]
 });
 const row=(sentence_id,op,old_target_ids,start,end,surface,choice_id)=>({
- sentence_id,op,old_target_ids,start,end,surface,choice_id
+ sentence_id,op,old_target_ids,start,end,surface,
+ ...(op==='delete'?{}:{choice_id})
 });
 function fixture(text,targets,opts={}){
  const scopes=new Map(targets.map(t=>[t.target_id,{
@@ -66,7 +67,7 @@ test('wrong POS does not prevent repair, but protected proper names are never in
  assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,2,text,'game')]).accepted.length,1);
  const name=fixture(text,[t],{protected_ranges:[[0,2]]});
  assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,'game')]).accepted.length,0);
- assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,'KEEP')]).accepted.length,1);
+ assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,'KEEP')]).accepted.length,0);
 });
 
 test('omitted word with no existing target can be added in a one-pass scan-only sentence',()=>{
@@ -83,7 +84,7 @@ test('a dictionary flagged as a person cannot be re-originated but can be kept',
  const text='이수민',t={...target('t0',text,0,3,'李壽民'),dictionary_person_name:true};
  const f=fixture(text,[t],{protected_ranges:[]});
  assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'李壽民')]).accepted.length,0);
- assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'KEEP')]).accepted.length,1);
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'KEEP')]).accepted.length,0);
 });
 
 test('repaired Hanja stems may retain exact unchanged Korean endings but may not fabricate them',()=>{
@@ -101,7 +102,7 @@ test('delete and KEEP may safely suppress malformed spans containing punctuation
  assert.equal(deleted.accepted.length,1);
  assert.deepEqual(deleted.accepted[0].annotations,[]);
  const keep=validate(f,[row(f.sid,'replace',['t0'],0,text.length,text,'KEEP')]);
- assert.equal(keep.accepted.length,1);
+ assert.equal(keep.accepted.length,0);
  const unsafe=validate(f,[row(f.sid,'replace',['t0'],0,text.length,text,'韓國政府')]);
  assert.equal(unsafe.accepted.length,0);
 });
@@ -163,9 +164,9 @@ test('a partial split safely retires the old target while leaving unmatched nati
  assert.equal(partial.accepted.length,1);
  assert.deepEqual(partial.accepted[0].annotations.map(a=>a.replacement),['科學']);
  const complete=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學'),
-  row(f.sid,'replace',['t0'],2,4,'기술','KEEP')]);
+  row(f.sid,'replace',['t0'],2,4,'기술','技術')]);
  assert.equal(complete.accepted.length,2);
- assert.deepEqual(complete.accepted.flatMap(r=>r.annotations.map(a=>a.replacement)),['科學']);
+ assert.deepEqual(complete.accepted.flatMap(r=>r.annotations.map(a=>a.replacement)),['科學','技術']);
 });
 
 test('KEEP cannot consume unrelated text outside referenced old target',()=>{
@@ -208,21 +209,21 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
  assert.equal(off.sentences[0].kiwi_tokens,undefined);
  assert.deepEqual(on.sentences[0].kiwi_tokens,[]);
  assert.ok(!buildReviewInstructions({}).includes('repairs'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Actively audit EVERY original sentence'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('You SHOULD submit repairs for EVERY genuine, well-supported'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Never invent repairs to reach a quota'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('plus optional repairs'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('EXPERIMENTAL SEGMENTATION REPAIR'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Do not invent repairs to meet a quota'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('same order and length'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Optional repairs'));
  assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('no explanations or extra fields'));
- assert.ok(!buildReviewInstructions({}).includes('Actively audit EVERY original sentence'));
+ assert.ok(!buildReviewInstructions({}).includes('EXPERIMENTAL SEGMENTATION REPAIR'));
  assert.ok(!buildReviewInstructions({}).includes('you SHOULD write that origin'));
  assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('genuine Hanja spelling'));
  assert.ok(buildManualPrompt(text,[t],'batch',{smartSegmentation:true}).includes('repairs'));
  assert.ok(!buildManualPrompt(text,[t],'batch',{}).includes('repairs'));
  const combined=buildReviewInstructions({smartSegmentation:true,experimentalHanja:true,experimentalLoanword:true});
- assert.ok(combined.includes('Actively audit EVERY original sentence'));
+ assert.ok(combined.includes('EXPERIMENTAL SEGMENTATION REPAIR'));
  assert.ok(combined.includes('THIRD, if NO supplied dictionary option correctly represents'));
- assert.ok(combined.includes('DIRECTLY into results[].choice_id'));
- assert.equal((combined.match(/You SHOULD submit repairs/g)||[]).length,1);
+ assert.ok(combined.includes('DIRECTLY into the matching results array position'));
+ assert.equal((combined.match(/EXPERIMENTAL SEGMENTATION REPAIR/g)||[]).length,1);
  assert.equal((combined.match(/FIRST infer its meaning/g)||[]).length,1);
 });
 
@@ -232,11 +233,11 @@ test('manual mode returns normal target choices and repairs in a single response
  const f=fixture(text,[t]);
  const awaiting=session.request(f.config,[t]);
  const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
- const message={batch_id:request.requestId,results:['c0'],
+ const message={batch_id:request.requestId,results:[false],
   repairs:[row('s0','replace',['t0'],0,2,text,'game')]};
  assert.equal(session.submit({operationId:'manual-repair',requestId:request.requestId,text:JSON.stringify(message)}),true);
  const resolved=await awaiting;
- assert.deepEqual(resolved.results,[],'a validated repair supersedes the old dictionary choice');
+ assert.deepEqual(resolved.results,[false],'a validated repair keeps the positional slot but retires the old choice');
  assert.equal(resolved.repairs[0].old_target_ids[0],'local');
  assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_REQUEST').length,1);
 });
@@ -297,8 +298,8 @@ test('invalid repair does not invalidate a normal choice or cause a second model
 
 test('streaming parser does not apply incomplete repair data as a visible annotation',()=>{
  const text='게임',t=target('t0',text,0,2),snapshots=[];
- const parser=choicePreviewParser([t],rows=>snapshots.push(rows.map(a=>a.option.choice_id)));
- const content='{"results":[{"target_id":"t0","choice_id":"KEEP"}],"repairs":[{"sentence_id":"s0"';
+ const parser=choicePreviewParser([t],rows=>snapshots.push(rows.map(a=>a.option.choice_id)),'stream-test');
+ const content='{"batch_id":"stream-test","results":[null],"repairs":[{"sentence_id":"s0"';
  parser(content.slice(0,24));assert.equal(snapshots.length,0);
  parser(content.slice(24));
  assert.deepEqual(snapshots.at(-1),['KEEP']);
