@@ -12,7 +12,7 @@ import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.55.4-multiframe';
+const CONTENT_SCRIPT_VERSION='1.1.55.4-primary-toolbar-only';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -78,6 +78,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if(message?.type==='KRA_START_PAGE_FROM_POPUP'){
     startPageFromPopup(message).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
+  }
+  if(message?.type==='KRA_START_PAGE_FROM_TOOLBAR'){
+    // A child frame must never initiate its own duplicate whole-page batch.
+    // Select the exact tab of the trusted content-script sender.
+    if(sender.id!==chrome.runtime.id||sender.frameId!==0||!Number.isInteger(sender.tab?.id)){
+      sendResponse({ok:false,error:'整页工具条仅允许从主框架启动。'});return;
+    }
+    startWholePageForTab(sender.tab.id,{
+      modes:{hanja:message.modes?.hanja!==false,loanword:message.modes?.loanword!==false},
+      forceRegenerate:message.forceRegenerate===true,
+      uiSettings:message.uiSettings||{},trigger:'toolbar'
+    }).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));
+    return true;
   }
   if(message?.type==='KRA_CONTEXT_UPDATE'){
     chrome.tabs.query({active:true,currentWindow:true}).then(([tab])=>{if(tab?.id===sender.tab?.id)return updatePageMenu(message.state);}).then(()=>sendResponse({ok:true})).catch(()=>sendResponse({ok:false}));return true;
