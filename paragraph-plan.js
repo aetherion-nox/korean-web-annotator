@@ -6,8 +6,8 @@ export function createParagraphPlan(entries,readSource,blockSelector){
   const element=entry.node.parentElement?.closest(blockSelector+',div,section,article,main')||entry.node.parentElement;
   if(!element)continue;
   let group=groups.get(element);
-  if(!group){const source=readSource(element);group={id:'p'+groups.size,text:source.text,runs:source.runs,members:[],selected:[],results:new Map()};groups.set(element,group);}
-  const run=group.runs.find(r=>r.node===entry.node);
+  if(!group){const source=readSource(element);group={id:'p'+groups.size,text:source.text,runs:source.runs,runByNode:new Map(source.runs.map(r=>[r.node,r])),members:[],selected:[],results:new Map()};groups.set(element,group);}
+  const run=group.runByNode.get(entry.node);
   if(!run||group.text.slice(run.start,run.end)!==entry.text)throw Error('段落原文与 DOM 位置不一致，已停止分析。');
   group.members.push({entry,start:run.start,end:run.end});
   for(const r of entry.selected)group.selected.push({start:run.start+r.start,end:run.start+r.end});
