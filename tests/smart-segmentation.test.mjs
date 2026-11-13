@@ -76,8 +76,8 @@ test('omitted word with no existing target can be added in a one-pass scan-only 
  const r=validate(f,[row(f.sid,'add',[],0,2,text,'game')]);
  assert.equal(r.accepted.length,1);assert.equal(r.accepted[0].annotations[0].replacement,'game');
  assert.equal(validate(f,[row(f.sid,'replace',['scan'],0,2,text,'game')]).accepted.length,0);
- const unknown=validate(f,[row(f.sid,'add',[],0,2,text,'KEEP')]);
- assert.equal(unknown.accepted.length,0,'native text must not be added as an artificial KEEP repair');
+ const unknown=validate(f,[row(f.sid,'add',[],0,2,text,null)]);
+ assert.equal(unknown.accepted.length,0,'a repair cannot use JSON null as a generated origin');
 });
 
 test('a dictionary flagged as a person cannot be re-originated but can be kept',()=>{
@@ -169,9 +169,9 @@ test('a partial split safely retires the old target while leaving unmatched nati
  assert.deepEqual(complete.accepted.flatMap(r=>r.annotations.map(a=>a.replacement)),['科學','技術']);
 });
 
-test('KEEP cannot consume unrelated text outside referenced old target',()=>{
+test('null is invalid repair origin; deletion without choice_id still consumes its original source span',()=>{
  const text='한국 정부',f=fixture(text,[target('t0',text,0,2,'韓國')]);
- assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,5,text,'KEEP')]).accepted.length,0);
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,5,text,null)]).accepted.length,0);
  assert.equal(validate(f,[row(f.sid,'delete',['t0'],0,2,'한국','KEEP')]).accepted.length,1);
 });
 
