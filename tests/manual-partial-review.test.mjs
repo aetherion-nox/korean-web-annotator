@@ -12,8 +12,8 @@ test('background keeps valid choices, asks only for missing IDs and merges retry
  const prompt='Review input\n'+JSON.stringify({format:'shared-pools-v4',
    sentences:[{sentence_id:'s0',text:'가나'}],
    candidates:[{candidate_id:'p0',type:'hanja',replacement:'可'}],
-   targets:[{target_id:'t0',sentence_id:'s0',options:{KEEP:null,c0:'p0'}},
-     {target_id:'t1',sentence_id:'s0',options:{KEEP:null,c0:'p0'}}],batch_id:'batch1'});
+   targets:[{target_id:'t0',sentence_id:'s0',options:{c0:'p0'}},
+     {target_id:'t1',sentence_id:'s0',options:{c0:'p0'}}],batch_id:'batch1'});
  const pending=session.request({manualPrepared:{requestId:'batch1',text:prompt,bindings:[],targetCount:2},reviewPosFilter:false},targets);
  const first=session.submit({operationId:'op',requestId:'batch1',text:JSON.stringify({
    batch_id:'batch1',format:'shared-pools-v4',results:[
@@ -25,18 +25,18 @@ test('background keeps valid choices, asks only for missing IDs and merges retry
  assert.equal(partial.acceptedCount,1);
  assert.deepEqual(partial.invalidTargetIds,['t1']);
  assert.equal(partial.acceptedRows.length,1);
- assert.equal(partial.acceptedRows[0].target_id,'t0');
+ assert.equal(partial.acceptedRows[0].t,'t0');
  const retryJson=JSON.parse(partial.repairPrompt.slice(partial.repairPrompt.indexOf('{"format":"shared-pools-v4"')));
  assert.deepEqual(retryJson.targets.map(x=>x.target_id),['t1']);
  assert.equal(retryJson.candidates.length,1);
  assert.equal(retryJson.sentences.length,1);
  assert.equal(retryJson.batch_id,'batch1');
  const second=session.submit({operationId:'op',requestId:'batch1',text:JSON.stringify({
-   results:[{t:'t0',c:null},{t:'t1',c:null}]})});
+   batch_id:'batch1',results:[{t:'t0',c:null},{t:'t1',c:null}]})});
  assert.equal(second,true);
  const result=await pending;
- assert.deepEqual(result.results.map(x=>[x.target_id,x.choice_id]),
-   [['original0','c0'],['original1','KEEP']]);
+ assert.deepEqual(result.results.map(x=>[x.t,x.c]),
+   [['original0','c0'],['original1',null]]);
 });
 
 test('invalid batch ID never saves any partial answers',async()=>{
@@ -49,6 +49,6 @@ test('invalid batch ID never saves any partial answers',async()=>{
  assert.match(events.at(-1).error,/batch_id/);
  assert.equal(events.at(-1).acceptedRows,undefined);
  assert.equal(session.submit({operationId:'op',requestId:'batch',text:JSON.stringify({
-   results:[{t:'t0',c:null}]})}),true);
- assert.equal((await pending).results[0].c,'KEEP');
+   batch_id:'batch',results:[{t:'t0',c:null}]})}),true);
+ assert.equal((await pending).results[0].c,null);
 });

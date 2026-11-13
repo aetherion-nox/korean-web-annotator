@@ -62,26 +62,26 @@ test('model instruction and manual prompts identify no dictionary and still use 
  const text='경제';
  const targets=analyzeWithoutDictionary(text,[token('경제','NNG',0)],mode).targets;
  const cfg={dictionaryFree:true,experimentalHanja:true};
- assert.match(buildReviewInstructions(cfg),/No external dictionary/);
+ assert.match(buildReviewInstructions(cfg),/no external dictionary/i);
  assert.doesNotMatch(buildReviewInstructions(cfg),/check the supplied dictionary definitions/);
  const prompt=buildManualPrompt(text,targets,'b123',cfg);
  assert.match(prompt,/OPEN-ENDED/);
- assert.match(prompt,/KEEP is only a fallback/);
- assert.match(prompt,/write the actual Hanja or Latin origin directly as choice_id/);
+ assert.match(prompt,/JSON null/);
+ assert.match(prompt,/authentic generated origin/);
  const payload=buildReviewPayload(text,targets,cfg).payload;
  assert.equal(payload.format,'shared-pools-v4');
  assert.deepEqual(payload.candidates,[]);
- assert.deepEqual(payload.targets[0].options,{KEEP:null});
- assert.equal(payload.choice_id_mode,'open-origin');
+ assert.deepEqual(payload.targets[0].options,{});
+ assert.equal(payload.origin_mode,'open-origin');
  assert.deepEqual(payload.allowed_origin_types,['hanja']);
- assert.equal(payload.keep_is_fallback_only,true);
+ assert.equal(payload.null_is_fallback_only,true);
  const loanPrompt=buildReviewInstructions({dictionaryFree:true,experimentalLoanword:true});
  assert.match(loanPrompt,/actual Latin-script original/);
  assert.doesNotMatch(loanPrompt,/Permitted generated source types in THIS batch: genuine Hanja/);
  const latinPayload=buildReviewPayload(text,targets,{dictionaryFree:true,experimentalLoanword:true}).payload;
  assert.deepEqual(latinPayload.allowed_origin_types,['loanword']);
  const dictionaryPayload=buildReviewPayload(text,targets,{}).payload;
- assert.equal(dictionaryPayload.choice_id_mode,undefined);
+ assert.equal(dictionaryPayload.origin_mode,undefined);
 });
 
 test('dictionary-free sentence pipeline issues review requests and retains model KEEP results',async()=>{

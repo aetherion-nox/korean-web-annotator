@@ -43,25 +43,25 @@ test('accepted batch remains available before later model events arrive',async()
 test('page-only recovery rejects direct Hanja string when experimental mode metadata is absent',async()=>{
  const {context,task,entry}=environment();
  const proposed={batch_id:'batch1',results:[{t:'t0',c:'可'}]};
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify(proposed)),/无效 choice_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify(proposed)),/无效 c|不完整/);
  assert.equal(entry.annotations.length,0);
  assert.equal(task.manualRequest,'batch1');
 });
 
-test('disconnected page recovery accepts missing batch_id only with matching IDs and count',async()=>{
+test('disconnected page recovery requires exact batch_id and valid t/c rows',async()=>{
  const {context,task,entry}=environment();
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[]})),/不完整/);
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'other',c:'c0'}]})),/target_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[]})),/batch_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'other',c:'c0'}]})),/target_id/);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'wrong',results:[{t:'t0',c:'c0'}]})),/batch_id/);
  assert.equal(task.manualRequest,'batch1');assert.equal(entry.annotations.length,0);
- await context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'c0'}]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'c0'}]}));
  assert.equal(task.manualRequest,'batch2');
- await context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:null}]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch2',results:[{t:'t0',c:null}]}));
  assert.equal(task.completed,true);assert.equal(entry.annotations.length,1);
 });
-test('missing batch_id does not bypass experimental-origin eligibility checks',async()=>{
+test('missing batch_id is rejected before experimental-origin eligibility checks',async()=>{
  const {context,task,entry}=environment();
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'可'}]})),/无效 choice_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'可'}]})),/batch_id/);
  assert.equal(task.manualRequest,'batch1');
  assert.equal(entry.annotations.length,0);
 });
@@ -70,7 +70,7 @@ test('disconnected recovery accepts model-supplied Latin origin only with experi
  const {context,task,entry}=environment();
  task.modes.loanword=true;
  task.manualBackup.bindings[0].literalOrigin={eligible:true,hanja:false,loanword:true,known:[]};
- await context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'game'}]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]}));
  assert.equal(task.manualRequest,'batch2');
  assert.equal(entry.annotations.length,1);
  assert.equal(entry.annotations[0].replacement,'game');
@@ -82,7 +82,7 @@ test('disconnected recovery rejects known dictionary spellings masquerading as n
  const {context,task,entry}=environment();
  task.modes.loanword=true;
  task.manualBackup.bindings[0].literalOrigin={eligible:true,hanja:false,loanword:true,known:[{type:'loanword',replacement:'game'}]};
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'game'}]})),/无效 choice_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]})),/无效 c|不完整/);
  assert.equal(entry.annotations.length,0);
  assert.equal(task.manualRequest,'batch1');
 });
@@ -91,10 +91,10 @@ test('disconnected recovery fails closed for prohibited names and malformed Hanz
  const {context,task,entry}=environment();
  const meta={eligible:false,hanja:true,loanword:true,known:[]};
  task.manualBackup.bindings[0].literalOrigin=meta;task.modes.loanword=true;
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'game'}]})),/无效 choice_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]})),/无效 c|不完整/);
  meta.eligible=true;
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'韓字'}]})),/无效 choice_id/);
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'game',extra:true}]})),/无效 choice_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'韓字'}]})),/无效 c|不完整/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game',extra:true}]})),/无效 c|不完整/);
  assert.equal(entry.annotations.length,0);assert.equal(task.manualRequest,'batch1');
 });
 
@@ -105,7 +105,7 @@ test('disconnected Latin origin preserves the existing alphanumeric suffix',asyn
  task.manualBackup.bindings[0].start=0;task.manualBackup.bindings[0].end=4;
  task.manualBackup.bindings[0].literalOrigin={eligible:true,hanja:false,loanword:true,known:[]};
  task.modes.loanword=true;entry.selected=[{start:0,end:4}];
- await context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'game42'}]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game42'}]}));
  assert.equal(entry.annotations.length,1);
  assert.equal(entry.annotations[0].replacement,'game');
  assert.equal(entry.annotations[0].surface,'가나');
@@ -143,6 +143,6 @@ test('duplicate or extra target IDs cannot discard independent valid decisions',
  })),/重复 target_id/);
  assert.equal(task.manualRecoveryAccepted.size,1);
  assert.equal(entry.annotations.length,1);
- await context.applyManualRecovery(task,JSON.stringify({results:[{t:'t1',c:null}]}));
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t1',c:null}]}));
  assert.equal(task.manualRequest,'batch2');
 });

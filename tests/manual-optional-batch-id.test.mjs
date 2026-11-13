@@ -18,12 +18,14 @@ function begin(name,options={}){
  return {events,session,request,pending,submit};
 }
 
-test('missing batch_id is accepted for an exact one-to-one target and choice match',async()=>{
+test('missing batch_id is rejected despite exact one-to-one t/c match',async()=>{
  const batch=begin('optional-id');
- assert.equal(batch.submit({results:rows()}),true);
+ assert.equal(batch.submit({results:rows()}),false);
+ assert.equal(batch.submit({batch_id:batch.request.requestId,results:rows()}),true);
  const result=await batch.pending;
  assert.deepEqual(result.results,[{t:'local-a',c:null},{t:'local-b',c:'c0'}]);
  assert.equal(batch.events.filter(event=>event.type==='MANUAL_REVIEW_ACCEPTED').length,1);
+ assert.equal(batch.events.filter(event=>event.type==='MANUAL_REVIEW_ERROR').length,1);
 });
 
 test('explicit wrong batch_id is rejected even when count and target IDs match',async()=>{
@@ -50,7 +52,7 @@ test('missing ID never relaxes count, duplicate target, foreign target or option
  assert.equal(batch.events.filter(event=>event.type==='MANUAL_REVIEW_ERROR').length,4);
 });
 
-test('single submission with segmentation repairs also accepts omitted batch_id',async()=>{
+test('segmentation repairs also require matching batch_id',async()=>{
  const batch=begin('optional-repairs',{smartSegmentation:true,
   repairModes:{hanja:true,loanword:false},
   repairScopes:new Map([['local-a',{text:'한국',allTargets:[targets[0]],
@@ -61,7 +63,8 @@ test('single submission with segmentation repairs also accepts omitted batch_id'
  const answer={results:rows(),repairs:[{
   sentence_id:'s0',op:'replace',old_target_ids:['t0'],start:0,end:2,surface:'한국',choice_id:'韓國'
  }]};
- assert.equal(batch.submit(answer),true);
+ assert.equal(batch.submit(answer),false);
+ assert.equal(batch.submit({...answer,batch_id:batch.request.requestId}),true);
  const result=await batch.pending;
  assert.equal(result.repairs.length,1);
  assert.deepEqual(result.repairs[0].old_target_ids,['local-a']);

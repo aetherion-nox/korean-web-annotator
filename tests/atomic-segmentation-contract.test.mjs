@@ -29,7 +29,7 @@ test('atomic repair does not require KEEP for unchanged native suffix',()=>{
  assert.equal(valid.accepted.length,1,JSON.stringify(valid.rejected));
  assert.deepEqual(valid.accepted[0].source_target_ids,['t0']);
  assert.deepEqual(valid.accepted[0].annotations.map(a=>[a.surface,a.replacement]),[['과학','科學']]);
- assert.match(buildManualPrompt(text,[t],'id',f.config),/omit results for retired targets/i);
+ assert.match(buildManualPrompt(text,[t],'id',f.config),/omit those retired by a valid repair/i);
 });
 test('review validation requires only unreplaced originals, not retired target or scan-only placeholders',async()=>{
  const text='과학이야기',t=word('t0',text,0,text.length),f=fixture(text,[t]);

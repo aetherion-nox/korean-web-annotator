@@ -100,8 +100,8 @@ test('only the enabled experimental origin rule is included in each manual/API p
  assert.ok(loanOnly.includes(loanRule)&&!loanOnly.includes(hanjaRule));
  assert.ok(both.includes(hanjaRule)&&both.includes(loanRule));
  for(const instructions of [common,hanjaOnly,loanOnly,both]){
-  assert.ok(instructions.includes('dictionary nonconversion senses')||instructions.includes('Dictionary nonconversion senses'));
-  assert.ok(instructions.includes('KEEP'));
+  assert.ok(instructions.includes('Nonconversion dictionary senses'));
+  assert.ok(instructions.includes('JSON null'));
   assert.ok(instructions.includes('dictionary_name_homograph'));
   assert.ok(instructions.includes('partial_word'));
   assert.ok(instructions.includes('sentence_id'));
@@ -130,7 +130,7 @@ test('only the enabled experimental origin rule is included in each manual/API p
   assert.ok(prompt.includes('SECOND compare EACH offered dictionary definition'));
   assert.ok(prompt.includes('THIRD, if NO supplied dictionary option correctly represents'));
   assert.ok(prompt.includes('DIRECTLY into results[].choice_id'));
-  assert.ok(prompt.includes('Use KEEP only'));
+  assert.ok(prompt.includes('JSON null'));
   assert.ok(prompt.includes('do not invent an origin')||prompt.includes('Do not invent an origin'));
   assert.ok(!prompt.includes('you may write'));
  }

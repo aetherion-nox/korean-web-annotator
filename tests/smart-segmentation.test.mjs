@@ -208,18 +208,18 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
  assert.equal(off.sentences[0].kiwi_tokens,undefined);
  assert.deepEqual(on.sentences[0].kiwi_tokens,[]);
  assert.ok(!buildReviewInstructions({}).includes('repairs'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Actively audit EVERY original sentence'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('You SHOULD submit repairs for EVERY genuine, well-supported'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Never invent repairs to reach a quota'));
- assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('plus optional repairs'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Audit every original sentence'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('If a genuine segmentation error is well supported'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Do not add native-only or null repairs'));
+ assert.ok(buildReviewInstructions({smartSegmentation:true}).includes('Repair objects use'));
  assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('no explanations or extra fields'));
- assert.ok(!buildReviewInstructions({}).includes('Actively audit EVERY original sentence'));
+ assert.ok(!buildReviewInstructions({}).includes('Audit every original sentence'));
  assert.ok(!buildReviewInstructions({}).includes('you SHOULD write that origin'));
  assert.ok(!buildReviewInstructions({smartSegmentation:true}).includes('genuine Hanja spelling'));
  assert.ok(buildManualPrompt(text,[t],'batch',{smartSegmentation:true}).includes('repairs'));
  assert.ok(!buildManualPrompt(text,[t],'batch',{}).includes('repairs'));
  const combined=buildReviewInstructions({smartSegmentation:true,experimentalHanja:true,experimentalLoanword:true});
- assert.ok(combined.includes('Actively audit EVERY original sentence'));
+ assert.ok(combined.includes('Audit every original sentence'));
  assert.ok(combined.includes('THIRD, if NO supplied dictionary option correctly represents'));
  assert.ok(combined.includes('DIRECTLY into results[].choice_id'));
  assert.equal((combined.match(/You SHOULD submit repairs/g)||[]).length,1);
@@ -298,7 +298,7 @@ test('invalid repair does not invalidate a normal choice or cause a second model
 test('streaming parser does not apply incomplete repair data as a visible annotation',()=>{
  const text='게임',t=target('t0',text,0,2),snapshots=[];
  const parser=choicePreviewParser([t],rows=>snapshots.push(rows.map(a=>a.option.choice_id)));
- const content='{"results":[{"target_id":"t0","choice_id":"KEEP"}],"repairs":[{"sentence_id":"s0"';
+ const content='{"results":[{"t":"t0","c":null}],"repairs":[{"sentence_id":"s0"';
  parser(content.slice(0,24));assert.equal(snapshots.length,0);
  parser(content.slice(24));
  assert.deepEqual(snapshots.at(-1),['KEEP']);
