@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.8-committed-dynamic-recovery';
+const CONTENT_SCRIPT_VERSION = '1.1.56.9-multistep-undo-redo';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -19,6 +19,8 @@ const toolbarBallOnly = document.querySelector('#toolbarBallOnly');
 const selectionButton = document.querySelector('#selectionButton');
 const runButton = document.querySelector('#runButton');
 const undoButton = document.querySelector('#undoButton');
+const redoButton = document.querySelector('#redoButton');
+const historySteps=document.querySelector('#historySteps');
 const restoreButton = document.querySelector('#restoreButton');
 const clearCacheButton = document.querySelector('#clearCacheButton');
 const optionsButton = document.querySelector('#optionsButton');
@@ -46,6 +48,17 @@ const STRINGS = {
     title:'Korean Hanja & Loanword Annotator', hanjaMode:'Hanja words: show Hanja in the main text and the original Hangul directly above', loanwordMode:'Loanwords: show the source word directly above the Hangul', copyAnnotation:'Copy annotation only', copyLegend:'When copying annotated text', copyBase:'Copy the currently displayed main text only', copyAnnotated:'Copy main text and annotations', copyHangul:'Copy original Korean (Hangul) only', forceRegenerate:'Ignore cache and analyze the text again', mobileToolbar:'Touch devices: show a floating toolbar after selecting Korean text', annotateSelection:'Annotate selection', annotatePage:'Annotate page', undo:'Undo last annotation', restore:'Restore all', clearCache:'Clear annotation cache', apiSettings:'Engine / API settings', chooseMode:'Enable at least one annotation type.', noSelection:'Could not read the current selection.', selectionStarted:'Started annotating the selected text.', pageStarted:'Started processing the page.', noUndo:'There is no annotation to undo.', undoDone:'Undid the most recent annotation.', restored:'Restored all annotations on this page.', cacheFailed:'Could not clear the annotation cache.', cacheCleared:'Annotation cache cleared.', copyApplied:'Copy settings applied immediately.', copySaved:'Settings saved; this page does not allow extension injection.', noTab:'Could not find the active tab.', scriptFailed:'The content script did not start correctly. Reload the page and try again.', apiNotReady:'The API is not configured or the API Key is unavailable in this browser session. Check Engine / API settings.'
   }
 };
+
+for(const [lang,labels] of Object.entries({
+  'zh-CN':['撤销一步','重做一步','清除全部标注','没有可重做的标注。','已重做一步标注。','撤销 {u} 步 · 重做 {r} 步'],
+  'zh-TW':['復原一步','重做一步','清除全部標註','沒有可重做的標註。','已重做一步標註。','復原 {u} 步 · 重做 {r} 步'],
+  ja:['1操作戻す','1操作やり直す','すべての注釈を消去','やり直せる注釈はありません。','1操作やり直しました。','元に戻す {u} 件 · やり直す {r} 件'],
+  ko:['한 단계 실행 취소','한 단계 다시 실행','모든 주석 지우기','다시 실행할 주석이 없습니다.','한 단계 다시 실행했습니다.','실행 취소 {u}단계 · 다시 실행 {r}단계'],
+  en:['Undo one step','Redo one step','Clear all annotations','There is no annotation to redo.','Redid one annotation step.','Undo {u} · Redo {r}']
+}))Object.assign(STRINGS[lang],{
+  undo:labels[0],redo:labels[1],restore:labels[2],noRedo:labels[3],
+  redoDone:labels[4],historyCounts:labels[5]
+});
 
 for(const [locale,label] of Object.entries({'zh-CN':'手动填写框首次弹出时隐藏工具条','zh-TW':'手動填寫框首次彈出時隱藏工具條',en:'Hide toolbar when the manual panel first opens',ja:'手動入力欄の初回表示時にツールバーを隠す',ko:'수동 입력창이 처음 열릴 때 도구 모음 숨기기'}))STRINGS[locale].hideToolbarOnFirstManual=label;
 
@@ -91,6 +104,7 @@ async function init() {
   toolbarDisplay.value=uiSettings.toolbarDisplay==='always'?'always':'selection';
   syncToolbarOptions();
   // Loading the popup must not inject scripts or warm up the engine.
+  await refreshHistorySteps();
 }
 
 uiLocale.addEventListener('change', async () => {
@@ -167,12 +181,35 @@ function currentUiSettings(){
     stopAutoAfterPageComplete:stopAutoAfterPageComplete.checked, restoreExistingAnnotations:restoreExistingAnnotations.checked,hideToolbarOnFirstManual:hideToolbarOnFirstManual.checked,clearCacheOnExit:clearCacheOnExit.checked,uiLocale:locale};
 }
 
+async function refreshHistorySteps(){
+  try{
+    const data=await chrome.runtime.sendMessage({type:'KRA_HISTORY_TAB'});
+    if(!data?.ok)return;
+    historySteps.textContent=t('historyCounts')
+      .replace('{u}',data.undoDepth).replace('{r}',data.redoDepth);
+    undoButton.disabled=data.undoDepth===0;
+    redoButton.disabled=data.redoDepth===0;
+  }catch{
+    historySteps.textContent='';
+  }
+}
+
 undoButton.addEventListener('click', async () => {
   try {
     const response=await chrome.runtime.sendMessage({type:'KRA_UNDO_TAB'});
     if(!response?.ok)throw new Error(response?.error||t('noUndo'));
     status.textContent=t('undoDone')+(response.undoneFrames>1?`（${response.undoneFrames} 个框架）`:'');
   } catch(error){showError(error);}
+  finally{await refreshHistorySteps();}
+});
+
+redoButton.addEventListener('click',async()=>{
+  try{
+    const response=await chrome.runtime.sendMessage({type:'KRA_REDO_TAB'});
+    if(!response?.ok)throw new Error(response?.error||t('noRedo'));
+    status.textContent=t('redoDone')+(response.redoneFrames>1?`（${response.redoneFrames} 个框架）`:'');
+  }catch(error){showError(error);}
+  finally{await refreshHistorySteps();}
 });
 
 restoreButton.addEventListener('click', async () => {
@@ -181,6 +218,7 @@ restoreButton.addEventListener('click', async () => {
     if(!response?.ok)throw new Error(response?.error||t('restored'));
     status.textContent=t('restored')+(response.restoredFrames>1?`（${response.restoredFrames} 个框架）`:'');
   } catch(error){showError(error);}
+  finally{await refreshHistorySteps();}
 });
 
 clearCacheButton.addEventListener('click', async () => {
