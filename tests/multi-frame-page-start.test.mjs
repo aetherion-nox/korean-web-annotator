@@ -78,7 +78,7 @@ test('DOMContentLoaded-triggered second pass picks a late child without restarti
  assert.ok(f.timers.length>0);
  // Two pending timer callbacks may exist; simulate the newest discovery.
  f.timers.at(-1)();
- await f.c.activeFrameScans.get(77).serial;
+ await vm.runInContext('activeFrameScans.get(77).serial',f.c);
  assert.deepEqual(f.launches.map(x=>x.frameId).sort(),[0,1,2]);
  assert.equal(f.launches.filter(x=>x.frameId===1).length,1);
 });
@@ -87,6 +87,6 @@ test('navigation away cancels bounded discovery and avoids starting a previous-p
  await f.c.startPageFromPopup({modes:{hanja:true}});
  f.listeners.Committed({tabId:77,frameId:0});
  f.listeners.DOMLoaded({tabId:77,frameId:2});
- assert.equal(f.c.activeFrameScans.size,0);
+ assert.equal(vm.runInContext('activeFrameScans.size',f.c),0);
  assert.deepEqual(f.launches.map(x=>x.frameId),[0]);
 });
