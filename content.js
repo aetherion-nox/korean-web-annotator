@@ -4,7 +4,9 @@
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
   const OWN_RUBY = 'ruby[kra-annotated="true"]';
-  const MAX_ENTRIES = 3000;
+  // Only annotation recovery snapshots are bounded. Full-page text scanning
+  // is not truncated: the sentence pipeline already batches model requests.
+  const MAX_RECOVERY_BLOCKS = 12000;
   let currentTask = null;
   let sequence = 0;
   let uiSettings = { toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
@@ -25,7 +27,9 @@
   let hangulVisibilityTimer = null;
   let automaticObserver = null;
   let automaticTimer = null;
-  const seenSources = new Set();
+  const seenSources = new Set(); // legacy session bookkeeping; NOT a deduplication key
+  const analyzedNodeVersions = new WeakMap();
+  let lastScanStats = null;
   const history = [];
   const diagnostics = [];
   const recoveryBlocks = new Set();
@@ -79,7 +83,7 @@
       else if(previous.length>1)for(const stale of previous)stale.annotations.clear();
     }
     if(!block){
-      if(recoveryBlocks.size>=MAX_ENTRIES)return null;
+      if(recoveryBlocks.size>=MAX_RECOVERY_BLOCKS)return null;
       block={element,text:source.text,context,tag:element.tagName.toLowerCase(),scope,selector,scopeIndex,annotations:new Map()};recoveryBlocks.add(block);
     }
     block.context=context;
