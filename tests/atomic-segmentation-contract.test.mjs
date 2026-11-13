@@ -53,7 +53,7 @@ test('failed repair never retires original target; a normal old result remains v
   request:async()=>({results:[],repairs:[bad]})},[t]);
  assert.equal(check.unresolved.length,1);
  const withFallback=await reviewTargets({...f.config,enableModelReview:true,
-  request:async()=>({results:[{target_id:'t0',choice_id:'c0'}],repairs:[bad]})},[t]);
+  request:async()=>({results:['c0'],repairs:[bad]})},[t]);
  assert.equal(withFallback.accepted.length,1);
  assert.equal(withFallback.accepted[0].option.choice_id,'c0');
 });
@@ -96,12 +96,12 @@ test('manual partial answer retries only the unrepaired original and retains suc
  assert.deepEqual(problem.retiredTargetIds,['t0']);
  assert.equal(problem.acceptedRepairs.length,1);
  assert.match(problem.repairPrompt,/t1/);
- const retry={batch_id:event.requestId,results:[{target_id:'t1',choice_id:'KEEP'}],
+ const retry={batch_id:event.requestId,results:[null],
   // The earlier valid fragment cannot be undone by a later conflicting edit.
   repairs:[replace('s0','t0',0,2,'과학','韓國')]};
  assert.equal(session.submit({operationId:'atomic-retry',requestId:event.requestId,text:JSON.stringify(retry)}),true);
  const final=await pending;
- assert.deepEqual(final.results,[{target_id:'second',choice_id:'KEEP'}]);
+ assert.deepEqual(final.results,[null]);
  assert.deepEqual(final.repairs[0].old_target_ids,['first']);
 });
 test('pipeline renders only the new Hanja fragment when the old original target is superseded',async()=>{
