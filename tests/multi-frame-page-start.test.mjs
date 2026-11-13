@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {dispatchChildFrameBatch} from '../page-frame-dispatch.js';
+import {FRAME_COLLECTION_MAX_MS,FRAME_NAVIGATION_DEBOUNCE_MS,nextFrameCollectionDelay} from '../page-frame-collection.js';
 import {createMergedFrameReviewCoordinator} from '../merged-frame-review.js';
 const src=fs.readFileSync(new URL('../service-worker.js',import.meta.url),'utf8');
 const block=src.slice(src.indexOf('// User-initiated multi-frame dispatch.'),
@@ -44,7 +45,7 @@ const load=({frames,probe,denied=[],main={ok:true,started:false}})=>{
    injections.push(frameId);
    if(denied.includes(frameId))throw Error('Cannot access contents of this frame: permission denied');
   },
-  dispatchChildFrameBatch};
+  dispatchChildFrameBatch,FRAME_COLLECTION_MAX_MS,FRAME_NAVIGATION_DEBOUNCE_MS,nextFrameCollectionDelay};
  vm.createContext(c);vm.runInContext(block,c);
  return {c,launches,diagnostics,injections,timers,listeners};
 };
