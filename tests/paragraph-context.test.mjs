@@ -51,7 +51,7 @@ test('model chunk previews never become committed when a different chunk complet
 test('page command accepts a long text node and renders every chunk without replacing earlier results',async()=>{
  const text='학교에 갔다. '.repeat(6000),{dom,context:c}=setup('<p>'+text+'</p>');
  let receive,request;const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
- Object.assign(c,{createParagraphPlan,BLOCK_TAGS:'p,li,h1,h2,blockquote',uiSettings:{progressiveAnnotation:true},sequence:0,history:[],diagnostics:[],currentTask:null,recoveryAnchor:()=>null,
+ Object.assign(c,{createParagraphPlan,BLOCK_TAGS:'p,li,h1,h2,blockquote',uiSettings:{progressiveAnnotation:true},sequence:0,history:[],redoStack:[],HISTORY_LIMIT:100,diagnostics:[],currentTask:null,recoveryAnchor:()=>null,refreshTabHistoryCounter(){},send(){},
   chrome:{runtime:{connect:()=>({postMessage:m=>request=m,onMessage:{addListener:f=>receive=f},onDisconnect:{addListener(){}},disconnect(){}})}},
   cancelTask(){},status(){},finishTask:task=>task.finished=true,configureRecovery(){},configureAutomaticAnnotation(){},addDiagnostic(){},publishState(){},setInterval:()=>1,clearInterval(){},ownDomChanges:new WeakSet(),rememberRecovery(){}});
  vm.runInContext(source.slice(source.indexOf('  function loanwordDisplay'),source.indexOf('  function contextState')),c);
