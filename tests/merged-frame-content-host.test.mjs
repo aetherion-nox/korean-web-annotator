@@ -48,7 +48,7 @@ test('ordinary single-frame empty page keeps no-work fast exit without opening s
  assert.equal(e.starts.length,0);
 });
 test('merged whole-page task permits only a bounded post-completion hydration grace',()=>{
- assert.match(source,/if\\(!ranges\\)startHydrationGrace\\(task\\)/);
- assert.match(source,/if\\(!task\\.wholePage\\|\\|task\\.startedAutomatically\\|\\|task\\.manualPanelShown/);
- assert.match(source,/hydrationGraceDeadline=setTimeout\\(stopHydrationGrace,15000\\)/);
+ assert.ok(source.includes('if(!ranges)startHydrationGrace(task);'));
+ assert.ok(source.includes('if(!task.wholePage||task.startedAutomatically||task.manualPanelShown||'));
+ assert.ok(source.includes('hydrationGraceDeadline=setTimeout(stopHydrationGrace,15000);'));
 });
