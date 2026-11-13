@@ -95,18 +95,18 @@ test('duplicate original sentence identifiers never collide across frames',async
  assert.deepEqual(f.root.sent.find(x=>x.type==='RESULTS').results.map(r=>r.id),['p0']);
  assert.deepEqual(f.side.sent.find(x=>x.type==='RESULTS').results.map(r=>r.id),['p0']);
 });
-test('disconnected source aborts shared pipeline rather than writing to a changed page',async()=>{
+test('disconnected main review host aborts shared pipeline rather than writing to a changed page',async()=>{
  const f=createFixture({manual:true});
  const main=f.frame(0,f.root,'main','학교'),child=f.frame(3,f.side,'side','기사');
  f.coordinator.join('shared-1',main);f.coordinator.join('shared-1',child);
  const running=f.coordinator.finalize('shared-1');
  await new Promise(resolve=>setImmediate(resolve));
- f.coordinator.detach('shared-1',child);
- assert.ok(f.root.sent.some(x=>x.type==='ERROR'));
+ f.coordinator.detach('shared-1',main);
+ assert.ok(f.side.sent.some(x=>x.type==='ERROR'));
  assert.equal(f.coordinator.state('shared-1'),null);
- // This mock awaits a user response even after abort; unblock it.
+ // Losing the document hosting the editor remains an unrecoverable boundary.
+ // This mock awaits a user response after abort; production uses AbortSignal.
  f.submits.length=0;
- // Run internals are tested with a cancellable AbortSignal in production.
 });
 test('a second frame cannot join after shared analysis has begun',async()=>{
  const f=createFixture();
