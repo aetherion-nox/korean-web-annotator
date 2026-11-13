@@ -48,7 +48,9 @@ test('successful copy scrolls inside a small manual panel, not the underlying do
  try{
   const before=f.dom.window.document.documentElement.scrollTop;
   await f.copy();
-  assert.deepEqual(f.scrolls,[{top:668,behavior:'smooth'}]);
+  assert.equal(f.scrolls.length,1);
+  assert.equal(f.scrolls[0].top,668);
+  assert.equal(f.scrolls[0].behavior,'smooth');
   assert.equal(f.panel.scrollTop,668);
   assert.equal(f.dom.window.document.documentElement.scrollTop,before);
   assert.notEqual(f.dom.window.document.activeElement,f.answer,
@@ -63,7 +65,9 @@ test('download scrolls the same panel after initiating the TXT download',()=>{
   assert.equal(f.downloads.length,1);
   assert.equal(f.downloads[0].name,'Korean-Web-Annotator-manual-req-a.txt');
   assert.equal(f.timeout[0],30000);
-  assert.deepEqual(f.scrolls,[{top:668,behavior:'smooth'}]);
+  assert.equal(f.scrolls.length,1);
+  assert.equal(f.scrolls[0].top,668);
+  assert.equal(f.scrolls[0].behavior,'smooth');
   assert.match(f.panel.querySelector('.kra-manual-status').textContent,/导出/);
  }finally{f.close();}
 });
@@ -91,7 +95,9 @@ test('copy fallback still scrolls after prompting manual selection',async()=>{
  try{
   await f.copy();
   assert.equal(f.copied.length,1);
-  assert.deepEqual(f.scrolls,[{top:668,behavior:'smooth'}]);
+  assert.equal(f.scrolls.length,1);
+  assert.equal(f.scrolls[0].top,668);
+  assert.equal(f.scrolls[0].behavior,'smooth');
   assert.match(f.panel.querySelector('.kra-manual-status').textContent,/复制失败|已复制/);
  }finally{f.close();}
 });
