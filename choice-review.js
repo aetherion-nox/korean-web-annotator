@@ -26,7 +26,7 @@ function validatePositional(targets,response,config={},experimental=false){
   if(!parsed.values.has(i)||parsed.problems.has(i)||value===false){
    unresolved.push(target);continue;
   }
-  const option=choiceFromValue(target,value,config,experimental?literalOriginOption:()=>null);
+  const option=choiceFromValue(filterReviewTarget(target,config),value,config,experimental?literalOriginOption:()=>null);
   if(option){
    accepted.push({target,option});
    if(experimental&&option.entry_id&&String(option.entry_id).startsWith('experimental:'))
