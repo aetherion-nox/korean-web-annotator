@@ -57,11 +57,11 @@ export function prepareManualRequest(config,targets){
 function manualRetryPrompt(original,batchId,remaining,reasons,acceptedCount){
  const ids=new Set(remaining.map(t=>t.target_id));
  const lead='此前已验证并保存 '+acceptedCount+' 条答案。本次只回答以下 '+remaining.length+
-   ' 个 target_id；不要重发已完成目标。逐条核对原句、候选释义与词性；拿不准返回 KEEP。'+
-   ' 禁止更改 target_id；复制 batch_id '+batchId+'；只输出 JSON 对象（batch_id、results，必要时 repairs），'+
+   ' 个目标（用 t 字段指定）；不要重发已完成目标。逐条核对原句、候选释义与词性；不能确定时 c 为 JSON null。'+
+   ' 保留请求中的 target_id 作为 t 的值；复制 batch_id '+batchId+'；只输出 JSON 对象（batch_id、results，必要时 repairs），'+
    '不要复制 format、sentences、candidates 或 targets。\n错误原因：\n'+
    remaining.map(t=>t.target_id+'：'+(reasons.get(t.target_id)||'该目标未返回有效答案')).join('\n')+'\n\n';
- const begin=original.indexOf('{"format":"shared-pools-v3"');
+ const begin=original.indexOf('{"format":"shared-pools-v4"');
  if(begin<0)return lead+original;
  try{
    const old=JSON.parse(original.slice(begin));
@@ -107,10 +107,8 @@ export function createManualReviewSession({operationId,post,signal}={}){
    const current=pending;
    try{
     const response=parseAnswer(message.text);
-    // A missing batch_id is acceptable only when every target ID and choice
-    // passes the existing one-to-one validation below. A supplied but wrong
-    // batch_id must still be rejected rather than silently applied.
-    if(Object.hasOwn(response,'batch_id')&&response.batch_id!==current.requestId)
+    // No old answer protocol: manual submissions must belong to this exact batch.
+    if(response.batch_id!==current.requestId)
       throw Error('batch_id 与当前批次不一致，请检查是否粘贴了其他批次的答案。');
     if(Object.prototype.hasOwnProperty.call(response,'experimental_options'))
       throw Error('新版协议只需要 results；请不要包含 experimental_options。');
@@ -120,11 +118,14 @@ export function createManualReviewSession({operationId,post,signal}={}){
     const known=new Map(current.wireTargets.map(t=>[t.target_id,t]));
     const incoming=new Map(),reasons=new Map(),unknown=[];
     for(const row of response.results){
-      if(!row||typeof row.target_id!=='string'||!known.has(row.target_id)){
-        unknown.push(String(row?.target_id??'(缺失)'));continue;
+      if(!row||typeof row!=='object'||Array.isArray(row)||
+         Object.keys(row).sort().join(',')!=='c,t'||
+         typeof row.t!=='string'||!known.has(row.t)||
+         !(row.c===null||(typeof row.c==='string'&&row.c.length>0))){
+        unknown.push(String(row?.t??'(无效)'));continue;
       }
-      if(!incoming.has(row.target_id))incoming.set(row.target_id,[]);
-      incoming.get(row.target_id).push(row);
+      if(!incoming.has(row.t))incoming.set(row.t,[]);
+      incoming.get(row.t).push(row);
     }
     // Repair validation must happen before missing-result detection. The same
     // original sentence scopes, names, selections and conflict rules used by
@@ -175,11 +176,12 @@ export function createManualReviewSession({operationId,post,signal}={}){
         validateExperimentalChoices([target],{results:[row]},choicesConfig):
         validateChoices([target],{results:[row]},choicesConfig);
       if(selected.accepted.length!==1){
-        const candidate=filterReviewTarget(target,choicesConfig).options.find(o=>o.choice_id===row.choice_id);
-        reasons.set(id,candidate?'字段不符合当前协议':'无效 choice_id：'+String(row.choice_id??'(缺失)')+
-          '；原因 '+explainLiteralOriginRejection(target,row.choice_id,choicesConfig));continue;
+        const candidate=filterReviewTarget(target,choicesConfig).options.find(o=>o.type!=='keep'&&o.choice_id===row.c);
+        reasons.set(id,candidate?'字段不符合当前协议':'无效 c：'+String(row.c??'(null)')+
+          '；原因 '+explainLiteralOriginRejection(target,row.c,choicesConfig));continue;
       }
-      current.acceptedRows.set(id,{target_id:id,choice_id:selected.accepted[0].option.choice_id});
+      const selectedOption=selected.accepted[0].option;
+      current.acceptedRows.set(id,{t:id,c:selectedOption.type==='keep'?null:selectedOption.choice_id});
     }
     const missing=current.wireTargets.filter(t=>
       !current.acceptedRows.has(t.target_id)&&!retired.has(t.target_id)&&
@@ -194,7 +196,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
           (unknown.length?'。已忽略 '+unknown.length+' 条未知或跨批 target_id':'')+
           '。请复制新的补交提示词，只回答剩余目标。',
         acceptedCount:current.acceptedRows.size+retired.size,
-        acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)),
+        acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.t)),
         acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired],
         invalidTargetIds:missing.map(t=>t.target_id),
         repairPrompt:retry});
@@ -205,12 +207,12 @@ export function createManualReviewSession({operationId,post,signal}={}){
       repairs:current.savedRepairs.map(row=>({...row,
         old_target_ids:row.old_target_ids.map(id=>ids.get(id)||id)}))
     }:{};
-    const mapped={results:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)).map(row=>({
-      target_id:ids.get(row.target_id),choice_id:row.choice_id
+    const mapped={results:[...current.acceptedRows.values()].filter(row=>!retired.has(row.t)).map(row=>({
+      t:ids.get(row.t),c:row.c
     })),...proposed};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,
       targetCount:current.wireTargets.length,
-      acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.target_id)),
+      acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.t)),
       acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired]});
     current.resolve(mapped);return true;
    }catch(error){notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,error:error.message});return false;}
