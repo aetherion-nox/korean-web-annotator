@@ -12,7 +12,7 @@ import {prepareCacheSession} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
-const CONTENT_SCRIPT_VERSION='1.1.55.4-primary-toolbar-only';
+const CONTENT_SCRIPT_VERSION='1.1.56.0-positional-null';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
