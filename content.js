@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.3-manual-lifecycle';
+  const VERSION = '1.1.56.4-idle-manual-recovery';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -823,9 +823,12 @@
       const task=currentTask;if(!task||task.finished||!task.manualRequest||panel.dataset.operationId!==task.operationId)return;
       if(task.manualLocalOnly){
         panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
-        void applyManualRecovery(task,panel.querySelector('.kra-manual-response').value).catch(error=>{
+        const submitted=panel.querySelector('.kra-manual-response').value;
+        const recovery=task.mergedGroup?recoverMergedManual(task,submitted):applyManualRecovery(task,submitted);
+        void recovery.catch(error=>{
           if(currentTask!==task||task.finished)return;
-          note(error.message);panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+          note('答案尚未全部应用：'+String(error.message||error)+'。可修正答案后重试；当前批次仍有效。');
+          panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
         });
         return;
       }
@@ -862,10 +865,28 @@
     const backup=task.manualBackup;
     if(task.finished||currentTask!==task)return false;
     if(task.mergedGroup){
-      // A shared prompt can include source positions belonging to other
-      // iframe documents. Never apply a main-frame-only backup to them.
-      panelStatus('合并跨框架审核的后台连接已中断；完整提示词和已粘贴答案保留在本窗口。请先保存后重新开始审核，不能将其他框架的答案误写到主页面。');
-      return false;
+      // The original worker may be reaped after a long period with no user
+      // input. Keep the draft and page-bound routing so a newly started worker
+      // can validate and relay this exact batch back to the original frames.
+      if(task.manualFrameStandby&&!task.mergedHost){
+        task.manualLocalOnly=true;
+        clearInterval(task.keepalive);return true;
+      }
+      if(!backup?.bindings?.length||!task.manualRequest||
+         !Array.isArray(task.manualFrameRouting)||!task.manualFrameRouting.length)return false;
+      clearTimeout(task.manualTimer);clearInterval(task.keepalive);
+      if(task.manualLocalOnly)return true;
+      task.manualLocalOnly=true;
+      try{task.port.disconnect();}catch{}
+      const panel=document.querySelector('.kra-manual-review');
+      if(panel){
+        panel.querySelector('.kra-manual-apply').disabled=false;
+        panel.querySelector('.kra-manual-import').disabled=false;
+        panel.querySelector('.kra-manual-cancel').disabled=false;
+        panel.querySelector('.kra-manual-status').textContent=
+          reason+' 已切换跨框架安全备份。粘贴答案后仍可校验并应用到原始网页；不会因等待时间长而废弃批次。';
+      }
+      status('后台连接已重启；手动审核仍可继续。');return true;
     }
     if(!backup?.bindings?.length){
       if(backup?.experimentalPhase==='propose'){
@@ -882,6 +903,44 @@
     panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
     panel.querySelector('.kra-manual-status').textContent=reason+' 当前批次与剩余批次已保留在本页；继续提交答案即可自动进入下一批。';
     status('当前批次可在本页恢复并应用');return true;
+  }
+
+  async function recoverMergedManual(task,text){
+    const backup=task.manualBackup,requestId=backup?.requestId;
+    if(!backup?.bindings?.length||!requestId||task.manualRequest!==requestId||
+       !Array.isArray(task.manualFrameRouting)||!task.manualFrameRouting.length)
+      throw Error('当前跨框架审核的安全备份不完整。');
+    if(typeof text!=='string'||text.length>16*1024*1024)throw Error('答案不得超过 16 MiB。');
+    let json=text.trim();
+    const fenced=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(json);
+    if(fenced)json=fenced[1].trim();
+    let response;try{response=JSON.parse(json);}catch{throw Error('JSON 格式无效。');}
+    if(response?.batch_id!==requestId||!Array.isArray(response?.results))
+      throw Error('batch_id 不符或缺少 results 数组。');
+    const result=await chrome.runtime.sendMessage({
+      type:'KRA_MANUAL_OFFLINE_APPLY',groupId:task.mergeGroupId,
+      frameRouting:task.manualFrameRouting,backup,originalPrompt:task.manualOriginalPrompt,response
+    });
+    if(currentTask!==task||task.finished||task.manualRequest!==requestId)
+      throw Error('审核时页面已改变，不能写入过期的答案。');
+    if(!result?.ok)throw Error(result?.error||'无法连接仍在页面中的原始框架。');
+    (task.manualApplied ||= new Set()).add(requestId);
+    const count=[...task.entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
+    const next=task.manualPlan?.find(batch=>!task.manualApplied.has(batch.requestId));
+    if(next){
+      handleManualEvent(task,{...next,type:'MANUAL_REVIEW_REQUEST'});
+      task.manualLocalOnly=true;
+      panelStatus('本批已跨框架验证并应用；继续粘贴下一批答案。');
+      return;
+    }
+    const complete=Boolean(task.manualPlan?.length)&&
+      task.manualPlan.every(batch=>task.manualApplied.has(batch.requestId));
+    const statusText=complete?'全部手动批次已安全应用；可重新打开输入框复制最后一批答案。':
+      '本批已应用，但后续批次备份不完整；请保留答案。';
+    if(complete){
+      finishTask(task,statusText,true);
+      status(statusText);publishState();
+    }else panelStatus(statusText);
   }
 
   function watchManualReply(task){
@@ -1147,7 +1206,7 @@
         options:(b.choices||[]).filter(o=>o.choice_id!=='KEEP').map(o=>o.choice_id)}))});
   }
 
-  async function applyManualRecovery(task,text,{advance=true,paint=true}={}){
+  async function applyManualRecovery(task,text,{advance=true,paint=true,dryRun=false}={}){
     const backup=task.manualBackup;
     if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
     if(typeof text!=='string'||text.length>16*1024*1024)throw Error('请提供不超过 16 MiB 的完整 JSON 结果。');
@@ -1172,7 +1231,7 @@
     const reasons=new Map(stage.reasons),unknown=[];
     for(const item of repairResult.rejected)for(const id of item.old_target_ids||[])
       if(!retired.has(id))reasons.set(id,'分词修复校验失败：'+item.reason);
-    task.manualRecoveryRepairs=stage.applied.map(r=>({
+    if(!dryRun)task.manualRecoveryRepairs=stage.applied.map(r=>({
       sentence_id:r.sentence_id,op:r.op,old_target_ids:r.old_target_ids,
       start:r.start,end:r.end,surface:r.surface,choice_id:r.choice_id
     }));
@@ -1244,11 +1303,12 @@
         }
       }catch(error){reasons.set(id,'原文结构无法安全对应：'+error.message);}
     }
-    task.manualRecoveryAccepted=verified;
+    if(!dryRun)task.manualRecoveryAccepted=verified;
     const scanOnly=new Set((backup.repairValidation?.targets||[]).filter(t=>t.scan_only).map(t=>t.target_id));
     const missing=backup.bindings.filter(b=>!verified.has(b.target_id)&&
       !retired.has(b.target_id)&&!scanOnly.has(b.target_id));
     if(missing.length){
+      if(dryRun)throw Error('尚有 '+missing.length+' 个目标无法与当前原文安全对应或选择无效。');
       // Preview only, never commit or finish until all targets are verified.
       const prepared=[...groups].map(([entry,group])=>{
         const model=[...(entry.committedModelAnnotations||[]).filter(a=>
@@ -1277,6 +1337,8 @@
       if(count)status('已预览 '+count+' 个标注，仍有 '+missing.length+' 个目标待补交');
       throw Error(message);
     }
+    // Validation has not written a single annotation to the DOM.
+    if(dryRun)return {accepted:verified.size,retired:retired.size};
     // All IDs, choices and source spans are verified before changing any entry.
     for(const [entry,group] of groups){
       const model=[...(entry.committedModelAnnotations||entry.modelAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...group.annotations];
@@ -1394,7 +1456,10 @@
           if(task.pendingAcceptedRecovery===pending)task.pendingAcceptedRecovery=null;
           if(task.manualRequest===requestId&&!task.manualLocalOnly)task.manualRequest=null;
         });
-      }else task.manualRequest=null;
+      }else{
+        if(task.mergedGroup)(task.manualApplied ||=new Set()).add(event.requestId);
+        task.manualRequest=null;
+      }
       panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }
@@ -1502,6 +1567,7 @@
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
     const task = { operationId, port, entries, paragraphPlan, modes, scan,
+      mergeGroupId:message.mergeGroupId,
       mergedGroup:typeof message.mergeGroupId==='string'&&message.mergeGroupId.length>0,
       mergedHost:message.mergeHost===true,startedAutomatically:message.automatic===true,
       startPageUrl:typeof location!=='undefined'?location.href:document.location?.href||'', finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges,
@@ -1528,8 +1594,12 @@
         await task.pendingAcceptedRecovery;
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
       if(task.manualLocalOnly)return;
+      if(result.type==='MANUAL_REVIEW_STANDBY'){
+        task.manualFrameStandby=true;return;
+      }
       if(result.type==='MANUAL_REVIEW_PLAN'){
         task.manualPlan=result.batches;
+        task.manualFrameRouting=result.frameRouting;
         // Warm the local pronunciation table while the extension is connected;
         // the cached module remains usable if the worker disconnects later.
         if(result.batches?.some(batch=>batch.bindings?.some(b=>b.literalOrigin?.eligible&&b.literalOrigin.hanja)))
