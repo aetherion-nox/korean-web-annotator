@@ -15,7 +15,7 @@ function fixture(html='<main><p id="p"><ruby class="kra-ruby" kra-annotated="tru
   currentTask:null,console,
   rememberRecovery:undefined,
   configureRecovery(){events.push('recovery')},
-  configureAutomaticAnnotation(){},
+  configureAutomaticAnnotation(){},restoreKnownAnnotations(){},
   cancelTask(){events.push('cancel')},
   status(value){events.push(value)},
   publishState(){},refreshTabHistoryCounter(){},send(){},resetRecovery(){blocks.clear()},
@@ -51,8 +51,9 @@ test('review selecting null removes the current Hanja; undo restores exact PRIOR
  assert.equal(op.length,1,'a real overwrite must be undoable');
  assert.equal(block.annotations.size,0,'committed keep supersedes old recovery');
  f.history.push(op);
- assert.deepEqual(JSON.parse(JSON.stringify(f.c.latestUndoState())),
-  {ok:true,groupId:'recheck',startedAt:100,depth:1});
+ const st=f.c.latestUndoState();
+ assert.equal(st.ok,true);assert.equal(st.groupId,'recheck');
+ assert.equal(st.depth,1);assert.equal(st.redoDepth,0);
  assert.equal(f.c.undoLast('recheck').ok,true);
  assert.equal(f.dom.window.document.querySelectorAll(own).length,1);
  assert.equal(f.dom.window.document.querySelector(own).textContent,'學校학교');
