@@ -285,10 +285,17 @@
     const detect=()=>{
       if(!document?.body)return false;
       const hangul=/[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]/u;
-      const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
-      let node;
-      while((node=walker.nextNode()))if(hangul.test(node.data)&&!isOwn(node)&&!node.parentElement?.closest('script,style,noscript,input,textarea,select'))return true;
-      return Array.from(document.querySelectorAll(OWN_RUBY)).some(r=>!isOwn(r)&&hangul.test(r.getAttribute('data-kra-original')||''));
+      for(const root of openTextRoots()){
+        const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+        let node;
+        while((node=walker.nextNode()))
+          if(hangul.test(node.data)&&!isOwn(node)&&
+             !node.parentElement?.closest('script,style,noscript,input,textarea,select'))
+            return true;
+        if([...root.querySelectorAll(OWN_RUBY)].some(r=>!isOwn(r)&&
+          hangul.test(r.getAttribute('data-kra-original')||'')))return true;
+      }
+      return false;
     };
     pageHasHangul=detect();
     if(hangulVisibilityObserver)return;
@@ -1324,10 +1331,9 @@
   function restorePage() {
     resetRecovery();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();history.length=0;seenSources.clear();
-    // Like de-furiganation, unwrap only owned rubies, preserving surrounding DOM.
-    for (const ruby of document.querySelectorAll(OWN_RUBY)) {
-      ruby.replaceWith(document.createTextNode(ruby.dataset.kraOriginal || ''));
-    }
+    // Unwrap owned rubies in both the document and open Shadow DOM.
+    for(const root of openTextRoots())for(const ruby of root.querySelectorAll(OWN_RUBY))
+      ruby.replaceWith(document.createTextNode(ruby.dataset.kraOriginal||''));
     status('已还原', 0);
     send({ type: 'SET_BADGE', text: '' });
     publishState();
