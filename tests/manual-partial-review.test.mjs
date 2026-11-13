@@ -2,53 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createManualReviewSession} from '../manual-review.js';
 
-test('background keeps valid choices, asks only for missing IDs and merges retry',async()=>{
- const events=[];
- const session=createManualReviewSession({operationId:'op',post:e=>events.push(e)});
- const base={context:'가나',options:[{choice_id:'KEEP',type:'keep',entry_id:null,definitions:[],replacement:'가'},
-   {choice_id:'c0',type:'hanja',entry_id:1,definitions:['词义'],replacement:'可'}]};
+function create(){
+ const events=[],session=createManualReviewSession({operationId:'op',post:e=>events.push(e)});
+ const base={context:'가나',options:[{choice_id:'KEEP',type:'keep',entry_id:null,
+   definitions:[],replacement:'가'},{choice_id:'c0',type:'hanja',entry_id:1,
+   definitions:['词义'],replacement:'可'}]};
  const targets=[{...base,target_id:'original0',surface:'가',start:0,end:1},
-   {...base,target_id:'original1',surface:'나',start:1,end:2}];
- const prompt='Review input\n'+JSON.stringify({format:'shared-pools-v3',
-   sentences:[{sentence_id:'s0',text:'가나'}],
-   candidates:[{candidate_id:'p0',type:'hanja',replacement:'可'}],
-   targets:[{target_id:'t0',sentence_id:'s0',options:{KEEP:null,c0:'p0'}},
-     {target_id:'t1',sentence_id:'s0',options:{KEEP:null,c0:'p0'}}],batch_id:'batch1'});
- const pending=session.request({manualPrepared:{requestId:'batch1',text:prompt,bindings:[],targetCount:2},reviewPosFilter:false},targets);
- const first=session.submit({operationId:'op',requestId:'batch1',text:JSON.stringify({
-   batch_id:'batch1',format:'shared-pools-v3',results:[
-     'c0','INVALID',
-     'c0']})});
- assert.equal(first,false);
- const partial=events.find(e=>e.type==='MANUAL_REVIEW_ERROR'&&e.acceptedRows);
- assert.ok(partial,'should announce saved partial decisions');
+  {...base,target_id:'original1',surface:'나',start:1,end:2}];
+ const pending=session.request({context:'가나',reviewPosFilter:false},targets);
+ const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST');
+ const submit=(payload)=>session.submit({operationId:'op',requestId:request.requestId,
+  text:JSON.stringify(payload)});
+ return {events,session,pending,request,submit};
+}
+test('valid indexed decisions are kept while only unresolved ORIGINAL positions are retried',async()=>{
+ const q=create();
+ assert.equal(q.submit({batch_id:q.request.requestId,results:['c0','INVALID']}),false);
+ const partial=q.events.find(e=>e.type==='MANUAL_REVIEW_ERROR'&&e.acceptedRows);
  assert.equal(partial.acceptedCount,1);
  assert.deepEqual(partial.invalidTargetIds,['t1']);
- assert.equal(partial.acceptedRows.length,1);
- assert.equal(partial.acceptedRows[0].target_id,'t0');
- const retryJson=JSON.parse(partial.repairPrompt.slice(partial.repairPrompt.indexOf('{"format":"shared-pools-v3"')));
- assert.deepEqual(retryJson.targets.map(x=>x.target_id),['t1']);
+ assert.deepEqual(partial.acceptedRows,[[0,'c0']]);
+ const index=partial.repairPrompt.indexOf('{"format":"shared-pools-v4"');
+ assert.ok(index>=0);
+ const retryJson=JSON.parse(partial.repairPrompt.slice(index));
+ assert.deepEqual(retryJson.targets.map(x=>x.index),[1]);
  assert.equal(retryJson.candidates.length,1);
  assert.equal(retryJson.sentences.length,1);
- assert.equal(retryJson.batch_id,'batch1');
- const second=session.submit({operationId:'op',requestId:'batch1',text:JSON.stringify({
-   results:[null,null]})});
- assert.equal(second,true);
- const result=await pending;
- assert.deepEqual(result.results.map(x=>[x.target_id,x.choice_id]),
-   [['original0','c0'],['original1','KEEP']]);
+ assert.equal(retryJson.batch_id,q.request.requestId);
+ assert.equal(q.submit({batch_id:q.request.requestId,partial:true,results:[[1,null]]}),true);
+ assert.deepEqual((await q.pending).results,['c0',null]);
 });
-
-test('invalid batch ID never saves any partial answers',async()=>{
- const events=[],session=createManualReviewSession({operationId:'op',post:e=>events.push(e)});
- const target={target_id:'original0',start:0,end:1,surface:'가',context:'가',options:[
-   {choice_id:'KEEP',type:'keep',replacement:'가',definitions:[]}]};
- const pending=session.request({manualPrepared:{requestId:'batch',text:'review',bindings:[]}},[target]);
- assert.equal(session.submit({operationId:'op',requestId:'batch',text:JSON.stringify({
-   batch_id:'wrong',results:[null]})}),false);
- assert.match(events.at(-1).error,/batch_id/);
- assert.equal(events.at(-1).acceptedRows,undefined);
- assert.equal(session.submit({operationId:'op',requestId:'batch',text:JSON.stringify({
-   results:[null]})}),true);
- assert.equal((await pending).results[0].choice_id,'KEEP');
+test('missing and incorrect batch ID cannot save or apply any answers',async()=>{
+ const q=create();
+ assert.equal(q.submit({batch_id:'wrong',results:['c0',null]}),false);
+ assert.equal(q.submit({results:['c0',null]}),false);
+ assert.equal(q.events.filter(e=>e.type==='MANUAL_REVIEW_ERROR').length,2);
+ assert.equal(q.submit({batch_id:q.request.requestId,results:['c0',null]}),true);
+ assert.deepEqual((await q.pending).results,['c0',null]);
 });
