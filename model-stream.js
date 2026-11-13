@@ -11,17 +11,24 @@ export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null){
   if(!array){const prefix=/^\s*(?:```(?:json)?\s*)?\{\s*"results"\s*:\s*\[/i.exec(text);if(!prefix)return;position=prefix[0].length;array=true;}
   let changed=false;
   for(;position<text.length;position++){
-   const c=text[position];
-   if(string){if(escape)escape=false;else if(c==='\\')escape=true;else if(c==='"')string=false;continue;}
-   if(c==='"'){string=true;continue;}
-   if(c==='{'){if(depth===0)start=position;depth++;}
-   else if(c==='}'&&depth){depth--;if(depth===0){
+   const ch=text[position];
+   if(string){if(escape)escape=false;else if(ch==='\\')escape=true;else if(ch==='"')string=false;continue;}
+   if(ch==='"'){string=true;continue;}
+   if(ch==='{'){if(depth===0)start=position;depth++;}
+   else if(ch==='}'&&depth){depth--;if(depth===0){
     let row;try{row=JSON.parse(text.slice(start,position+1));}catch{invalid=true;}
-    if(!row||!known.has(row.target_id)||rows.some(r=>r.target_id===row.target_id))invalid=true;
+    if(!row||typeof row!=='object'||Object.keys(row).sort().join(',')!=='c,t'||
+       !known.has(row.t)||rows.some(r=>r.t===row.t)||
+       !(row.c===null||(typeof row.c==='string'&&row.c.length>0)))invalid=true;
     if(row)rows.push(row);changed=true;
-   }}else if(c===']'&&depth===0){position=text.length;break;}
+   }}else if(ch===']'&&depth===0){position=text.length;break;}
   }
-  if(changed){const accepted=invalid?[]:rows.flatMap(row=>{const target=known.get(row.target_id),option=target?.options.find(o=>o.choice_id===row.choice_id)||resolveExtra(target,row.choice_id);return option?[{target,option}]:[];});onPreview(accepted);}
+  if(changed){const accepted=invalid?[]:rows.flatMap(row=>{
+   const target=known.get(row.t);
+   const option=row.c===null?target?.options.find(o=>o.type==='keep'):
+     target?.options.find(o=>o.type!=='keep'&&o.choice_id===row.c)||resolveExtra(target,row.c);
+   return option?[{target,option}]:[];
+  });onPreview(accepted);}
  };
 }
 // A literal etymology uses the same results[] streaming path as an existing
