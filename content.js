@@ -841,6 +841,12 @@
   function recoverManualConnection(task,reason){
     const backup=task.manualBackup;
     if(task.finished||currentTask!==task)return false;
+    if(task.mergedGroup){
+      // A shared prompt can include source positions belonging to other
+      // iframe documents. Never apply a main-frame-only backup to them.
+      panelStatus('合并跨框架审核的后台连接已中断；完整提示词和已粘贴答案保留在本窗口。请先保存后重新开始审核，不能将其他框架的答案误写到主页面。');
+      return false;
+    }
     if(!backup?.bindings?.length){
       if(backup?.experimentalPhase==='propose'){
         const panel=document.querySelector('.kra-manual-review');
@@ -1298,7 +1304,7 @@
     if(panel.dataset.operationId!==task.operationId||event.requestId!==task.manualRequest)return;
     if(event.type==='MANUAL_REVIEW_ERROR'){
       clearTimeout(task.manualTimer);if(event.recoverable&&recoverManualConnection(task,event.error))return;
-      if(Array.isArray(event.acceptedRows)){
+      if(Array.isArray(event.acceptedRows)&&!task.mergedGroup){
         const answer=JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
           ...(event.acceptedRepairs?{repairs:event.acceptedRepairs}:{})});
         panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
@@ -1317,8 +1323,14 @@
           panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
         });
       }else{
-        panel.querySelector('.kra-manual-status').textContent=event.error;
-        panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
+        if(event.repairPrompt){
+          panel.querySelector('.kra-manual-prompt').value=event.repairPrompt;
+          panel.querySelector('.kra-manual-response').value='';
+        }
+        panel.querySelector('.kra-manual-status').textContent=event.error+
+         (task.mergedGroup?'\n各框架有效结果仍由后台分别处理；请按当前补交提示继续。':'');
+        panel.querySelector('.kra-manual-apply').disabled=false;
+        panel.querySelector('.kra-manual-import').disabled=false;
       }
     }else{
       clearTimeout(task.manualTimer);
@@ -1338,7 +1350,7 @@
           return binding&&!binding.choices.some(o=>o.choice_id===row?.choice_id);
         })===true;
       }catch{}
-      if(!requiresBackground)void applyManualRecovery(task,submitted,{advance:false,paint:false})
+      if(!task.mergedGroup&&!requiresBackground)void applyManualRecovery(task,submitted,{advance:false,paint:false})
         .catch(error=>addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message}));
       task.manualRequest=null;panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
@@ -1428,14 +1440,23 @@
         message:`网页文本扫描：检测 ${scan.textNodes} 个文本节点，含韩文 ${scan.hangulNodes}，进入分析 ${entries.size}；隐藏跳过 ${scan.skippedHidden}，已有标注/已处理跳过 ${scan.skippedProcessed}，开放式 Shadow DOM ${scan.shadowRoots}。`,
         detail:JSON.stringify({...scan,source:'DOM',mode:message.automatic?'incremental':'initial'})});
     }
-    if (!entries.size) { status('没有未标注的韩语文字', 100); return { ok: true, started: false }; }
+    if (!entries.size&&!message.mergeGroupId) {
+      status('没有未标注的韩语文字', 100);
+      return {ok:true,started:false};
+    }
     let paragraphPlan;
-    try{paragraphPlan=createParagraphPlan(entries,sourceOf,BLOCK_TAGS);}catch(error){return {ok:false,error:error.message};}
+    try{
+      paragraphPlan=entries.size?
+        createParagraphPlan(entries,sourceOf,BLOCK_TAGS):
+        {sentences:[],context:'',projectBinding:()=>[],idByNode:new WeakMap()};
+    }catch(error){return {ok:false,error:error.message};}
     const operationId = `page-${Date.now().toString(36)}-${++sequence}`;
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
-    const task = { operationId, port, entries, paragraphPlan, modes, scan, startedAutomatically:message.automatic===true,
+    const task = { operationId, port, entries, paragraphPlan, modes, scan,
+      mergedGroup:typeof message.mergeGroupId==='string'&&message.mergeGroupId.length>0,
+      mergedHost:message.mergeHost===true,startedAutomatically:message.automatic===true,
       startPageUrl:typeof location!=='undefined'?location.href:document.location?.href||'', finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges,
       operation:[], historyRecorded:false };
     const paint=(changed=entries)=>{insertConversions(changed,task.operation);const count=[...entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);if((task.operation.length||task.operation.recoveryBefore?.size)&&!task.historyRecorded){history.push(task.operation);task.historyRecorded=true;}return count;};
@@ -1560,7 +1581,11 @@
     });
     task.keepalive = setInterval(() => { try { port.postMessage({ type: 'KEEPALIVE' }); } catch { clearInterval(task.keepalive);if(!recoverManualConnection(task,'后台保活连接已断开。'))finishTask(task); } }, 20000);
     try {
-      port.postMessage({ type: 'START', operationId, sentences:paragraphPlan.sentences, context:paragraphPlan.context, restrictToSelection:true, progressiveAnnotation:task.progressive, modes, forceRegenerate: Boolean(message.forceRegenerate), reviewAll: message.reviewAll===true });
+      port.postMessage({ type: 'START', operationId,
+        ...(task.mergedGroup?{mergeGroupId:message.mergeGroupId}:{}),
+        sentences:paragraphPlan.sentences, context:paragraphPlan.context,
+        restrictToSelection:true, progressiveAnnotation:task.progressive, modes,
+        forceRegenerate:Boolean(message.forceRegenerate),reviewAll:message.reviewAll===true });
     } catch (error) { finishTask(task); status(error.message || '无法启动分析', 0); return { ok: false, error: error.message }; }
     return { ok: true, started: true };
   }
