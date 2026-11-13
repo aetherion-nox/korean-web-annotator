@@ -41,6 +41,18 @@ test('accepted batch remains available before later model events arrive',async()
  assert.equal(task.manualRequest,'batch2');assert.equal(entry.annotations.length,1);
 });
 
+test('immediate next request cannot race the accepted batch into a lost backup',async()=>{
+ const {context,task,entry,panel}=environment();task.manualLocalOnly=false;
+ panel.querySelector('.kra-manual-response').value=JSON.stringify({batch_id:'batch1',results:['c0']});
+ context.handleManualEvent(task,{type:'MANUAL_REVIEW_ACCEPTED',requestId:'batch1',targetCount:1});
+ context.handleManualEvent(task,{...task.manualPlan[1],type:'MANUAL_REVIEW_REQUEST'});
+ await new Promise(resolve=>setTimeout(resolve,30));
+ assert.equal(task.manualApplied.has('batch1'),true);
+ assert.equal(entry.annotations.length,1);
+ assert.equal(task.manualRequest,'batch2');
+ assert.equal(task.manualBackup.requestId,'batch2');
+});
+
 test('page-only recovery rejects direct Hanja string when experimental mode metadata is absent',async()=>{
  const {context,task,entry}=environment();
  const proposed={batch_id:'batch1',results:['可']};
