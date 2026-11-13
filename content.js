@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.10-dynamic-comment-hydration';
+  const VERSION = '1.1.56.11-accurate-engine-progress';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -1990,7 +1990,7 @@
            [...model,...(entry.modelReviewedRanges||[])].some(b=>b.start<a.end&&b.end>a.start)),...model];}if(task.progressive)paint();};
     const byId = new Map([...entries.values()].map(entry => [entry.id, entry]));
     currentTask = task;
-    status('加载词典…');
+    status('准备分析…');
     port.onDisconnect.addListener(() => {
       if (task.finished||task.manualLocalOnly) return;
       clearInterval(task.keepalive);
