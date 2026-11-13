@@ -13,7 +13,8 @@ import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
-const CONTENT_SCRIPT_VERSION='1.1.56.4-idle-manual-recovery';
+import {undoTabAnnotations,restoreTabAnnotations} from './tab-annotation-history.js';
+const CONTENT_SCRIPT_VERSION='1.1.56.5-undo-restore-all-scopes';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
 const cache=new Map();
@@ -82,6 +83,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ok:false,error:'仅原始顶层内容脚本可以恢复跨框架审核。'});return;
     }
     recoverMergedManualBatch(sender.tab.id,message).then(sendResponse,error=>sendResponse({ok:false,error:String(error.message||error)}));
+    return true;
+  }
+  if(message?.type==='KRA_UNDO_TAB'||message?.type==='KRA_RESTORE_TAB'){
+    if(sender.id!==chrome.runtime.id){
+      sendResponse({ok:false,error:'无效的网页标注请求。'});return;
+    }
+    const tabPromise=Number.isInteger(sender.tab?.id)?Promise.resolve(sender.tab.id):
+      chrome.tabs.query({active:true,currentWindow:true}).then(tabs=>tabs[0]?.id);
+    tabPromise.then(tabId=>message.type==='KRA_UNDO_TAB'?
+      undoTabAnnotations(chrome,tabId):restoreTabAnnotations(chrome,tabId)
+    ).then(sendResponse,error=>sendResponse({ok:false,error:String(error.message||error)}));
     return true;
   }
   if(message?.type==='KRA_START_PAGE_FROM_POPUP'){
@@ -508,10 +520,8 @@ async function handleSelectionContextMenu(info, tab) {
 
 async function handleUndoContextMenu(info, tab) {
   if (!tab?.id) throw new Error('没有找到当前标签页。');
-  const frameId = Number.isInteger(info?.frameId) ? info.frameId : 0;
-  await ensureContentScriptInFrame(tab.id, frameId);
-  const response = await chrome.tabs.sendMessage(tab.id, { type: 'UNDO_LAST_ANNOTATION' }, { frameId });
-  if (!response?.ok) throw new Error(response?.error || '没有可以撤销的标注。');
+  const response=await undoTabAnnotations(chrome,tab.id);
+  if(!response?.ok)throw new Error(response?.error||'没有可以撤销的标注。');
 }
 
 
