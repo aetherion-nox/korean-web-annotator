@@ -130,3 +130,62 @@ test('restore removes extension rubies from open Shadow DOM as well as main docu
  assert.equal(shadow.textContent,'언어');
  f.dom.window.close();
 });
+
+test('Word-like timeline records A and B: undo twice, redo twice without model requests',()=>{
+ const f=fixture(),{node,block,entry}=sourceEntry(f),a=Object.assign([],{groupId:'A',startedAt:100});
+ f.c.insertConversions(new Map([[node,entry]]),a);f.history.push(a);
+ const plain=f.dom.window.document.querySelector('#p').firstChild;
+ const b=Object.assign([],{groupId:'B',startedAt:200});
+ const newer={node:plain,text:plain.data,modelReviewed:true,localAnnotations:[],
+  selected:[{start:0,end:plain.data.length}],recoveryAnchor:{block,start:0},
+  annotations:[oldAnnotation()]};
+ f.c.insertConversions(new Map([[plain,newer]]),b);f.history.push(b);
+ assert.equal(f.dom.window.document.querySelectorAll(own).length,1);
+ assert.equal(f.history.length,2);
+ assert.equal(f.c.undoLast('B').ok,true);
+ assert.equal(f.dom.window.document.querySelectorAll(own).length,0);
+ assert.equal(f.c.undoLast('A').ok,true);
+ assert.equal(f.dom.window.document.querySelector(own).textContent,'學校학교');
+ assert.equal(f.c.latestUndoState().depth,0);
+ assert.equal(f.c.latestUndoState().redoDepth,2);
+ assert.equal(f.c.redoLast('A').ok,true);
+ assert.equal(f.dom.window.document.querySelectorAll(own).length,0);
+ assert.equal(f.c.redoLast('B').ok,true);
+ assert.equal(f.dom.window.document.querySelector(own).textContent,'學校학교');
+ assert.equal(f.c.latestUndoState().depth,2);
+ assert.equal(f.c.latestUndoState().redoDepth,0);
+ f.dom.window.close();
+});
+
+test('new action following undo discards redo branch while preserving previous history',()=>{
+ const f=fixture(),{node,block,entry}=sourceEntry(f),op=Object.assign([],{groupId:'A',startedAt:100});
+ f.c.insertConversions(new Map([[node,entry]]),op);f.history.push(op);
+ assert.equal(f.c.undoLast('A').ok,true);
+ assert.equal(f.c.latestUndoState().redoDepth,1);
+ // A new real action follows the undone A. The content-script commit path
+ // clears redoStack and notifies the tab coordinator.
+ const ruby=f.dom.window.document.querySelector(own);
+ const newEntry={node:ruby,text:'학교',isRuby:true,modelReviewed:true,
+  originalHTML:ruby.innerHTML,originalOuterHTML:ruby.outerHTML,localAnnotations:[],
+  annotations:[],selected:[{start:0,end:2}],recoveryAnchor:{block,start:0}};
+ const another=Object.assign([],{groupId:'D',startedAt:300});
+ f.c.insertConversions(new Map([[ruby,newEntry]]),another);
+ assert.equal(another.length,1);
+ f.redoStack=f.c.redoStack;
+ f.c.redoStack.length=0;f.history.push(another);
+ assert.equal(f.c.latestUndoState().redoDepth,0);
+ assert.equal(f.c.redoLast('A').ok,false);
+ f.dom.window.close();
+});
+
+test('redo does not resurrect old DOM after the page modifies the source',()=>{
+ const f=fixture(),{node,entry}=sourceEntry(f),op=Object.assign([],{groupId:'A',startedAt:100});
+ f.c.insertConversions(new Map([[node,entry]]),op);f.history.push(op);
+ assert.equal(f.c.undoLast('A').ok,true);
+ const p=f.dom.window.document.querySelector('#p');
+ p.textContent='웹사이트가 바꾼 문장';
+ assert.equal(f.c.redoLast('A').ok,false);
+ assert.equal(f.c.latestUndoState().redoDepth,1);
+ assert.equal(p.textContent,'웹사이트가 바꾼 문장');
+ f.dom.window.close();
+});
