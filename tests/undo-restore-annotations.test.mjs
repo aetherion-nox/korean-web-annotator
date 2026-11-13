@@ -8,9 +8,9 @@ const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
 const own='ruby[kra-annotated="true"]';
 function fixture(html='<main><p id="p"><ruby class="kra-ruby" kra-annotated="true" data-kra-original="학교" data-kra-type="hanja">學校<rt>학교</rt></ruby>에 가요.</p></main>'){
  const dom=new JSDOM(html,{url:'https://fixture.test/article/1'});
- const history=[],blocks=new Set(),events=[];
+ const history=[],redoStack=[],blocks=new Set(),events=[];
  const c={document:dom.window.document,OWN_RUBY:own,ownDomChanges:new WeakSet(),
-  analyzedNodeVersions:new WeakMap(),seenSources:new Set(),history,recoveryBlocks:blocks,
+  analyzedNodeVersions:new WeakMap(),seenSources:new Set(),history,redoStack,recoveryBlocks:blocks,
   uiSettings:{restoreExistingAnnotations:true},pageCompleted:true,
   currentTask:null,console,
   rememberRecovery:undefined,
@@ -18,7 +18,7 @@ function fixture(html='<main><p id="p"><ruby class="kra-ruby" kra-annotated="tru
   configureAutomaticAnnotation(){},
   cancelTask(){events.push('cancel')},
   status(value){events.push(value)},
-  publishState(){},send(){},resetRecovery(){blocks.clear()},
+  publishState(){},refreshTabHistoryCounter(){},send(){},resetRecovery(){blocks.clear()},
   openTextRoots(){return [dom.window.document.body]}
  };
  vm.createContext(c);
