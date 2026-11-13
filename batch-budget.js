@@ -23,20 +23,32 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  const experimental=experimentalHanja===true||experimentalLoanword===true;
  const config={reviewPosFilter,experimentalHanja,experimentalLoanword,dictionaryFree,smartSegmentation};
  const input=manual?buildManualPrompt(context,wire,batchId,config):buildReviewInstructions(config)+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
- // Model returns only results[].choice_id. Allow a plausible literal Hanja
- // spelling in that SAME field for eligible experimental targets. No separate
- // experimental_options list and no invented 100-byte proposal per target.
- const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),results:wire.map(t=>{
-  const longest=t.options.reduce((answer,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(answer).length?o.choice_id:answer,'KEEP');
-  const proposed=experimental&&canProposeExperimentalOption(t)?'漢'.repeat(Math.min(24,Math.max(8,[...t.surface].length*2))):'';
-  return {target_id:t.target_id,choice_id:JSON.stringify(proposed).length>JSON.stringify(longest).length?proposed:longest};
- }),...(smartSegmentation?{repairs:wire.filter((t,i)=>i%4===0).slice(0,64).map(t=>({
+ // Positional-v1 omits repeated target_id/choice_id object keys. Estimate
+ // the real compact result plus an intentionally conservative repair envelope.
+ const reply=JSON.stringify({...(manual?{batch_id:batchId}:{batch_id:'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'}),
+  results:wire.map(t=>{
+   if(smartSegmentation&&t.scan_only)return false;
+   const longest=t.options.reduce((longest,o)=>
+    o.type!=='keep'&&JSON.stringify(o.choice_id).length>JSON.stringify(longest).length?
+      o.choice_id:longest,null);
+   const proposed=experimental&&canProposeExperimentalOption(t)?
+    '漢'.repeat(Math.min(24,Math.max(8,[...t.surface].length*2))):'';
+   return JSON.stringify(proposed).length>JSON.stringify(longest).length?proposed:longest;
+  }),
+  ...(smartSegmentation?{repairs:wire.filter((t,i)=>i%4===0).slice(0,64).map(t=>({
    sentence_id:'s0',op:t.scan_only?'add':'replace',old_target_ids:t.scan_only?[]:[t.target_id],
    start:t.start,end:t.end,surface:t.surface.slice(0,24),choice_id:'漢字詞源'
-  }))}:{})});
+  }))}: {})
+ });
  const contextTokens=limits[tier],inputTokens=estimateTokenCount(input)+(manual?0:64),outputTokens=Math.ceil(estimateTokenCount(reply)*1.1)+32;
- const safetyTokens=contextTokens?Math.ceil(contextTokens*.08)+1024:0,outputLimit=normalizeOutputTokenLimit(manual?manualOutputTokenLimit:apiOutputTokenLimit,manual);
- const reservedOutputTokens=manual?outputTokens:Math.max(outputTokens,outputLimit),totalTokens=inputTokens+reservedOutputTokens+safetyTokens;
+ const safetyTokens=contextTokens?Math.ceil(contextTokens*.08)+1024:0,
+  outputLimit=normalizeOutputTokenLimit(manual?manualOutputTokenLimit:apiOutputTokenLimit,manual);
+ // Instead of reserving the full 16,384-token API cap for a compact
+ // 500-value result, reserve a response-sized generation allowance with
+ // extra headroom for literal spellings, repair rows and thinking models.
+ // The API max_tokens is set to this SAME bound to keep the estimate honest.
+ const reservedOutputTokens=Math.min(outputLimit,Math.max(4096,Math.ceil(outputTokens*1.5)+2048)),
+  totalTokens=inputTokens+reservedOutputTokens+safetyTokens;
  return {tier,label:tier==='32k'?'32K':tier==='128k'?'128K':tier==='256k'?'256K':tier==='512k'?'512K':'1M',estimated:true,contextTokens,inputTokens,outputTokens,reservedOutputTokens,safetyTokens,outputLimit,totalTokens,remainingTokens:contextTokens===null?null:contextTokens-totalTokens};
 }
 
