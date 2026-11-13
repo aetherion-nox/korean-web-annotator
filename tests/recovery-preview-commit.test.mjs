@@ -92,14 +92,71 @@ test('comment wrapper replacement with changing like-count still restores unique
  }finally{f.cleanup();}
 });
 
-test('identical-looking preview does NOT enter recovery if the website replaced its DOM first',()=>{
+test('committed result safely rebinds after a comment redraw invalidates its earlier preview',()=>{
  const f=fixture();
  try{
   f.paint();
+  assert.equal(f.anchor.block.annotations.size,0,'no recovery before confirmation');
   f.container.textContent='학교에 갔다.';
+  f.paint();
+  assert.equal(f.anchor.block.annotations.size,0,'stale uncommitted preview must not be replayed');
   f.entry.hasPreview=false;
   f.paint();
-  assert.equal(f.entry.invalidated,true,'a stale preview cannot attach a cache to a new node');
-  assert.equal(f.anchor.block.annotations.size,0,'do not restore uncommitted stale preview');
+  assert.notEqual(f.entry.invalidated,true,'fresh unique source is eligible for final application');
+  assert.equal(f.anchor.block.annotations.size,1,'confirmed result gets cached after redraw');
+  assert.equal(f.container.querySelectorAll(RUBY).length,1);
  }finally{f.cleanup();}
+});
+
+test('changed real comment text never receives an outdated result after redraw',()=>{
+ const f=fixture();
+ try{
+  f.paint();
+  f.container.textContent='학교에서 무엇을 배우나요?';
+  f.entry.hasPreview=false;
+  f.paint();
+  assert.equal(f.container.querySelectorAll(RUBY).length,0);
+  assert.equal(f.anchor.block.annotations.size,0);
+ }finally{f.cleanup();}
+});
+
+test('reactive comment card replacement during analysis rebinds a confirmed full-text result',()=>{
+ const html='<article><div id="div_comment"><div class="comment-card">'+
+   '<span class="comment-card__username">작성자</span>'+
+   '<span class="comment-card__commentcontent">학교에 갔다.</span>'+
+   '<span class="like-count">4</span></div></div></article>';
+ const dom=new JSDOM(html,{url:'https://fixture.test/article/2'});
+ const ctx={document:dom.window.document,location:dom.window.location,
+  MutationObserver:class{observe(){}disconnect(){}},OWN_RUBY:RUBY,MAX_RECOVERY_BLOCKS:12000,
+  recoveryByElement:new WeakMap(),analyzedNodeVersions:new WeakMap(),
+  BLOCK_TAGS:'p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption',
+  recoveryBlocks:new Set(),ownDomChanges:new WeakSet(),recoveryPage:null,
+  recoveryObserver:null,recoveryTimer:null,
+  uiSettings:{restoreExistingAnnotations:true,hanjaMode:true,loanwordMode:true},
+  currentTask:{},seenSources:new Set(),clearTimeout,setTimeout,console};
+ vm.createContext(ctx);
+ vm.runInContext(SOURCE.slice(SOURCE.indexOf('  function sourceOf'),
+  SOURCE.indexOf('  function captureSelection')),ctx);
+ vm.runInContext(SOURCE.slice(SOURCE.indexOf('  function loanwordDisplay'),
+  SOURCE.indexOf('  // Cheap, read-only child-frame preflight')),ctx);
+ try{
+  const content=ctx.document.querySelector('.comment-card__commentcontent');
+  const old=content.firstChild;
+  const anchor=ctx.recoveryAnchor(old);
+  const entry={node:old,text:old.data,selected:[{start:0,end:old.data.length}],
+    recoveryAnchor:anchor,hasPreview:false,modelReviewed:true,
+    annotations:[{start:0,end:2,surface:'학교',replacement:'學校',type:'hanja'}]};
+  const operation=[];
+  ctx.document.querySelector('.comment-card').outerHTML=
+    '<div class="comment-card"><span class="comment-card__username">작성자</span>'+
+    '<span class="comment-card__commentcontent">학교에 갔다.</span>'+
+    '<span class="like-count">5</span></div>';
+  const newContent=ctx.document.querySelector('.comment-card__commentcontent');
+  assert.equal(old.isConnected,false);
+  ctx.insertConversions(new Map([[old,entry]]),operation);
+  assert.equal(newContent.querySelectorAll(RUBY).length,1);
+  assert.notEqual(entry.invalidated,true);
+  assert.equal(anchor.block.annotations.size,1);
+  assert.equal(operation.length,1);
+ }finally{ctx.resetRecovery();dom.window.close();}
 });
