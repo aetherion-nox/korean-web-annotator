@@ -111,6 +111,39 @@ jobs:
           log=Path('html/browser-errors.log')
           if log.exists():print('Browser log end:',log.read_text(errors='replace')[-1500:])
           PY
+      - name: Scroll to comments in real browser and capture hydrated DOM
+        shell: bash
+        run: |
+          python3 -m pip install --quiet selenium
+          timeout 65 python3 - <<'PY' || true
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support.ui import WebDriverWait
+          from pathlib import Path
+          import time
+          opts=Options()
+          for a in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--window-size=1280,800','--no-first-run']:
+            opts.add_argument(a)
+          driver=None
+          try:
+            driver=webdriver.Chrome(options=opts)
+            driver.set_page_load_timeout(25)
+            url='https://www.chosun.com/international/international_general/2026/11/12/4JHDVTVHR5GLZDG7GPJRYZMXQM/?outputType=native'
+            driver.get(url)
+            time.sleep(2)
+            e=WebDriverWait(driver,15).until(lambda x:x.find_element(By.ID,'div_comment'))
+            print('SELENIUM BEFORE:',repr(e.text[:300]),'height:',e.size,'url:',driver.current_url)
+            driver.execute_script('arguments[0].scrollIntoView({block:"center"});window.scrollBy(0,250);',e)
+            time.sleep(10)
+            print('SELENIUM AFTER:',repr(e.text[:2000]))
+            print('SELENIUM DOM LENGTH:',len(driver.page_source))
+            print('SELENIUM COMMENT ELEMENTS:',len(driver.find_elements(By.CSS_SELECTOR,'#div_comment [class*="comment"]')))
+            Path('html/chosun-article-native-scrolled.html').write_text(driver.page_source,encoding='utf-8')
+          except Exception as e: print('SELENIUM ERROR:',type(e).__name__,str(e)[:2000])
+          finally:
+            if driver:driver.quit()
+          PY
       - name: Archive downloaded HTML for inspection
         uses: actions/upload-artifact@v4
         with:
