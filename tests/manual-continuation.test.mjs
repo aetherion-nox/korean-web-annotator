@@ -138,7 +138,7 @@ test('duplicate or extra target IDs cannot discard independent valid decisions',
  task.manualBackup.bindings.push({target_id:'t1',sentenceId:'s',start:1,end:2,surface:'나',
    choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{start:1,end:2,surface:'나',replacement:'那',type:'hanja'}]}]});
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({
-   results:[{t:'t0',c:'c0'},{t:'t1',c:null},
+   batch_id:'batch1',results:[{t:'t0',c:'c0'},{t:'t1',c:null},
      {t:'t1',c:'c0'},{t:'other',c:'c0'}]
  })),/重复 target_id/);
  assert.equal(task.manualRecoveryAccepted.size,1);

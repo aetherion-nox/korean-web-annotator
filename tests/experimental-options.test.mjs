@@ -122,16 +122,16 @@ test('only the enabled experimental origin rule is included in each manual/API p
  assert.equal(packed.format,'shared-pools-v4');
  assert.equal(packed.experimental_modes,undefined);
  assert.ok(both.length<common.length+2300,'experimental instructions should remain compact for large batches');
- assert.ok(common.includes('first determine its meaning from the sentence and context'));
- assert.ok(common.includes('Never choose a semantically mismatching candidate'));
+ assert.ok(common.includes('Decide meaning from the sentence and adjacent context'));
+ assert.ok(common.includes('BEFORE selecting a dictionary sense'));
  for(const prompt of [hanjaOnly,loanOnly,both]){
-  assert.ok(prompt.startsWith('OPEN-ENDED ORIGIN AUDIT WITH DICTIONARY OPTIONS'));
-  assert.ok(prompt.includes('FIRST infer its meaning'));
-  assert.ok(prompt.includes('SECOND compare EACH offered dictionary definition'));
-  assert.ok(prompt.includes('THIRD, if NO supplied dictionary option correctly represents'));
-  assert.ok(prompt.includes('DIRECTLY into results[].choice_id'));
+  assert.ok(prompt.includes('OPEN-ENDED ORIGIN AUDIT'));
+  assert.ok(prompt.includes('FIRST infer its contextual meaning'));
+  assert.ok(prompt.includes('THEN compare every offered dictionary sense'));
+  assert.ok(prompt.includes('When no supplied dictionary sense matches'));
+  assert.ok(prompt.includes('directly in c'));
   assert.ok(prompt.includes('JSON null'));
-  assert.ok(prompt.includes('do not invent an origin')||prompt.includes('Do not invent an origin'));
+  assert.ok(prompt.includes('never invent a dictionary key'));
   assert.ok(!prompt.includes('you may write'));
  }
  assert.equal((both.match(/FIRST infer/g)||[]).length,1,'the audit order must appear once');

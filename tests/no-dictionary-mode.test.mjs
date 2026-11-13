@@ -76,7 +76,7 @@ test('model instruction and manual prompts identify no dictionary and still use 
  assert.deepEqual(payload.allowed_origin_types,['hanja']);
  assert.equal(payload.null_is_fallback_only,true);
  const loanPrompt=buildReviewInstructions({dictionaryFree:true,experimentalLoanword:true});
- assert.match(loanPrompt,/actual Latin-script original/);
+ assert.match(loanPrompt,/original Latin-script spelling/);
  assert.doesNotMatch(loanPrompt,/Permitted generated source types in THIS batch: genuine Hanja/);
  const latinPayload=buildReviewPayload(text,targets,{dictionaryFree:true,experimentalLoanword:true}).payload;
  assert.deepEqual(latinPayload.allowed_origin_types,['loanword']);

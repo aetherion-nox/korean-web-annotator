@@ -47,7 +47,7 @@ test('missing ID never relaxes count, duplicate target, foreign target or option
  ]){
   assert.equal(batch.submit({results:invalid}),false,JSON.stringify(invalid));
  }
- assert.equal(batch.submit({results:rows()}),true);
+ assert.equal(batch.submit({batch_id:batch.request.requestId,results:rows()}),true);
  await batch.pending;
  assert.equal(batch.events.filter(event=>event.type==='MANUAL_REVIEW_ERROR').length,4);
 });

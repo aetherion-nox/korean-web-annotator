@@ -220,10 +220,10 @@ test('the feature toggle controls prompt and input without enabling ordinary exp
  assert.ok(!buildManualPrompt(text,[t],'batch',{}).includes('repairs'));
  const combined=buildReviewInstructions({smartSegmentation:true,experimentalHanja:true,experimentalLoanword:true});
  assert.ok(combined.includes('Audit every original sentence'));
- assert.ok(combined.includes('THIRD, if NO supplied dictionary option correctly represents'));
- assert.ok(combined.includes('DIRECTLY into results[].choice_id'));
- assert.equal((combined.match(/You SHOULD submit repairs/g)||[]).length,1);
- assert.equal((combined.match(/FIRST infer its meaning/g)||[]).length,1);
+ assert.ok(combined.includes('When no supplied dictionary sense matches'));
+ assert.ok(combined.includes('directly in c'));
+ assert.equal((combined.match(/If a genuine segmentation error is well supported/g)||[]).length,1);
+ assert.equal((combined.match(/FIRST infer its contextual meaning/g)||[]).length,1);
 });
 
 test('manual mode returns normal target choices and repairs in a single response',async()=>{
