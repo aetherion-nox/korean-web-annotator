@@ -10,8 +10,8 @@ test('name homograph bypasses Kiwi POS and retains both candidate definitions',(
  assert.equal(payload.candidates.length,2);
  assert.equal(payload.targets[0].morphology[0].tag,'NNG');
  assert.equal(modelTargets([target])[0].options.length,3);
- assert.equal(validateChoices([target],{results:[{target_id:'t0',choice_id:'c0'}]}).accepted.length,1);
- assert.equal(validateChoices([target],{results:[{target_id:'t0',choice_id:'c1'}]}).accepted.length,1);
+ assert.equal(validateChoices([target],{results:['c0']}).accepted.length,1);
+ assert.equal(validateChoices([target],{results:['c1']}).accepted.length,1);
  const manual=JSON.parse(buildManualPrompt(target.context,[target],'batch').split('\n').at(-1));
  assert.deepEqual(manual.targets[0].options,payload.targets[0].options);
 });
