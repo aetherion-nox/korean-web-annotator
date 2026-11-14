@@ -24,13 +24,14 @@ test('literal Hanja is read from results.choice_id; no proposal array or x0 requ
  assert.deepEqual(hanja.options.map(o=>o.choice_id),['KEEP','c0'],'dictionary target is not mutated');
 });
 
-test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>{
+test('only conversion dictionary keys are selectable; legacy-looking n rows mean null',()=>{
  for(const id of ['c0','KEEP']){
   const result=choose(hanja,id,{experimentalHanja:true});
   assert.equal(result.accepted[0].option.choice_id,id);
   assert.equal(result.experimentalAccepted,0);
  }
- assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'nonconversion');
+ assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'keep');
+ assert.equal(choose(hanja,'n77',{experimentalHanja:true}).accepted[0].option.type,'keep');
  assert.equal(validateChoices([hanja],reply('t0','原潛')).accepted.length,0,'ordinary mode must not accept raw origins');
  assert.equal(choose(hanja,'元箴',{experimentalHanja:true}).accepted.length,1,'matching dictionary spelling can be proposed independently');
 });
