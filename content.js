@@ -1293,20 +1293,37 @@
   // Reuse the same source-bound repair geometry checks as the worker. Only
   // literal-origin projection differs here, because the page stays functional
   // without a service worker or its dictionary/engine modules.
-  async function verifyPageRepairOrigin(task,repair,sentence){
+  async function verifyPageRepairOrigin(task,repair,sentence,targets,repairScopes){
     const {start,end,surface,choice_id}=repair;
     if(!sentence||sentence.text.slice(start,end)!==surface)return null;
+    const hanja=/\\p{Script=Han}/u.test(choice_id);
+    const freelyEnabled=hanja
+      ?task.modes.hanja===true&&task.manualBackup?.experimentalHanja===true
+      :task.modes.loanword===true&&task.manualBackup?.experimentalLoanword===true;
+    let dictionaryBacked=false;
+    if(!freelyEnabled&&Array.isArray(repair.old_target_ids)&&repair.old_target_ids.length){
+      const evidence=await (task.manualDictionaryEvidence||
+        import(chrome.runtime.getURL('repair-validation-core.js'))
+          .then(m=>m.dictionarySupportedRepairOrigin).catch(()=>null));
+      dictionaryBacked=typeof evidence==='function'&&evidence(repair,targets,
+        repairScopes.get(repair.old_target_ids[0]));
+    }
+    if(!freelyEnabled&&!dictionaryBacked)return null;
+    const allowHanja=hanja&&(freelyEnabled||dictionaryBacked);
+    const allowLoanword=!hanja&&(freelyEnabled||dictionaryBacked);
     const binding={start,end,surface,literalOrigin:{
-      eligible:true,hanja:task.modes.hanja===true,loanword:task.modes.loanword===true,hanjaEligible:true,loanwordEligible:true,
+      eligible:true,hanja:allowHanja&&task.modes.hanja===true,
+      loanword:allowLoanword&&task.modes.loanword===true,
+      hanjaEligible:true,loanwordEligible:true,
       known:[],morphology:[]}};
     const row={t:'repair',c:choice_id};
     const direct=await manualLiteralChoice(binding,choice_id,sentence,task,row);
-    if(direct)return direct.annotations;
+    if(direct)return dictionaryBacked?direct.annotations.map(a=>({...a,origin_source:'dictionary-backed-repair'})):direct.annotations;
     // A legitimate repair may explicitly preserve Hangul positions between
     // Hanja runs (e.g. uninflected stem + unchanged ending). No synthesized
     // Korean characters are permitted.
     const src=[...surface],dst=[...choice_id||''];
-    if(!task.modes.hanja||!src.length||src.length!==dst.length||surface.includes(' ')||
+    if(!allowHanja||!src.length||src.length!==dst.length||surface.includes(' ')||
        !/^[가-힣]+$/u.test(surface)||!dst.some(c=>/\p{Script=Han}/u.test(c))||
        !dst.every((c,i)=>/\p{Script=Han}/u.test(c)||c===src[i]))return null;
     const annotations=[];let begin=null,written='';
@@ -1325,7 +1342,7 @@
         import(chrome.runtime.getURL('hanja-reading-check.js')).then(m=>m.validateModelHanjaReadings).catch(()=>null));
       if(typeof validator!=='function'||validator(sentence.text,annotations).status==='mismatch')return null;
     }
-    return annotations;
+    return dictionaryBacked?annotations.map(a=>({...a,origin_source:'dictionary-backed-repair'})):annotations;
   }
 
   async function validatePageManualRepairs(task,response){
@@ -1365,7 +1382,7 @@
         if(found.length!==1)continue;
         start=found[0];end=start+repair.surface.length;
       }
-      const annotations=await verifyPageRepairOrigin(task,{...repair,start,end},sentence);
+      const annotations=await verifyPageRepairOrigin(task,{...repair,start,end},sentence,targets,repairScopes);
       if(annotations?.length)verified.set(JSON.stringify([repair.sentence_id,start,end,repair.surface,repair.choice_id]),annotations);
     }
     const validator=await (task.manualRepairValidator||
