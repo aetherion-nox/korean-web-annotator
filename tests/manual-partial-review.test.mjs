@@ -71,7 +71,7 @@ test('scan-only segmentation probes are excluded from all manual answer totals',
  assert.equal(session.submit({operationId:'segmentation',requestId:req.requestId,
   text:JSON.stringify({batch_id:req.requestId,results:[{t:'t0',c:null},{t:'t1',c:'c0'}]})}),false);
  const partial=events.filter(e=>e.type==='MANUAL_REVIEW_ERROR'&&e.invalidTargetIds).at(-1);
- assert.match(partial.error,/1\\/2 条有效答案，剩余 1 条待补交/);
+ assert.ok(partial.error.includes('1/2 条有效答案，剩余 1 条待补交'))
  assert.equal(partial.acceptedCount,1);
  assert.deepEqual(partial.invalidTargetIds,['t1']);
  const retry=JSON.parse(partial.repairPrompt.slice(partial.repairPrompt.indexOf('{"format":"shared-pools-v4"')));
