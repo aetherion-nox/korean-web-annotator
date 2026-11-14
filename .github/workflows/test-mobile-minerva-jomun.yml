@@ -87,6 +87,29 @@ jobs:
         run: node --test tests/wikisource-dd-toc.test.mjs
       - name: Test mobile closed 조문 with original extension scanner and DOM writer
         run: node scripts/diagnose_mobile_closed_jomun.mjs
+      - name: Download comparison Japanese Wikisource page in mobile Minerva mode
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,pathlib
+          from bs4 import BeautifulSoup
+          url='https://ja.wikisource.org/wiki/%E5%A4%A7%E9%9F%93%E6%B0%91%E5%9B%BD%E6%86%B2%E6%B3%95_(%E6%86%B2%E6%B3%95%E7%AC%AC10%E5%8F%B7)'
+          ua='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'
+          try:
+            with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':ua,'Accept-Language':'ja-JP,ja'}),timeout=30) as response: html=response.read().decode('utf-8')
+            pathlib.Path('mobile-ja-wikisource.html').write_text(html)
+            soup=BeautifulSoup(html,'html.parser')
+            css=[]
+            for link in soup.select('link[rel=stylesheet]'):
+              href=link.get('href')
+              if not href:continue
+              with urllib.request.urlopen(urllib.request.Request(urllib.parse.urljoin(url,href),headers={'User-Agent':ua}),timeout=30) as response: css.append(response.read().decode('utf-8'))
+            pathlib.Path('mobile-ja-styles.css').write_text('\n'.join(css))
+            print('JA_MOBILE_REAL_DOM',len(html),'CSS_FILES',len(css),flush=True)
+          except Exception as error:
+            print('JA_MOBILE_FETCH_UNAVAILABLE',repr(error),flush=True)
+          PY
+      - name: Verify complete DOM-to-paragraph-to-ruby pipeline and compare Japanese Minerva
+        run: node scripts/diagnose_mobile_full_pipeline.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
