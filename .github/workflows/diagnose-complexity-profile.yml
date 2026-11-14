@@ -1,0 +1,15 @@
+name: Source complexity profiling v1.1.56.31
+on:
+  push:
+    branches:
+      - diagnose/v1.1.56.31-complexity-profile
+  workflow_dispatch:
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Profile actual code paths with scalable fixtures
+        run: |
+          PYTHONPATH=python/browser-support python3 -u scripts/performance_complexity_probe.py
