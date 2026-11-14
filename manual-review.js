@@ -68,7 +68,7 @@ function manualRetryPrompt(original,batchId,remaining,reasons,acceptedCount){
    const old=JSON.parse(original.slice(begin));
    const selected=(old.targets||[]).filter(t=>ids.has(t.target_id));
    if(selected.length!==remaining.length)return lead+original;
-   const candidateIds=new Set(selected.flatMap(t=>Object.values(t.options||{})).filter(x=>typeof x==='string'));
+   const candidateIds=new Set(selected.flatMap(t=>[...Object.values(t.options||{}),...(t.keep_senses||[])].filter(x=>typeof x==='string')));
    const sentenceIds=new Set(selected.map(t=>t.sentence_id));
    const payload={...old,
      sentences:(old.sentences||[]).filter(s=>sentenceIds.has(s.sentence_id)),
