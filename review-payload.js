@@ -6,17 +6,18 @@ import {SMART_SEGMENTATION_INSTRUCTIONS} from './smart-segmentation-prompt.js';
 export const REVIEW_INSTRUCTIONS=[
  'Annotate Korean occurrences by true origin and context-specific meaning, using the supplied dictionary senses.',
  'Input format shared-pools-v4: sentences[] contains source sentences; targets[].sentence_id references its sentence, and each target retains a unique target_id. Each target options maps its local c/n keys to pooled candidates p keys; p keys are not valid answers.',
- 'For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c must be the matching local c/n key, actual JSON null to preserve the Korean original, or (when enabled) a genuinely known Hanja/Latin origin string.',
+ 'For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c must be a matching local dictionary c/n key or actual JSON null to preserve the Korean original.',
  'For API replies, return {"results":[{"t":"t0","c":"c0"},{"t":"t1","c":null}]}. For manual replies, also include the original batch_id in the outer object. Do not use string "null" for actual null, and never put explanatory text or other fields into a result row.',
  'Decide meaning from the sentence and adjacent context BEFORE selecting a dictionary sense. Nonconversion dictionary senses use their n key. Use JSON null if the word is native or the origin cannot be reliably established.',
- 'Names require exact identity evidence; proper_noun, dictionary_name_homograph and Kiwi morphology are hints, not proof. For a personal Hanja name, ONLY select a matching local dictionary c key or the exact spelling listed in verified_person_hanja. This list comes from actual person dictionary records, not LLM inference. Without matching local evidence, return JSON null; never invent personal-name spellings. Other proper nouns follow their enabled script rules.',
- 'An empty options object {} supplies NO local c/n keys. Never invent c0, n0 or other option keys; use a genuinely known enabled literal origin, otherwise actual JSON null. If any model-proposed c cannot be safely validated, the local validator keeps the Korean source as if c were null, including unknown indexed keys. This fallback never validates an unsafe origin or changes target identity.',
+ 'Names require exact identity evidence; proper_noun, dictionary_name_homograph and Kiwi morphology are hints, not proof. For a personal name, choose a matching dictionary c key only when its meaning matches the context. Otherwise return JSON null; never infer unlisted personal-name spellings. Other proper nouns likewise require a matching dictionary sense.',
+ 'An empty options object {} supplies NO local c/n keys, so answer actual JSON null. Never invent c0, n0 or other option keys. Any invalid or unavailable choice is treated as null by local validation without changing target identity.',
  'Do not invent or repeat t identifiers, and do not change source start/end positions. Preserve every source word boundary and native suffix.'
 ].join('\n');
 
 export function buildReviewInstructions(config={}){
- const generated=buildExperimentalOriginInstructions(config);
- const noDictionary=config.dictionaryFree===true?[
+ const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
+ const generated=experimental?buildExperimentalOriginInstructions(config):'';
+ const noDictionary=experimental&&config.dictionaryFree===true?[
   'OPEN-ENDED ORIGIN AUDIT: no external dictionary was loaded; empty options do not prohibit an authentic generated origin.',
   'Infer a reliably known etymological Hanja spelling or borrowed Latin original only for the enabled origin type; not an invented translation, transcription, or romanization.',
   'For genuine Korean native vocabulary and uncertain cases use actual JSON null. Never invent a dictionary option key.'
@@ -26,13 +27,19 @@ export function buildReviewInstructions(config={}){
 }
 export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,config);
+ const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
  if(batchId!==undefined)payload.batch_id=batchId;
  const example=JSON.stringify({batch_id:batchId,results:[{t:'t0',c:'c0'},{t:'t1',c:null}]});
  const notes=[
   config.smartSegmentation===true?'MANUAL REVIEW: Preferred response is one JSON object containing batch_id, results and optional repairs.':'MANUAL REVIEW: Preferred response is one JSON object containing batch_id and results.',
   'Copy the current batch_id exactly. Example answer structure (use real target IDs and choices from this request): '+example+'. If the wrapper is omitted accidentally, the local validator also accepts a bare t/c array or an object with results, but only when every returned t belongs to the active batch.',
-  'Result rows use ONLY the exact field names t and c: {"t":"t0","c":"c0"} or {"t":"t1","c":null}. The t value matches target_id in the request. c is a local dictionary key or an enabled literal origin, not a pooled candidate ID.',
-  'Use real JSON null (without quotes) to leave text unchanged. Any genuine enabled Latin etymology is a normal origin string, never a keep instruction.',
+  'Result rows use ONLY the exact field names t and c: {"t":"t0","c":"c0"} or {"t":"t1","c":null}. The t value matches target_id in the request. c is '+(experimental?'a local dictionary key or an enabled literal origin':'a local dictionary c/n key')+', not a pooled candidate ID.',
+  'Use real JSON null (without quotes) to leave text unchanged.',
+  ...(experimental?[config.experimentalHanja===true&&config.experimentalLoanword===true?
+   'A genuine enabled Hanja or Latin source spelling is an origin string, never a keep instruction.':
+   config.experimentalHanja===true?
+    'A genuine enabled Hanja source spelling is an origin string, never a keep instruction.':
+    'A genuine enabled Latin source spelling is an origin string, never a keep instruction.']:[]),
   config.smartSegmentation===true?
    'Return results for targets not superseded by validated repairs; omit those retired by a valid repair and scan_only placeholders. A failed repair does NOT retire the original target. Repair objects use their separately specified field names.':
    'Return exactly one t/c result for each target; no duplicates or invented IDs.',
