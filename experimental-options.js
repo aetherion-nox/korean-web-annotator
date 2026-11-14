@@ -30,7 +30,7 @@ const RESERVED=/^[cnxp]\d+$/i;
 // Script-specific permissions: NNP is not itself a veto; personal-name Hanja is.
 export function canProposeExperimentalOption(target,type){
  const surface=target?.surface||'';
- if(!/^[가-힣]+$/u.test(surface)||target.scan_only===true||target.partial_word===true)return false;
+ if(!/[가-힣]/u.test(surface)||/\s/u.test(surface)||target.scan_only===true||target.partial_word===true)return false;
  if(type==='loanword')return true;
  if(type==='hanja')return !(target.dictionary_person_name===true||
    target.dictionary_name_homograph===true||target.suspected_person_name===true);
@@ -100,11 +100,11 @@ export function explainLiteralOriginRejection(target,choiceId,config={}){
   return 'mixed_script_requires_segments';
  const kind=CJK.test(choiceId)?'hanja':
   (LOANWORD.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId))?'loanword':null;
- if(!kind)return 'unsupported_choice_id';
+ if(!kind)return /\p{Script=Latin}/u.test(choiceId)?(config.experimentalLoanword===true?'loanword_script_or_boundary':'loanword_mode_disabled'):'unsupported_choice_id';
  if(kind==='hanja'&&config.experimentalHanja!==true)return 'hanja_mode_disabled';
  if(kind==='loanword'&&config.experimentalLoanword!==true)return 'loanword_mode_disabled';
  if(!canProposeExperimentalOption(target,kind)){
-  if(!/^[가-힣]+$/u.test(target?.surface||'')||target.scan_only===true||target.partial_word===true)
+  if(!/[가-힣]/u.test(target?.surface||'')||/\s/u.test(target?.surface||'')||target.scan_only===true||target.partial_word===true)
    return 'partial_or_cross_word_boundary';
   return kind==='hanja'?'person_name_hanja_blocked':'source_boundary_or_name_blocked';
  }
