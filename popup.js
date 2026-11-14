@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.32-real-bottlenecks-and-folded-toc';
+const CONTENT_SCRIPT_VERSION = '1.1.56.33-mobile-minerva-folded-sections';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
