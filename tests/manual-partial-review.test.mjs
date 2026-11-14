@@ -17,7 +17,7 @@ test('background keeps valid choices, asks only for missing IDs and merges retry
  const pending=session.request({manualPrepared:{requestId:'batch1',text:prompt,bindings:[],targetCount:2},reviewPosFilter:false},targets);
  const first=session.submit({operationId:'op',requestId:'batch1',text:JSON.stringify({
    batch_id:'batch1',format:'shared-pools-v4',results:[
-     {t:'t0',c:'c0'},{t:'t1',c:'INVALID'},
+     {t:'t0',c:'c0'},{t:'t1',c:42},
      {t:'previous-batch',c:'c0'}]})});
  assert.equal(first,false);
  const partial=events.find(e=>e.type==='MANUAL_REVIEW_ERROR'&&e.acceptedRows);
@@ -69,7 +69,7 @@ test('scan-only segmentation probes are excluded from all manual answer totals',
  assert.equal(wire.targets.length,4,'scan-only targets remain available for repairs');
  assert.equal(wire.targets.filter(t=>t.scan_only).length,2);
  assert.equal(session.submit({operationId:'segmentation',requestId:req.requestId,
-  text:JSON.stringify({batch_id:req.requestId,results:[{t:'t0',c:null},{t:'t1',c:'c-invalid'}]})}),false);
+  text:JSON.stringify({batch_id:req.requestId,results:[{t:'t0',c:null},{t:'t1',c:42}]})}),false);
  const partial=events.filter(e=>e.type==='MANUAL_REVIEW_ERROR'&&e.invalidTargetIds).at(-1);
  assert.ok(partial.error.includes('1/2 条有效答案，剩余 1 条待补交'))
  assert.equal(partial.acceptedCount,1);
