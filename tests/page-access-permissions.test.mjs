@@ -21,7 +21,7 @@ test('website host permissions cover HTTP/HTTPS top frames and cross-origin ifra
 });
 
 test('popup, worker and content script share the current content-script version',()=>{
- const version='1.1.56.19-model-zip-compression';
+ const version='1.1.56.20-duplicate-literal-origins';
  assert.ok(popup.includes("const CONTENT_SCRIPT_VERSION = '"+version+"';"));
  assert.ok(worker.includes("const CONTENT_SCRIPT_VERSION='"+version+"';"));
  assert.ok(content.includes("const VERSION = '"+version+"';"));
