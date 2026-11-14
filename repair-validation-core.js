@@ -117,7 +117,7 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
    // Caller validates the actual origin and returns exact source spans.
    // A missing verifier cannot authorize an annotation.
    try{
-    const verified=config.verifyOrigin?.({start,end,surface,choice_id,sentence,config});
+    const verified=config.verifyOrigin?.({start,end,surface,choice_id,sentence,old_target_ids,config});
     if(!Array.isArray(verified)||!verified.length){
      fail(index,'unreliable script, missing mode, pronunciation or alignment',row);continue;
     }
