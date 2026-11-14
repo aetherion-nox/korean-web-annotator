@@ -675,6 +675,17 @@
     }
     return state.ordered;
   }
+  function indexedKoreanByRoot(nodes){
+    if(!nodes)return null;
+    const grouped=new Map();
+    for(const node of nodes){
+      const nativeRoot=node.getRootNode?.();
+      const root=nativeRoot===document?document.body:nativeRoot;
+      if(!grouped.has(root))grouped.set(root,[]);
+      grouped.get(root).push(node);
+    }
+    return grouped;
+  }
   function indexedTextRoots(){
     const state=ensureTextIndex();
     return state?[...state.roots].filter(root=>root===document.body||root.host?.isConnected):null;
@@ -771,11 +782,11 @@
       list.push(block);cache.detachedByKey.set(key,list);
     }
     const indexed=indexedKoreanTextNodes();
+    const byRoot=indexedKoreanByRoot(indexed);
     if(indexed)stats.textNodes=index?.totalTextNodes??0;
     for(const root of roots){
       const walker=indexed?null:document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-      const relevant=indexed?indexed.filter(node=>node.getRootNode()===root||
-        root===document.body&&node.getRootNode()===document):null;
+      const relevant=indexed?(byRoot.get(root)||[]):null;
       let node,position=0;
       while((node=indexed?relevant[position++]:walker.nextNode())){
         if(!indexed)stats.textNodes++;
@@ -1023,10 +1034,10 @@
       return false;
     };
     const indexed=indexedKoreanTextNodes();
+    const byRoot=indexedKoreanByRoot(indexed);
     for(const root of openTextRoots()){
       const walker=indexed?null:document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-      const relevant=indexed?indexed.filter(node=>node.getRootNode()===root||
-        root===document.body&&node.getRootNode()===document):null;
+      const relevant=indexed?(byRoot.get(root)||[]):null;
       let node,position=0;
       while((node=indexed?relevant[position++]:walker.nextNode())){
         checked++;
