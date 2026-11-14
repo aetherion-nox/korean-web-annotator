@@ -51,6 +51,32 @@ jobs:
           print('HANGUL_TEXT_NODES',len(txts))
           print('BLOCK_DISTRIBUTION',collections.Counter(x[2] for x in txts).most_common(15))
           print('LONGEST_TEXT_NODES',sorted(txts,reverse=True)[:8])
+          toc=s.select_one('.vector-toc')
+          if toc:
+            for node in toc.select('[class*=vector-toc]')[:28]:
+              print('TOC_NODE',node.name,repr(dict(node.attrs))[:500],repr(node.get_text(' ',strip=True)[:90]))
+          dds=s.select('.mw-parser-output dd')
+          for dd in dds[:5]:
+            print('DD_PARENT',dd.parent.name,dict(dd.parent.attrs),repr(dd.get_text(' ',strip=True)[:70]))
+            p=dd
+            for i in range(5):
+              if p is None:break
+              print(' DD_ANCESTOR',p.name,str(p.get('class')),str(p.get('id')),len(p.get_text(' ',strip=True)))
+              p=p.parent
+          # Match the current paragraph-plan's nearest-block grouping.
+          blocktags={'p','li','td','th','h1','h2','h3','h4','h5','h6','blockquote','pre','figcaption','div','section','article','main'}
+          amended=blocktags | {'dt','dd'}
+          for name,allowed in [('current',blocktags),('dd_fix',amended)]:
+            gs=collections.Counter()
+            lengths={}
+            for text in main.find_all(string=True):
+              if not re.search('[가-힣]',str(text)):continue
+              e=text.parent
+              while e and e.name not in allowed:e=e.parent
+              if e:
+                gs[id(e)]+=1
+                lengths[id(e)]=len(e.get_text(' ',strip=True))
+            print('PARAGRAPH_GROUPS',name,len(gs),'largest',sorted(((lengths[k],n) for k,n in gs.items()),reverse=True)[:8])
           for node in s.select('.mw-collapsible,.mw-collapsible-content,.vector-toc,.toc,details,section')[:20]:
             trail=[];p=node
             for n in range(5):
