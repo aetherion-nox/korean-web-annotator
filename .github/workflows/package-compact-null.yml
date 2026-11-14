@@ -1,13 +1,13 @@
-name: Validate and Package v1.1.56.12 Adaptive Frame Collection
+name: Validate and Package v1.1.56.13 Targeted Offline Validation Errors
 on:
   push:
     branches:
-      - fix/v1.1.56.12-adaptive-frame-collection
+      - fix/v1.1.56.13-targeted-offline-validation-errors
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: v1.1.56.12-adaptive-frame-collection
+  group: v1.1.56.13-targeted-offline-validation-errors
   cancel-in-progress: false
 jobs:
   package:
@@ -23,8 +23,8 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.12'
-          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.12'
+          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.13'
+          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.13'
           PY
       - name: Restore frozen Kiwi and Python runtime
         run: |
@@ -56,7 +56,7 @@ jobs:
                  and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
-          dest=root/'Korean-Web-Annotator-v1.1.56.12-adaptive-frame-collection.zip'
+          dest=root/'Korean-Web-Annotator-v1.1.56.13-targeted-offline-validation-errors.zip'
           with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
               for p in sorted(files):
                   mode=zipfile.ZIP_STORED if p.suffix.lower()=='.mdl' else zipfile.ZIP_DEFLATED
@@ -68,14 +68,14 @@ jobs:
                       'choice-review.js','model-stream.js','manual-review.js',
                       'browser-worker.js','engine-page.js','runtime/models/cong.mdl']
               assert all('Korean-Web-Annotator/'+p in z.namelist() for p in needed)
-              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.12'
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.13'
           assert dest.stat().st_size>90_000_000,'Kiwi runtime missing'
           print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: extension-v1.1.56.12
-          path: Korean-Web-Annotator-v1.1.56.12-adaptive-frame-collection.zip
+          name: extension-v1.1.56.13
+          path: Korean-Web-Annotator-v1.1.56.13-targeted-offline-validation-errors.zip
           compression-level: 0
           if-no-files-found: error
   windows-verify-publish:
@@ -84,7 +84,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: extension-v1.1.56.12
+          name: extension-v1.1.56.13
           path: artifact
       - name: Verify Windows Expand-Archive and 7-Zip
         shell: pwsh
@@ -98,7 +98,7 @@ jobs:
           $model=Get-ChildItem $dest -Recurse -Filter cong.mdl -File | Select-Object -First 1
           if(-not $manifest -or -not $model){throw 'Missing runtime files'}
           if($model.Length -ne 75854705){throw "Unexpected Kiwi runtime length: $($model.Length)"}
-          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.12'){throw 'Wrong manifest version'}
+          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.13'){throw 'Wrong manifest version'}
           $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
           if(Test-Path $sevenZip){& $sevenZip t $zip;if($LASTEXITCODE -ne 0){throw '7-Zip validation failed'}}
       - name: Publish distinct prerelease
@@ -107,12 +107,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.56.12-adaptive-frame-collection.1'
+          $tag='v1.1.56.13-targeted-offline-validation-errors.1'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.12 — adaptive frame collection removes fixed 4.8s startup delay' --prerelease --notes 'Based on v1.1.56.11. Remove the unconditional 4.8 second frame-collection delay on every whole-page review. Start single-frame pages after a brief approximately 350 ms quiet window; allow approximately 850 ms for detected child frames. Debounce new iframe navigations and cap collection with the original 4.8 second safety limit. Finish in-flight frame registration before starting one merged dictionary/API/manual batch. Preserve no-main-text cross-frame manual review, dynamic comments hydration, undo/redo, and accurate engine progress. Includes adaptive scheduler integration and regression tests. Windows ZIP verified.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.13 — exact failed target details in offline manual cross-frame review' --prerelease --notes 'Based on v1.1.56.12. In manual offline recovery following MV3/background disconnection, a merged frame validation failure now identifies each missing or rejected target by compact t ID, original Korean source word, sentence/offset, and actual failure cause (not submitted, invalid c, malformed row, duplicate target, invalid original source mapping). The top frame is identified as main page, and accidental duplicate periods are avoided. Preserve strict t/c schema, no partial cross-frame commits, pre-validation of every participating frame, all previous automatic/manual analysis and dynamic comment features. Includes isolated no-write dry-run regression tests and Windows archive validation.'
           }
           if($LASTEXITCODE -ne 0){throw 'Release publishing failed'}
