@@ -9,7 +9,7 @@
   const MAX_RECOVERY_BLOCKS = 12000;
   let currentTask = null;
   let sequence = 0;
-  let uiSettings = { toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
+  let uiSettings = { toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul', recognizeCollapsedContent:true };
   let toolbar = null;
   let toolbarDismissed = false;
   let toolbarForcedOpen = false;
@@ -576,6 +576,30 @@
     return roots;
   }
 
+  // Recognize only well-defined collapsible DOM containers; ordinary hidden
+  // templates, ads, editor panels, and scripts must stay excluded. The plugin
+  // does not click controls, alter the site's expanded state, or remove CSS.
+  function isMediaWikiCollapsedPanel(element) {
+    return element?.matches?.('.mw-collapsible-content')===true;
+  }
+  function closedDetailsBody(element) {
+    const details=element?.closest?.('details:not([open])');
+    return Boolean(details&&element!==details&&!element.closest('summary'));
+  }
+  function hiddenElementReason(element,allowCollapsed=uiSettings.recognizeCollapsedContent!==false) {
+    const collapsed=allowCollapsed&&isMediaWikiCollapsedPanel(element);
+    if(element.hidden||element.hasAttribute('inert')||element.getAttribute('aria-hidden')==='true'){
+      if(!collapsed||element.hasAttribute('inert'))return 'hidden';
+    }
+    const style=document.defaultView?.getComputedStyle?.(element);
+    if(style?.display==='none'||style?.visibility==='hidden'||
+       style?.visibility==='collapse'||style?.contentVisibility==='hidden'){
+      // A site may hide the collapsible content node itself. Never bypass
+      // additional, unrelated hidden descendants or content-visibility.
+      if(!collapsed||style.contentVisibility==='hidden')return 'hidden';
+    }
+    return '';
+  }
   function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false) {
     const entries=new Map();
     const stats={textNodes:0,hangulNodes:0,eligibleNodes:0,selectedNodes:0,
@@ -593,15 +617,9 @@
          '.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
          '.kra-floating-ball,.kra-manual-reopen,[contenteditable="true"]'))
         reason='excluded';
-      else if(element.hidden||element.hasAttribute('inert')||
-         element.getAttribute('aria-hidden')==='true')reason='hidden';
-      else {
-        // Offscreen content is eligible. Exclude only actually hidden trees.
-        const css=document.defaultView?.getComputedStyle?.(element);
-        if(css?.display==='none'||css?.visibility==='hidden'||
-           css?.visibility==='collapse'||css?.contentVisibility==='hidden')
-          reason='hidden';
-      }
+      else if(uiSettings.recognizeCollapsedContent===false&&closedDetailsBody(element))
+        reason='hidden';
+      else reason=hiddenElementReason(element);
       if(!reason){
         const root=element.getRootNode?.();
         reason=visibilityReason(element.parentElement||root?.host);
@@ -837,12 +855,9 @@
       for(let node=element;node&&!seen.has(node);
           node=node.parentElement||node.getRootNode?.().host){
         seen.add(node);
-        if(node.hidden||node.hasAttribute?.('inert')||
-           node.getAttribute?.('aria-hidden')==='true')return true;
-        const style=document.defaultView?.getComputedStyle?.(node);
-        if(style?.display==='none'||style?.visibility==='hidden'||
-           style?.visibility==='collapse'||style?.contentVisibility==='hidden')
+        if(uiSettings.recognizeCollapsedContent===false&&closedDetailsBody(node))
           return true;
+        if(hiddenElementReason(node))return true;
       }
       return false;
     };
