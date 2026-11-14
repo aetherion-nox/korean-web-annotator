@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.13-targeted-offline-validation-errors';
+const CONTENT_SCRIPT_VERSION = '1.1.56.14-remove-15s-post-page-rescan';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
