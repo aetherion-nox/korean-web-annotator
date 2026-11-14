@@ -247,6 +247,7 @@ function sanitizeUiSettings(value) {
     selectAnnotations:source.selectAnnotations ?? false,
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
+    recognizeCollapsedContent:source.recognizeCollapsedContent !== false,
     restoreExistingAnnotations:source.restoreExistingAnnotations ?? true,
     hideToolbarOnFirstManual:source.hideToolbarOnFirstManual !== false,
     toolbarHangulOnly:source.toolbarHangulOnly ?? true,
