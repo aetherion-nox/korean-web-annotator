@@ -25,8 +25,8 @@ export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null){
   }
   if(changed){const accepted=invalid?[]:rows.flatMap(row=>{
    const target=known.get(row.t);
-   const option=row.c===null?target?.options.find(o=>o.type==='keep'):
-     target?.options.find(o=>o.type!=='keep'&&o.choice_id===row.c)||resolveExtra(target,row.c);
+   const option=(row.c===null||(typeof row.c==='string'&&/^n\d+$/u.test(row.c)))?target?.options.find(o=>o.type==='keep'):
+     target?.options.find(o=>o.type!=='keep'&&o.type!=='nonconversion'&&o.choice_id===row.c)||resolveExtra(target,row.c);
    return option?[{target,option}]:[];
   });onPreview(accepted);}
  };
