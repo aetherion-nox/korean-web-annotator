@@ -103,7 +103,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
             options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)
             for i,record in enumerate(loans):
                 options.append(dict(choice_id=f'c{i}',type='loanword',replacement=record['origin_raw'],entry_id=record.get('id'),definitions=[record['definition_preview']] if record.get('definition_preview') else []))
-            targets.append(dict(span,target_id=f'loan{len(targets)}',context=text,options=options))
+            targets.append(dict(span,target_id=f'loan{len(targets)}',options=options))
         occupied_added.append((start,end))
     return dict(annotations=annotations,targets=targets,skipped_mixed=skipped_mixed)
 
@@ -127,5 +127,5 @@ def merge_targets(text,targets):
                 choice['choice_id']=f'c{len(options)-1}'
                 choice['replacement']=slice16(start,target['start'])+option['replacement']+slice16(target['end'],end)
                 options.append(choice)
-        merged.append(dict(target_id=f't{i}',start=start,end=end,surface=surface,context=text,options=options))
+        merged.append(dict(target_id=f't{i}',start=start,end=end,surface=surface,options=options))
     return merged
