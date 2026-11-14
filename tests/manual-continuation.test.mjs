@@ -78,13 +78,15 @@ test('disconnected recovery accepts model-supplied Latin origin only with experi
  assert.equal(entry.annotations[0].type,'loanword');
 });
 
-test('disconnected recovery rejects known dictionary spellings masquerading as new origins',async()=>{
+test('disconnected recovery accepts identical spelling independently from dictionary sense',async()=>{
  const {context,task,entry}=environment();
  task.modes.loanword=true;
  task.manualBackup.bindings[0].literalOrigin={eligible:true,hanja:false,loanword:true,known:[{type:'loanword',replacement:'game'}]};
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]})),/无效 c|不完整/);
- assert.equal(entry.annotations.length,0);
- assert.equal(task.manualRequest,'batch1');
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]}));
+ assert.equal(entry.annotations.length,1);
+ assert.equal(entry.annotations[0].origin_source,'model-unverified');
+ assert.equal(entry.annotations[0].replacement,'game');
+ assert.equal(task.manualRequest,'batch2');
 });
 
 test('disconnected recovery fails closed for prohibited names and malformed Hanzi spans',async()=>{
