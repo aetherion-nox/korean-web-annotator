@@ -1,11 +1,13 @@
+import {normalizeManualAnswer} from './manual-answer-format.js';
 // Snapshot-only recovery after an MV3 background worker/port is retired.
 // The caller is the still-open top-level content script. Do NOT cache any
 // document references here: every recipient rechecks its original DOM text.
 export function partitionMergedManualRecovery(topology,backup,response,originalPrompt=''){
  if(!Array.isArray(topology)||!topology.length||!backup||typeof backup.requestId!=='string')
   throw Error('跨框架恢复快照不完整。请保留答案，重新开始审核。');
- if(!response||response.batch_id!==backup.requestId||!Array.isArray(response.results))
-  throw Error('batch_id 与当前批次不一致或缺少 results。');
+ response=normalizeManualAnswer(response,{
+  requestId:backup.requestId,knownTargetIds:new Set((backup.bindings||[]).map(b=>b.target_id))
+ });
  if(response.repairs!==undefined&&!Array.isArray(response.repairs))
   throw Error('repairs 必须是数组。');
  if(!Array.isArray(backup.bindings)||!backup.bindings.length)
