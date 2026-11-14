@@ -587,6 +587,21 @@
     return panels;
   }
 
+  function openTextRoots(root=document.body) {
+    if(!root)return [];
+    if(root===document.body){const cached=indexedTextRoots();if(cached)return cached;}
+    const roots=[root],seen=new WeakSet();
+    // TreeWalker doesn't descend into open Shadow DOM. Include those roots
+    // explicitly, including nested ones. Closed roots cannot be inspected.
+    for(let i=0;i<roots.length;i++){
+      for(const element of roots[i].querySelectorAll('*')){
+        const shadow=element.shadowRoot;
+        if(shadow&&!seen.has(shadow)){seen.add(shadow);roots.push(shadow);}
+      }
+    }
+    return roots;
+  }
+
   // Shared text-discovery index. Build the complete DOM/text list once, then
   // maintain Korean candidates from actual childList/characterData mutations.
   // Visibility/selection/annotation safety still runs live at application time.
@@ -689,21 +704,6 @@
   function indexedTextRoots(){
     const state=ensureTextIndex();
     return state?[...state.roots].filter(root=>root===document.body||root.host?.isConnected):null;
-  }
-
-  function openTextRoots(root=document.body) {
-    if(!root)return [];
-    if(root===document.body){const cached=indexedTextRoots();if(cached)return cached;}
-    const roots=[root],seen=new WeakSet();
-    // TreeWalker doesn't descend into open Shadow DOM. Include those roots
-    // explicitly, including nested ones. Closed roots cannot be inspected.
-    for(let i=0;i<roots.length;i++){
-      for(const element of roots[i].querySelectorAll('*')){
-        const shadow=element.shadowRoot;
-        if(shadow&&!seen.has(shadow)){seen.add(shadow);roots.push(shadow);}
-      }
-    }
-    return roots;
   }
 
   function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false) {
