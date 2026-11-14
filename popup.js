@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.15-no-cross-space-targets';
+const CONTENT_SCRIPT_VERSION = '1.1.56.16-origin-specific-proper-name-audit';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
