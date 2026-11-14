@@ -31,10 +31,12 @@ test('smart payload uses compact Kiwi arrays, does not duplicate top-level full 
 });
 
 test('smart mode deduplicates target morphology against complete sentence Kiwi tokens',()=>{
- const risk={...target,suspected_person_name:true,morphology:[{form:'가나다라',tag:'NNG',start:0,end:4}]};
+ const risk={...target,suspected_person_name:true,partial_word:true,morphology:[{form:'가나다라',tag:'NNG',start:0,end:4}]};
  const smart=buildReviewPayload(phrase,[risk],{smartSegmentation:true}).payload;
  const ordinary=buildReviewPayload(phrase,[risk],{}).payload;
  assert.equal(smart.targets[0].morphology,undefined,'Kiwi evidence is present in the sentence already');
+ assert.equal(smart.targets[0].partial_word,undefined,'legacy flags must not leak into new prompts');
+ assert.equal(ordinary.targets[0].partial_word,undefined);
  assert.deepEqual(smart.sentences[0].kiwi_tokens[0],['가나다라','NNG',0,4]);
  assert.equal(ordinary.targets[0].morphology[0].tag,'NNG','ordinary review retains name-risk evidence');
  assert.ok(JSON.stringify(smart).length<JSON.stringify({...smart,
