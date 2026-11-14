@@ -62,3 +62,37 @@ test('invalid choice and missing rows stay recoverable without partial commit',a
  assert.equal((await c.applyMergedOfflineFrame({groupId:'frame-group-7',phase:'commit',frame:fixed})).ok,true);
  assert.equal(entry.annotations.length,0,'null keeps original Hangul and still counts as applied');
 });
+
+test('same-spelling loanword literals survive cross-frame offline validation and retain unverified provenance',async()=>{
+ for(const [surface,context,start,raw] of [
+  ['머스크','멜론머스크',2,'musk'],
+  ['유고','‘유고의 그림자’',1,'Yugo']
+ ]){
+  const {c,task,entry,frame}=fixture();
+  entry.text=context;
+  entry.selected=[{start:0,end:context.length}];
+  task.paragraphPlan.sentences=[{id:'p0',text:context}];
+  task.modes={hanja:true,loanword:true};
+  frame.backup.bindings=[{
+   target_id:surface==='머스크'?'t560':'t577',
+   sentenceId:'p0',start,end:start+surface.length,surface,
+   choices:[
+    {choice_id:'KEEP',annotations:[]},
+    {choice_id:'c0',annotations:[{start,end:start+surface.length,surface,replacement:raw,type:'loanword'}]}
+   ],
+   literalOrigin:{eligible:true,hanja:true,loanword:true,hanjaEligible:false,
+    loanwordEligible:true,known:[{type:'loanword',replacement:raw}]}
+  }];
+  frame.answer=JSON.stringify({batch_id:'late-batch',
+   results:[{t:frame.backup.bindings[0].target_id,c:raw}]});
+  const checked=await c.applyMergedOfflineFrame({groupId:'frame-group-7',phase:'validate',frame});
+  assert.equal(checked.ok,true,checked.error||'offline validation failed');
+  assert.equal(entry.annotations.length,0,'dry-run may not modify the page');
+  const committed=await c.applyMergedOfflineFrame({groupId:'frame-group-7',phase:'commit',frame});
+  assert.equal(committed.ok,true,committed.error||'commit failed');
+  assert.deepEqual(entry.annotations.map(x=>[x.start,x.end,x.surface,x.replacement]),
+   [[start,start+surface.length,surface,raw]]);
+  assert.equal(entry.annotations[0].origin_source,'model-unverified',
+   'same spelling must not silently inherit dictionary-backed provenance');
+ }
+});
