@@ -11,14 +11,14 @@ export function buildExperimentalOriginInstructions(config={}){
   :hanja?'genuine Hanja spelling of a Sino-Korean word'
          :'original Latin-script spelling of a borrowed word';
  const caution=hanja&&loanword
-  ?'Preserve source word boundaries and Hanja-to-syllable alignment; do not translate, romanize, or guess personal names or uncertain origins.'
-  :hanja?'Preserve source word boundaries and Hanja-to-syllable alignment; never guess personal-name Hanja or uncertain origins.'
-         :'Use the actual borrowed spelling, not a translation or Korean romanization; preserve source word boundaries and never guess names or uncertain origins.';
+  ?'For Latin-script origins, proper nouns including foreign personal names may use an established original spelling, never a guessed romanization of a native Korean name. Hanja origins allow non-person proper nouns but never open-ended Hanja for personal names. Keep original source word boundaries and Hanja-to-syllable alignment.'
+  :hanja?'Non-person proper nouns may use established Hanja origins; never directly propose Hanja for a personal name. Preserve source word boundaries and syllable alignment.'
+         :'Proper nouns, including identifiable foreign personal names, may use their established Latin-script original. Do not romanize native Korean names or guess identity. Preserve source word boundaries.';
  return [
   'OPEN-ENDED ORIGIN AUDIT: dictionary keys are only candidate meanings, not an exhaustive inventory of authentic origins. With an enabled origin type, an authentic Hanja/Latin spelling may be placed directly into results[].c.',
   'For EACH occurrence, FIRST infer its contextual meaning and actual etymological word boundaries; THEN compare every offered dictionary sense and origin, favoring a matching local c/n option key.',
   'When no supplied dictionary sense matches and the authentic '+origin+' is reliably known, put that spelling directly in c; never invent a dictionary key or choose an unrelated meaning.',
-  'Use actual JSON null only for native words, protected names, unclear boundaries, or genuinely uncertain origins. Do not default to null merely because the dictionary is incomplete.',
+  'Use actual JSON null for native words, unverified identity, unclear boundaries, or genuinely uncertain origins. A proper-noun tag alone is not grounds to return null; follow the enabled script and personal-name rules.',
   'Hanja must align with the Korean source; explicitly tagged native suffixes can be preserved. '+caution,
   'Output exactly one {t,c} row per target unless superseded by a validated segmentation repair; t matches target_id, c is an option key, genuine enabled source spelling, or JSON null.'
  ].join('\n');
@@ -27,23 +27,14 @@ export function buildExperimentalOriginInstructions(config={}){
 const CJK=/^[\p{Script=Han}]+$/u;
 const LOANWORD=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u;
 const RESERVED=/^[cnxp]\d+$/i;
-export const canProposeExperimentalOption=t=>/[가-힣]/u.test(t?.surface||'')&&
- !(t.scan_only===true||t.proper_noun===true||t.dictionary_person_name===true||t.dictionary_name_homograph===true||
-   t.suspected_person_name===true||t.partial_word===true);
-
-function splitAlignedHanja(surface,origin){
- // Pure Hanzi spelling of a multiword Korean phrase: retain *source* spaces.
- // No arbitrary guess of where a foreign loanword should be split.
- if(!/^[가-힣]+(?: [가-힣]+){1,3}$/u.test(surface))return null;
- const words=surface.split(' ');
- if([...origin].length!==words.join('').length)return null;
- const characters=[...origin],segments=[];let start=0,index=0;
- for(const word of words){
-  const replacement=characters.slice(index,index+word.length).join('');
-  segments.push({start,end:start+word.length,surface:word,type:'hanja',replacement});
-  start+=word.length+1;index+=word.length;
- }
- return {replacement:segments.map(p=>p.replacement).join(' '),segments};
+// Script-specific permissions: NNP is not itself a veto; personal-name Hanja is.
+export function canProposeExperimentalOption(target,type){
+ const surface=target?.surface||'';
+ if(!/^[가-힣]+$/u.test(surface)||target.scan_only===true||target.partial_word===true)return false;
+ if(type==='loanword')return true;
+ if(type==='hanja')return !(target.dictionary_person_name===true||
+   target.dictionary_name_homograph===true||target.suspected_person_name===true);
+ return false;
 }
 
 // An unchanged native/derivational suffix may follow a Sino-Korean stem.
@@ -73,7 +64,7 @@ export function alignedHanjaStemSuffix(target,origin){
 // A raw model origin is *not* a dictionary-backed etymology.
 export function literalOriginOption(target,choiceId,config={}){
  if(typeof choiceId!=='string'||!choiceId||choiceId.length>160||choiceId!==choiceId.trim()||
-    /[<>\x00-\x1f\x7f]/u.test(choiceId)||RESERVED.test(choiceId)||!canProposeExperimentalOption(target))return null;
+    /[<>\x00-\x1f\x7f]/u.test(choiceId)||RESERVED.test(choiceId))return null;
  // Internal nonconversion/keep options are not model-visible sentinels.
  // A Latin original equal to a former keep marker remains valid.
  if(target.options?.some(o=>o.type!=='keep'&&o.choice_id===choiceId))return null;
@@ -81,8 +72,8 @@ export function literalOriginOption(target,choiceId,config={}){
  if(CJK.test(choiceId)&&config.experimentalHanja===true)type='hanja';
  else if(LOANWORD.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId)&&config.experimentalLoanword===true)type='loanword';
  else return null;
- const aligned=type==='hanja'?(splitAlignedHanja(target.surface,choiceId)||
-   alignedHanjaStemSuffix(target,choiceId)):null;
+ if(!canProposeExperimentalOption(target,type))return null;
+ const aligned=type==='hanja'?alignedHanjaStemSuffix(target,choiceId):null;
  // Existing dictionary spellings must be selected by their supplied c/n key.
  // A literal spelling must not bypass sense/POS competition or make an
  // already-known etymology look like independent model evidence.
@@ -102,21 +93,25 @@ export function literalOriginOption(target,choiceId,config={}){
 
 // Validation diagnostics only; never changes which model origins are accepted.
 export function explainLiteralOriginRejection(target,choiceId,config={}){
- if(!canProposeExperimentalOption(target))return 'protected_name_or_partial_word';
  if(typeof choiceId!=='string'||!choiceId||choiceId.length>160||choiceId!==choiceId.trim()||RESERVED.test(choiceId))
   return 'invalid_choice_id';
  if(target.options?.some(o=>o.type!=='keep'&&o.choice_id===choiceId))return 'known_choice_key';
  if(/\p{Script=Han}/u.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId))
   return 'mixed_script_requires_segments';
- if(CJK.test(choiceId)){
-  if(config.experimentalHanja!==true)return 'hanja_mode_disabled';
-  // A structurally valid choice that fails solely because of the reading
-  // table must be distinguishable from impossible character/word alignment.
+ const kind=CJK.test(choiceId)?'hanja':
+  (LOANWORD.test(choiceId)&&/\p{Script=Latin}/u.test(choiceId))?'loanword':null;
+ if(!kind)return 'unsupported_choice_id';
+ if(kind==='hanja'&&config.experimentalHanja!==true)return 'hanja_mode_disabled';
+ if(kind==='loanword'&&config.experimentalLoanword!==true)return 'loanword_mode_disabled';
+ if(!canProposeExperimentalOption(target,kind)){
+  if(!/^[가-힣]+$/u.test(target?.surface||'')||target.scan_only===true||target.partial_word===true)
+   return 'partial_or_cross_word_boundary';
+  return kind==='hanja'?'person_name_hanja_blocked':'source_boundary_or_name_blocked';
+ }
+ if(kind==='hanja'){
   if(config.hanjaReadingCheck!==false&&literalOriginOption(target,choiceId,{...config,hanjaReadingCheck:false}))
    return 'hanja_reading_conflict';
   return 'hanja_alignment_or_boundary';
  }
- if(/\p{Script=Latin}/u.test(choiceId))
-  return config.experimentalLoanword===true?'loanword_script_or_boundary':'loanword_mode_disabled';
- return 'unsupported_choice_id';
+ return 'loanword_script_or_boundary';
 }
