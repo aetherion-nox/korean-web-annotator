@@ -1,4 +1,6 @@
 import {chromium} from 'playwright-core';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
 const url='https://ko.m.wikisource.org/wiki/대한민국헌법_(제10호)';
 const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--ignore-certificate-errors']});
 try{
@@ -35,30 +37,54 @@ try{
      firstDD:dd?.textContent.slice(0,160)};
   });
   console.log('LIVE_DOM_STRUCTURE',JSON.stringify(actual));
-  if(before.hasSection){
-   const pre=await page.evaluate(()=>{
-    const section=document.querySelector('#mf-section-2'),
-      node=[...section.querySelectorAll('dd,li,p')].find(el=>el.textContent.includes('민주공화국'));
-    if(!node)return {injected:false};
-    const marker=document.createElement('ruby');marker.setAttribute('data-kra-probe','true');
-    marker.append('民主共和國');const rt=document.createElement('rt');rt.textContent='민주공화국';marker.append(rt);
-    node.prepend(marker);
-    return {injected:true,marker:!!section.querySelector('ruby[data-kra-probe]')};
-   });
-   console.log('LIVE_BEFORE_CLICK',JSON.stringify(pre));
-   try{
-    const h=page.locator('[onclick*="mfTempOpenSection(2)"]').first();
-    if(await h.count()){await h.click({timeout:4000,force:true});await page.waitForTimeout(600);}
-    else await page.evaluate(()=>{document.querySelector('#mf-section-2')?.classList.add('open-block');});
-   }catch(error){console.log('LIVE_CLICK_ERROR',String(error).slice(0,300));}
-   const after=await page.evaluate(()=>{
-    const section=document.querySelector('#mf-section-2');
-    return {present:!!document.querySelector('ruby[data-kra-probe]'),
-      sectionClass:section?.className,css:section?getComputedStyle(section).display:null,
-      sourceTextLength:section?.textContent?.length};
-   });
-   console.log('LIVE_AFTER_CLICK',JSON.stringify(after));
-  }
+  // The live page no longer has id="mf-section-2"; inspect and annotate
+  // the post-hydration mf-section-2 class with the extension's actual scanner.
+  const source=fs.readFileSync('content.js','utf8');
+  const part=(a,b)=>{const i=source.indexOf(a),j=source.indexOf(b,i);if(i<0||j<i)throw Error('missing '+a);return source.slice(i,j);};
+  const harness=[
+    '(()=>{',
+    'const OWN_RUBY=\\'ruby[kra-annotated="true"]\\';',
+    'let uiSettings={};let lastScanStats=null;',
+    'const ownDomChanges=new WeakSet(),seenSources=new Set(),recoveryBlocks=new Set();',
+    'const analyzedNodeVersions=new WeakMap();',
+    'function rememberRecovery(){}',
+    part('  function sourceOf','  function pageIdentity'),
+    part('  function selectedIntervals','  function applySettings'),
+    part('  function openTextRoots','  function isKnownRecoverySource'),
+    part('  function loanwordDisplay','  function findRepaintedTextNode'),
+    part('  function insertConversions','  // Cheap, read-only child-frame preflight.'),
+    'window.__KRA_LIVE_CHECK__=()=>{',
+    ' const section=document.querySelector(".mw-parser-output > section.mf-section-2.collapsible-block");',
+    ' const entries=collectTextNodes();',
+    ' const inSection=[...entries.values()].filter(e=>section?.contains(e.node));',
+    ' const target=inSection.find(e=>e.text.includes("민주공화국"));',
+    ' if(!target)return {found:!!section,inSection:inSection.length,stats:lastScanStats};',
+    ' const start=target.text.indexOf("민주공화국");',
+    ' target.annotations=[{type:"hanja",start,end:start+5,surface:"민주공화국",replacement:"民主共和國",entry_id:998}];',
+    ' const rendered=insertConversions(new Map([[target.node,target]]),[]);',
+    ' return {found:!!section,inSection:inSection.length,rendered,ruby:!!section.querySelector("ruby[kra-annotated]"),',
+    '   oldId:section.id,hidden:section.getAttribute("hidden"),',
+    '   css:{display:getComputedStyle(section).display,contentVisibility:getComputedStyle(section).contentVisibility},',
+    '   stats:lastScanStats};',
+    '};})();'
+  ].join('\\n');
+  await page.addScriptTag({content:harness});
+  const liveScan=await page.evaluate(()=>window.__KRA_LIVE_CHECK__());
+  console.log('LIVE_SCANNER_BEFORE_EXPAND',JSON.stringify(liveScan));
+  assert.ok(liveScan.inSection>300,'post-hydration Minerva article must have all clause nodes analyzed');
+  assert.ok(liveScan.ruby,'one real known conversion must paint while section is hidden until found');
+  try{
+    await page.locator('#조문').click({force:true,timeout:4000});
+    await page.waitForTimeout(400);
+  }catch(error){console.log('LIVE_CLICK_ERROR',String(error).slice(0,300));}
+  const after=await page.evaluate(()=>{
+    const section=document.querySelector('.mw-parser-output > section.mf-section-2.collapsible-block');
+    return {rubies:section?.querySelectorAll('ruby[kra-annotated]').length,
+      sectionId:section?.id,hidden:section?.getAttribute('hidden'),
+      css:section?{display:getComputedStyle(section).display,contentVisibility:getComputedStyle(section).contentVisibility}:null};
+  });
+  console.log('LIVE_AFTER_EXPANSION',JSON.stringify(after));
+
  }catch(error){console.log('LIVE_FETCH_UNAVAILABLE',String(error).slice(0,450));}
  await context.close();
 }finally{await browser.close();}
