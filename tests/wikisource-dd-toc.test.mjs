@@ -76,6 +76,27 @@ test('Vector expansion class, not only display:none, controls folded recognition
  assert.equal(foldedText().length,2,'expanded lists must remain eligible with the toggle OFF');
  x.dom.window.close();
 });
+test('authentic Vector CSS hides folded child li elements, which ON scans without opening',()=>{
+ const html='<html class="client-js"><head><style>'+
+  '#vector-toc .vector-toc-list-item:not(.vector-toc-list-item-expanded) > .vector-toc-list > .vector-toc-list-item { display:none; }'+
+  '</style></head><body><nav id="vector-toc"><ul class="vector-toc-contents">'+
+  '<li id="toc-조문" class="vector-toc-list-item vector-toc-level-1">'+
+  '<ul class="vector-toc-list" id="toc-조문-sublist">'+
+  '<li class="vector-toc-list-item">제1장 총강</li>'+
+  '<li class="vector-toc-list-item">제2장 국민의 권리와 의무</li>'+
+  '</ul></li></ul></nav><div style="display:none">숨겨진 광고</div></body></html>';
+ const x=scanner(html,true);
+ const child=x.dom.window.document.querySelector('#toc-조문-sublist > li');
+ assert.equal(x.dom.window.getComputedStyle(child).display,'none');
+ const matched=()=>[...x.entries().values()].filter(e=>e.node.parentElement.closest('#toc-조문-sublist')).map(e=>e.text);
+ assert.equal(matched().length,2,'enabled scan must bypass folded child li display:none');
+ assert.equal(x.entries().size,2,'ordinary hidden ad must not enter the scan');
+ x.context.uiSettings.recognizeCollapsedContent=false;
+ assert.equal(matched().length,0,'toggle OFF must skip both folded child items');
+ child.parentElement.parentElement.classList.add('vector-toc-list-item-expanded');
+ assert.equal(matched().length,2,'expanded Vector subsection must remain visible with OFF');
+ x.dom.window.close();
+});
 test('ordinary hidden content is never made eligible by a folded TOC setting',()=>{
  const x=scanner('<nav id="vector-toc"><ul class="vector-toc-list" style="display:none">'+
   '<li>숨겨진 목차</li></ul></nav>'+
@@ -99,6 +120,8 @@ test('real downloaded Wikisource HTML has no article-wide dd grouping',()=>{
  const folded=x.dom.window.document.querySelector('#toc-조문-sublist');
  if(folded) {
   folded.parentElement.classList.remove('vector-toc-list-item-expanded');
+  // ResourceLoader's live Vector skin hides individual <li> children, not ul.
+  for(const li of folded.querySelectorAll(':scope > li'))li.style.display='none';
   const foldedText=()=>[...x.entries().values()].some(e=>e.node.parentElement.closest('#toc-조문-sublist'));
   assert.equal(foldedText(),true,'real folded Wikisource Vector TOC must be included by default');
   x.context.uiSettings.recognizeCollapsedContent=false;
