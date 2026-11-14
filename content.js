@@ -39,7 +39,7 @@
   const recoveryBlocks = new Set();
   const recoveryByElement = new WeakMap();
   const ownDomChanges = new WeakSet();
-  const BLOCK_TAGS = 'p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption';
+  const BLOCK_TAGS = 'p,li,dt,dd,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption';
   let recoveryObserver = null;
   let recoveryTimer = null;
   let recoveryPage = null;
@@ -599,7 +599,8 @@
         if(!recognize&&details&&element!==details&&!element.closest('summary'))
           reason='hidden';
         else {
-          const mediaWikiPanel=recognize&&element.matches('.mw-collapsible-content');
+          const mediaWikiPanel=recognize&&(element.matches('.mw-collapsible-content')||
+              (element.matches('.vector-toc-list')&&Boolean(element.closest('#vector-toc'))));
           if((element.hidden||element.hasAttribute('inert')||
               element.getAttribute('aria-hidden')==='true')&&
              (!mediaWikiPanel||element.hasAttribute('inert')))reason='hidden';
@@ -849,7 +850,8 @@
         const recognize=typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false;
         const closed=node.closest('details:not([open])');
         if(!recognize&&closed&&closed!==node&&!node.closest('summary'))return true;
-        const mediaWikiPanel=recognize&&node.matches('.mw-collapsible-content');
+        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||
+              (node.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'))));
         if((node.hidden||node.hasAttribute?.('inert')||
             node.getAttribute?.('aria-hidden')==='true')&&
            (!mediaWikiPanel||node.hasAttribute?.('inert')))return true;
