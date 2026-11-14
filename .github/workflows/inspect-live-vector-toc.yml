@@ -2,7 +2,7 @@ name: Diagnose live Vector TOC and collapsed DOM
 on:
   push:
     branches:
-      - fix/v1.1.56.32-real-bottlenecks-and-folded-toc
+      - diagnose/v1.1.56.32-vector-client-js
   workflow_dispatch:
 jobs:
   inspect:
@@ -25,7 +25,9 @@ jobs:
           headers={'User-Agent':'KoreanWebAnnotatorInspect/1.1 (https://github.com/aetherion-nox/korean-web-annotator)'}
           with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=25) as response:
             content=response.read().decode('utf-8')
-          open('toc-page.html','w').write(content)
+          # Real user browsers run Vector in client-js mode. Static HTML
+          # arrives as client-nojs before ResourceLoader executes.
+          open('toc-page.html','w').write(content.replace('client-nojs','client-js'))
           soup=BeautifulSoup(content,'html.parser')
           print('STATIC_DOCUMENT_BYTES',len(content))
           for link in soup.select('link[rel=stylesheet]')[:8]:
