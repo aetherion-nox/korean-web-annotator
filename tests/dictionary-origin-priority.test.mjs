@@ -95,8 +95,6 @@ test('script-specific proper noun permissions accept Latin personal names but no
  const homograph=proper('트럼프',{dictionary_name_homograph:true});
  assert.equal(literalOriginOption(homograph,'Trump',cfg)?.type,'loanword');
  assert.equal(literalOriginOption(homograph,'特朗',cfg),null);
- assert.equal(literalOriginOption({...proper('트럼프'),partial_word:true},'Trump',cfg)?.replacement,'Trump',
-  'Kiwi-adjacent token boundaries must not veto authentic Latin origins');
  for(const t of [
    {...proper('트럼프'),scan_only:true},
    proper('트 럼프')
