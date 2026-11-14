@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.24-invalid-key-null-from-22';
+const CONTENT_SCRIPT_VERSION = '1.1.56.25-safe-null-choice-fallback';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
