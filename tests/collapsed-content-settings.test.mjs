@@ -54,6 +54,16 @@ test('closed native details are always included even with obsolete false flag',(
   dom.window.close();
  }
 });
+test('frame preflight and full scan agree on hydrated Minerva hidden=until-found clauses',()=>{
+ const {dom,c,all}=setup('<div class="mw-parser-output">'+
+  '<section id="content-collapsible-block-1" class="mf-section-2 collapsible-block collapsible-block-js"'+
+  ' hidden="until-found" style="content-visibility:hidden">'+
+  '<p>대한민국 국민의 권리와 의무를 규정한다.</p></section></div>');
+ dom.window.document.body.classList.add('skin-minerva');
+ assert.deepEqual(all(),['대한민국 국민의 권리와 의무를 규정한다.']);
+ assert.equal(c.probeKoreanFrame().eligible,true,'frame preflight must not skip the folded body');
+ dom.window.close();
+});
 test('ordinary hidden elements and script/style remain excluded',()=>{
  const {dom,all}=setup('<div style="display:none">비공개 광고</div>'+
   '<div aria-hidden="true">비공개 템플릿</div>'+
