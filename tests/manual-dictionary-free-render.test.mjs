@@ -19,7 +19,7 @@ function environment(){
  assert.equal(plan.sentences[0].id,'p0'); // Paragraph IDs differ from DOM entry IDs.
  const binding=(id,start,end)=>({target_id:id,sentenceId:plan.sentences[0].id,
   start,end,surface:text.slice(start,end),choices:[{choice_id:'KEEP',annotations:[]}],
-  literalOrigin:{eligible:true,hanja:true,loanword:true,known:[]}});
+  literalOrigin:{eligibleHanja:true,eligibleLoanword:true,hanja:true,loanword:true,known:[]}});
  const backup={requestId:'batch1',batchNumber:1,batchTotal:1,targetCount:3,text:'original',
   bindings:[binding('t0',0,2),binding('t1',3,6),binding('t2',7,9)]};
  const task={operationId:'op',entries,paragraphPlan:plan,manualRequest:'batch1',manualBackup:backup,
