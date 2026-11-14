@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.19-model-zip-compression';
+const CONTENT_SCRIPT_VERSION = '1.1.56.20-duplicate-literal-origins';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
