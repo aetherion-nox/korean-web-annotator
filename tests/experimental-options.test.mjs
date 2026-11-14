@@ -31,7 +31,8 @@ test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>
   assert.equal(result.experimentalAccepted,0);
  }
  assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'nonconversion');
- assert.equal(validateChoices([hanja],reply('t0','原潛')).accepted.length,0,'ordinary mode must not accept raw origins');
+ assert.equal(validateChoices([hanja],reply('t0','原潛')).accepted[0].option.type,'keep',
+  'ordinary mode must not convert unsupported raw origins');
  assert.equal(choose(hanja,'元箴',{experimentalHanja:true}).accepted.length,1,'matching dictionary spelling can be proposed independently');
 });
 
@@ -58,7 +59,8 @@ test('identical literal origin and dictionary spelling remain separate evidence 
   const dictionary=choose(target,existingKey,{experimentalLoanword:true});
   assert.equal(dictionary.experimentalAccepted,0);
   assert.equal(dictionary.accepted[0].option.entry_id,target.options.find(o=>o.choice_id===existingKey).entry_id);
-  assert.equal(choose(target,raw,{}).accepted.length,0,'open-origin still requires enabling loanword mode');
+  assert.equal(choose(target,raw,{}).accepted[0].option.type,'keep',
+   'open-origin still requires enabling loanword mode');
  }
  const oldHanja={...hanja,options:[
   hanja.options[0],{...hanja.options[1],replacement:'原潛'}
@@ -68,8 +70,8 @@ test('identical literal origin and dictionary spelling remain separate evidence 
  assert.equal(literal.experimentalAccepted,1);
  assert.equal(literal.accepted[0].option.entry_id,'experimental:hanja');
  assert.equal(choose(oldHanja,'c0',{experimentalHanja:true}).accepted[0].option.entry_id,10);
- assert.equal(choose({...oldHanja,dictionary_person_name:true},'原潛',{experimentalHanja:true}).unresolved.length,1,
-  'personal-name Hanja protection must remain enforced');
+ assert.equal(choose({...oldHanja,dictionary_person_name:true},'原潛',{experimentalHanja:true}).accepted[0].option.type,'keep',
+  'personal-name Hanja protection still rejects the proposed conversion');
 });
 
 test('Latin spelling is validated as loanword without trusting an invented pool key',()=>{
@@ -77,7 +79,7 @@ test('Latin spelling is validated as loanword without trusting an invented pool 
  assert.equal(result.accepted.length,1);assert.equal(result.accepted[0].option.type,'loanword');
  assert.deepEqual(projectAnnotation(loan.context,{...result.accepted[0].target,...result.accepted[0].option}).map(a=>a.replacement),['game']);
  for(const id of ['x0','p0','KEEP '])
-  assert.equal(choose(loan,id,{experimentalLoanword:true}).unresolved.length,1,id);
+  assert.equal(choose(loan,id,{experimentalLoanword:true}).accepted[0].option.type,'keep',id);
  for(const id of ['c99','n999']){
   const accepted=choose(loan,id,{experimentalLoanword:true});
   assert.equal(accepted.accepted[0].option.type,'keep',id);
@@ -94,7 +96,7 @@ test('script, alignment and enabled-mode guards reject invented or malformed val
   [loan,' game',{experimentalLoanword:true}],
   [hanja,'原潛\nKEEP',{experimentalHanja:true}]
  ]){
-  assert.equal(choose(target,raw,config).unresolved.length,1,JSON.stringify(raw));
+  assert.equal(choose(target,raw,config).accepted[0].option.type,'keep',JSON.stringify(raw));
  }
 });
 
@@ -105,7 +107,7 @@ test('Hanja proper nouns are eligible except flagged personal names',()=>{
  for(const flag of ['suspected_person_name','dictionary_person_name','dictionary_name_homograph']){
   const t={...hanja,[flag]:true};
   assert.equal(canProposeExperimentalOption(t,'hanja'),false,flag);
-  assert.equal(choose(t,'原潛',{experimentalHanja:true}).unresolved.length,1,flag);
+  assert.equal(choose(t,'原潛',{experimentalHanja:true}).accepted[0].option.type,'keep',flag);
   assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys remain available');
  }
 });
@@ -129,7 +131,7 @@ test('compound components accept aligned Latin and Hanja origins without a bound
  assert.equal(hanjaResult.accepted.length,1);
  assert.deepEqual(projectAnnotation(compound.context,{...compound,...hanjaResult.accepted[0].option})
   .map(a=>[a.start,a.end,a.replacement]),[[2,4,'政策']]);
- assert.equal(choose(compound,'經濟政策',{experimentalHanja:true}).unresolved.length,1,
+ assert.equal(choose(compound,'經濟政策',{experimentalHanja:true}).accepted[0].option.type,'keep',
   'extra Hanja characters must not overwrite a partial source span');
 
  const partialDictionary={...hanja};
@@ -152,7 +154,7 @@ test('cross-batch, duplicate, extra fields and obsolete experimental arrays are 
 test('cross-space lexical targets cannot be created from dictionary alias spellings',()=>{
  const t={target_id:'t2',start:0,end:6,surface:'이산화 탄소',context:'이산화 탄소',options:[
   {choice_id:'KEEP',type:'keep',replacement:'이산화 탄소',entry_id:null,definitions:[]}]};
- assert.equal(choose(t,'二酸化炭素',{experimentalHanja:true}).accepted.length,0);
+ assert.equal(choose(t,'二酸化炭素',{experimentalHanja:true}).accepted[0].option.type,'keep');
  assert.equal(literalOriginOption(t,'二酸化',{experimentalHanja:true}),null);
  assert.equal(choose(t,'KEEP',{experimentalHanja:true}).accepted[0].option.type,'keep');
 });
