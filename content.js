@@ -1296,7 +1296,7 @@
   async function verifyPageRepairOrigin(task,repair,sentence,targets,repairScopes){
     const {start,end,surface,choice_id}=repair;
     if(!sentence||sentence.text.slice(start,end)!==surface)return null;
-    const hanja=/\\p{Script=Han}/u.test(choice_id);
+    const hanja=/\p{Script=Han}/u.test(choice_id);
     const freelyEnabled=hanja
       ?task.modes.hanja===true&&task.manualBackup?.experimentalHanja===true
       :task.modes.loanword===true&&task.manualBackup?.experimentalLoanword===true;
