@@ -30,7 +30,7 @@ const RESERVED=/^[cnxp]\d+$/i;
 // Script-specific permissions: NNP is not itself a veto; personal-name Hanja is.
 export function canProposeExperimentalOption(target,type){
  const surface=target?.surface||'';
- // partial_word is advisory: a compound component can have its own valid origin.
+ // A compound component can have its own valid origin even when adjacent to other word tokens.
  // Source-span projection, Hanja character count/readings, and whitespace checks
  // remain the authoritative local guards for literal origins.
  if(!/[가-힣]/u.test(surface)||/\s/u.test(surface)||target.scan_only===true)return false;
