@@ -22,7 +22,7 @@ test('v1.1.56.22 n/c option pools and native sense definitions are unchanged',()
  assert.deepEqual(Object.keys(payload.targets[0].options),['n0','n1','c0']);
  assert.equal(payload.candidates.length,3);
  assert.match(buildReviewInstructions(),/Nonconversion dictionary senses use their n key/);
- assert.match(buildReviewInstructions(),/keeps the Korean source as if c were null/);
+ assert.match(buildReviewInstructions(),/Any invalid or unavailable choice is treated as null/);
 });
 
 test('valid n/c keys keep the exact original dictionary sense; unknown numeric keys mean null',()=>{
