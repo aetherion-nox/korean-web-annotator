@@ -45,7 +45,7 @@ try{
   const part=(a,b)=>{const i=source.indexOf(a),j=source.indexOf(b,i);if(i<0||j<i)throw Error('missing '+a);return source.slice(i,j);};
   const harness=[
     '(()=>{',
-    'const OWN_RUBY=\\'ruby[kra-annotated="true"]\\';',
+    "const OWN_RUBY='ruby[kra-annotated=\"true\"]';",
     'let uiSettings={};let lastScanStats=null;',
     'const ownDomChanges=new WeakSet(),seenSources=new Set(),recoveryBlocks=new Set();',
     'const analyzedNodeVersions=new WeakMap();',
@@ -69,7 +69,7 @@ try{
     '   css:{display:getComputedStyle(section).display,contentVisibility:getComputedStyle(section).contentVisibility},',
     '   stats:lastScanStats};',
     '};})();'
-  ].join('\\n');
+  ].join('\n');
   await page.addScriptTag({content:harness});
   const liveScan=await page.evaluate(()=>window.__KRA_LIVE_CHECK__());
   console.log('LIVE_SCANNER_BEFORE_EXPAND',JSON.stringify(liveScan));
