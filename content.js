@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.22-flexible-manual-json';
+  const VERSION = '1.1.56.24-invalid-key-null-from-22';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
