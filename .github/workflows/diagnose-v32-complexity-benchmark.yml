@@ -1,0 +1,15 @@
+name: Benchmark optimized v1.1.56.32 actual Python sources
+on:
+  push:
+    branches:
+      - diagnose/v1.1.56.32-benchmark
+  workflow_dispatch:
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare optimized local code complexity to v31 baseline
+        run: |
+          PYTHONPATH=python/browser-support python3 -u scripts/performance_complexity_probe.py
