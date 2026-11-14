@@ -45,7 +45,11 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         no_protection=await Engine(self.path,tokenizer=t).analyze('안중근',
             dict(hanja=True,loanword=False,nameProtection=False,filterDictionaryPeople=True))
         self.assertEqual(no_protection['annotations'],[])
-        self.assertEqual(no_protection['targets'],[])
+        self.assertEqual(len(no_protection['targets']),1)
+        person_target=no_protection['targets'][0]
+        self.assertEqual(person_target['verified_person_hanja'],['安重根'])
+        self.assertTrue(any(o['entry_id']==person and o['replacement']=='安重根'
+                            for o in person_target['options'] if o['type']=='hanja'))
 
     async def test_dictionary_queries_keep_spaced_variants_but_targets_never_cross_spaces(self):
         entry=self.add('이산화^탄소','二酸化炭素','명사','탄소의 산화물.')
