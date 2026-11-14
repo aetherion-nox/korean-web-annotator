@@ -36,7 +36,7 @@ test('manual and API export use identical allowed keys and validation rejects re
  const wire=modelTargets([t]);assert.deepEqual(wire[0].options.map(o=>o.choice_id),['KEEP','c0','n0']);
  const manual=JSON.parse(buildManualPrompt('가',[t],'batch').split('\n').at(-1));
  assert.deepEqual(manual.targets[0].options,packed(t).targets[0].options);
- assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]}).accepted.length,0);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]}).accepted[0].option.type,'keep');
  assert.equal(validateChoices([t],{results:[{t:'t0',c:null}]}).accepted.length,1);
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'n0'}]}).accepted.length,1);
  assert.equal(modelTargets([target('MAG',[option('c0','명사')])])[0].pos_conflict,true);
