@@ -97,7 +97,8 @@ function compatible(tags,pos){
  return classes.includes(null)?null:false;
 }
 export function filterReviewTarget(target,config={}){
- if(config.reviewPosFilter===false||target.dictionary_name_homograph===true||target.suspected_person_name===true)return target;
+ if(config.reviewPosFilter===false||target.dictionary_name_homograph===true||target.suspected_person_name===true||
+   (target.dictionary_person_name===true&&target.verified_person_hanja?.length))return target;
  const tags=occurrenceTags(target);
  if(!tags)return target;
  const original=target.options.filter(option=>option.type!=='keep');
@@ -112,7 +113,8 @@ export function filterReviewTargets(targets,config={}){return targets.map(target
 
 // POS evidence is redundant only when all surviving senses were locally verified.
 export function canTrimReviewMorphology(target,config={}){
- if(config.reviewPosFilter===false||target.pos_conflict===true||target.dictionary_name_homograph===true||target.suspected_person_name===true)return false;
+ if(config.reviewPosFilter===false||target.pos_conflict===true||target.dictionary_name_homograph===true||target.suspected_person_name===true||
+   (target.dictionary_person_name===true&&target.verified_person_hanja?.length))return false;
  const tags=occurrenceTags(target);
  if(!tags)return false;
  const choices=target.options.filter(option=>option.type!=='keep');
