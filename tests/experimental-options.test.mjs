@@ -56,13 +56,41 @@ test('script, alignment and enabled-mode guards reject invented or malformed val
  }
 });
 
-test('never invent new origins for flagged proper names or incomplete source words',()=>{
- for(const flag of ['proper_noun','suspected_person_name','dictionary_person_name','dictionary_name_homograph','partial_word']){
-  const t={...hanja,[flag]:true};
-  assert.equal(canProposeExperimentalOption(t),false);
-  assert.equal(choose(t,'原潛',{experimentalHanja:true}).unresolved.length,1,flag);
-  assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys are independent of literal filter');
+test('Latin-script origin accepts flagged proper names and people but not partial or scan-only spans',()=>{
+ for(const flag of ['proper_noun','suspected_person_name','dictionary_person_name','dictionary_name_homograph']){
+  const t={...loan,[flag]:true};
+  assert.equal(canProposeExperimentalOption(t,'loanword'),true,flag);
+  assert.equal(choose(t,'game',{experimentalLoanword:true}).accepted.length,1,flag);
+  assert.equal(choose(t,'game',{experimentalLoanword:false}).accepted.length,0,flag);
  }
+ for(const flag of ['partial_word','scan_only']){
+  const t={...loan,[flag]:true};
+  assert.equal(canProposeExperimentalOption(t,'loanword'),false,flag);
+  assert.equal(choose(t,'game',{experimentalLoanword:true}).accepted.length,0,flag);
+ }
+ const person={target_id:'t2',start:0,end:3,surface:'트럼프',context:'트럼프',proper_noun:true,
+  suspected_person_name:true,options:[{choice_id:'KEEP',type:'keep',replacement:'트럼프'}]};
+ assert.equal(choose(person,'Trump',{experimentalLoanword:true}).accepted.length,1);
+ assert.equal(choose(person,'Trump',{experimentalHanja:true}).accepted.length,0);
+});
+
+test('Hanja experiment allows non-person NNP but rejects flags identifying a possible human',()=>{
+ const company={target_id:'t3',start:0,end:2,surface:'삼성',context:'삼성',
+  proper_noun:true,options:[{choice_id:'KEEP',type:'keep',replacement:'삼성'}]};
+ assert.equal(canProposeExperimentalOption(company,'hanja'),true);
+ assert.equal(choose(company,'三星',{experimentalHanja:true}).accepted.length,1);
+ assert.equal(choose(company,'三星',{experimentalHanja:false}).accepted.length,0);
+ for(const flag of ['suspected_person_name','dictionary_person_name','dictionary_name_homograph']){
+  const t={...company,[flag]:true};
+  assert.equal(canProposeExperimentalOption(t,'hanja'),false,flag);
+  assert.equal(choose(t,'三星',{experimentalHanja:true}).unresolved.length,1,flag);
+  assert.equal(choose({...hanja,[flag]:true},'c0',{experimentalHanja:true}).accepted.length,1,
+   'dictionary-backed choices remain independent of freeform Hanja restrictions');
+  assert.equal(choose({...loan,[flag]:true},'game',{experimentalLoanword:true}).accepted.length,1);
+ }
+ const incomplete={...company,partial_word:true};
+ assert.equal(canProposeExperimentalOption(incomplete,'hanja'),false);
+ assert.equal(choose(incomplete,'三星',{experimentalHanja:true}).unresolved.length,1);
 });
 
 test('cross-batch, duplicate, extra fields and obsolete experimental arrays are rejected',()=>{
