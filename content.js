@@ -612,8 +612,15 @@
           // Live Vector CSS hides each child <li> (display:none), *not* the
           // enclosing <ul>. This exception is limited to these actual TOC
           // list items; unrelated hidden spans/templates are still excluded.
+          // Minerva mobile folds the *entire* article section (e.g.
+          // #mf-section-2 for 조문) with display:none, not a TOC child.
+          // Only bypass visibility for a top-level Minerva article section;
+          // unrelated hidden ads/templates and hidden descendants stay excluded.
+          const minervaArticleSection=recognize&&document.body?.classList.contains('skin-minerva')&&
+              element.matches('section.collapsible-block[id^="mf-section-"]')&&
+              element.parentElement?.matches('.mw-parser-output');
           const mediaWikiPanel=recognize&&(element.matches('.mw-collapsible-content')||
-              vectorList||vectorChild);
+              vectorList||vectorChild||minervaArticleSection);
           if((element.hidden||element.hasAttribute('inert')||
               element.getAttribute('aria-hidden')==='true')&&
              (!mediaWikiPanel||element.hasAttribute('inert')))reason='hidden';
@@ -869,7 +876,11 @@
         const vectorChild=recognize&&node.matches('.vector-toc-list-item')&&
           node.parentElement?.matches('.vector-toc-list')&&
           Boolean(node.closest('#vector-toc'));
-        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||vectorList||vectorChild);
+        const minervaArticleSection=recognize&&document.body?.classList.contains('skin-minerva')&&
+          node.matches('section.collapsible-block[id^="mf-section-"]')&&
+          node.parentElement?.matches('.mw-parser-output');
+        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||
+          vectorList||vectorChild||minervaArticleSection);
         if((node.hidden||node.hasAttribute?.('inert')||
             node.getAttribute?.('aria-hidden')==='true')&&
            (!mediaWikiPanel||node.hasAttribute?.('inert')))return true;
