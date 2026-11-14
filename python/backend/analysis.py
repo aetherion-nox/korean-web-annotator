@@ -226,6 +226,32 @@ class Engine:
                 else:annotations.append({k:v for k,v in annotation.items() if k not in ('entry_id','definitions')})
             targets=merge_targets(text,targets+loan['targets'])
         targets=sorted(targets+mixed['targets']+homograph_targets+suspect_targets,key=lambda t:(t['start'],t['end']))
+        # Only opt-in experimental Latin review gets additional proper-name
+        # targets. Keep local person protection: these are KEEP-only options,
+        # never an automatic conversion or a speculative Hanja reading.
+        if modes.get('experimentalLoanwordAudit',False) and modes.get('loanword',False):
+            covered=[(t['start'],t['end']) for t in targets]
+            covered += [(a['start'],a['end']) for a in annotations]
+            dictionary_name_spans=set(dictionary_names)
+            for token in tokens:
+                a=token.start;b=a+token.length
+                if token.tag.split('-')[0]!='NNP' and (a,b) not in dictionary_name_spans:continue
+                if not (0<=a<b<=len(text)):continue
+                word=text[a:b]
+                if not re.fullmatch(r'[가-힣]{2,80}',word) or token.form!=word:continue
+                # Never take only one component of a longer lexical word.
+                if a and '가'<=text[a-1]<='힣':continue
+                if b<len(text) and '가'<=text[b]<='힣':
+                    right=next((t for t in tokens if t.start==b),None)
+                    if right is None or not right.tag.startswith('J'):continue
+                start=to_utf16(text,a);end=to_utf16(text,b)
+                if any(start<y and x<end for x,y in covered):continue
+                targets.append(dict(target_id='latin-audit',start=start,end=end,surface=word,
+                    context=text,experimental_loanword_audit=True,
+                    options=[dict(choice_id='KEEP',type='keep',replacement=word,
+                                  entry_id=None,definitions=[])]))
+                covered.append((start,end))
+            targets.sort(key=lambda t:(t['start'],t['end']))
         # Complete every candidate, including sibling origins owned by mixed words.
         option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
         option_metadata=await self.dictionary.get_metadata_for_entries(option_definitions) if self.dictionary is not None else {}
