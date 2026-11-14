@@ -125,7 +125,8 @@ class Engine:
         converter=ConverterService(self.tokenizer,self.disambiguation)
         tokens=await self.tokens(text)
         segments,_=await converter.convert(text,conversion_lookup,tokens=tokens)
-        dictionary_names,homograph_evidence=await dictionary_name_evidence(text,tokens,self.lookup_fn)
+        dictionary_names,homograph_evidence,known_person_hanja=await dictionary_name_evidence(
+            text,tokens,self.lookup_fn,include_person_hanja=True)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
         name_protection=modes.get('nameProtection',True) is not False
         homograph_evidence=homograph_evidence if name_protection else []
@@ -301,6 +302,34 @@ class Engine:
                         options=[dict(choice_id='KEEP',type='keep',replacement=word,
                                       entry_id=None,definitions=[])]))
                 targets.sort(key=lambda t:(t['start'],t['end']))
+        # Exact dictionary-backed human names are an exception to the blanket
+        # person filter, NOT an exception to its anti-guessing purpose. Only a
+        # full name with a person entry containing its aligned Hanja may be
+        # reviewed. Unknown/surname-only names retain v1.1.56.25 null behavior.
+        if modes.get('hanja',True):
+            for (a,b),records in known_person_hanja.items():
+                start=to_utf16(text,a);end=to_utf16(text,b)
+                if any(start<x['end'] and x['start']<end for x in annotations):continue
+                overlapping=[t for t in targets if start<t['end'] and t['start']<end]
+                if overlapping and any(t['start']!=start or t['end']!=end for t in overlapping):
+                    continue
+                target=overlapping[0] if overlapping else dict(
+                    start=start,end=end,surface=text[a:b],context=text,
+                    options=[dict(choice_id='KEEP',type='keep',replacement=text[a:b],
+                                  entry_id=None,definitions=[])])
+                if not overlapping:targets.append(target)
+                trusted=target.setdefault('verified_person_hanja',[])
+                for record in records:
+                    origin=record['replacement']
+                    if origin not in trusted:trusted.append(origin)
+                    if any(o.get('entry_id')==record['entry_id'] and
+                           o.get('replacement')==origin for o in target['options']):
+                        continue
+                    target['options'].append(dict(
+                        choice_id='person-dictionary',type='hanja',replacement=origin,
+                        entry_id=record['entry_id'],definitions=record['definitions']))
+                target['dictionary_person_name']=True
+            targets.sort(key=lambda t:(t['start'],t['end']))
         # Complete every candidate, including sibling origins owned by mixed words.
         option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
         option_metadata=await self.dictionary.get_metadata_for_entries(option_definitions) if self.dictionary is not None else {}
@@ -312,7 +341,10 @@ class Engine:
                 if option['type']=='keep':continue
                 option={**option,**option_metadata.get(option['entry_id'],{})}
                 definitions=option_definitions.get(option['entry_id'],option['definitions'])
-                if filter_dictionary_people and is_dictionary_person({**option,'definitions':definitions}):
+                dictionary_proven_person=(option['type']=='hanja' and
+                    option['replacement'] in target.get('verified_person_hanja',[]) and
+                    target.get('dictionary_person_name') is True)
+                if filter_dictionary_people and is_dictionary_person({**option,'definitions':definitions}) and not dictionary_proven_person:
                     removed_person_sense=True
                     continue
                 if option['type']=='nonconversion':
