@@ -1,0 +1,45 @@
+name: Diagnose live Vector TOC and collapsed DOM
+on:
+  push:
+    branches:
+      - fix/v1.1.56.32-real-bottlenecks-and-folded-toc
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect live DOM with Chrome
+        run: |
+          command -v google-chrome || command -v chromium || true
+          npm install --no-save --ignore-scripts --no-audit --no-fund playwright-core
+          cat > /tmp/inspect-toc.mjs <<'SCRIPT'
+          import { chromium } from 'playwright-core';
+          const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
+          const page=await browser.newPage({viewport:{width:1440,height:900}});
+          await page.goto('https://ko.wikisource.org/wiki/%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)',{waitUntil:'domcontentloaded',timeout:45000});
+          await page.waitForTimeout(1800);
+          const inspect=()=>page.evaluate(()=>{
+            const sub=document.querySelector('#toc-조문-sublist');
+            const els=[...document.querySelectorAll('.vector-toc-list')];
+            const trail=e=>{const result=[];while(e&&result.length<12){
+              const c=getComputedStyle(e);
+              result.push({tag:e.tagName,id:e.id,cls:String(e.className).slice(0,180),display:c.display,visibility:c.visibility,contentVisibility:c.contentVisibility,ariaHidden:e.getAttribute('aria-hidden'),hidden:e.hidden});
+              e=e.parentElement;
+            }return result;};
+            return {url:location.href,allSubLists:els.length,subListText:sub?.innerText?.slice(0,100),htmlText:sub?.textContent?.slice(0,100),trail:sub?trail(sub):null,
+              firstList:els[0]?trail(els[0]):null,button:document.querySelector('#toc-조문 .vector-toc-toggle')?.outerHTML,
+              dropdowns:document.querySelectorAll('[aria-expanded]').length};
+          });
+          console.log('BEFORE',JSON.stringify(await inspect()));
+          await page.locator('#toc-조문 .vector-toc-toggle').first().click({timeout:8000}).catch(e=>console.log('CLICK_FAILED',e.message.slice(0,200)));
+          await page.waitForTimeout(300);
+          console.log('AFTER',JSON.stringify(await inspect()));
+          await browser.close();
+          SCRIPT
+          cp /tmp/inspect-toc.mjs inspect-toc.mjs
+          node inspect-toc.mjs
