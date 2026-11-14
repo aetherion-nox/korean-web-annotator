@@ -21,10 +21,12 @@ const row=(sentence_id,op,old_target_ids,start,end,surface,choice_id)=>({
 function fixture(text,targets,opts={}){
  const scopes=new Map(targets.map(t=>[t.target_id,{
   text,allTargets:targets.filter(x=>!x.scan_only),localAnnotations:opts.localAnnotations||[],
-  protected_ranges:opts.protected_ranges||[],selected:opts.selected||null,
+  protected_ranges:opts.protected_ranges||[],person_name_ranges:opts.person_name_ranges||[],
+  selected:opts.selected||null,
   existingRepairs:opts.existingRepairs||[]
  }]));
  const config={context:text,smartSegmentation:true,reviewPosFilter:false,
+  experimentalHanja:opts.experimentalHanja===true,experimentalLoanword:opts.experimentalLoanword===true,
   repairModes:{hanja:true,loanword:true},repairScopes:scopes};
  const wire=buildReviewPayload(text,targets,config).payload;
  return {config,targets,sid:wire.sentences[0].sentence_id};
@@ -67,6 +69,29 @@ test('wrong POS does not prevent repair, but protected proper names are never in
  const name=fixture(text,[t],{protected_ranges:[[0,2]]});
  assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,'game')]).accepted.length,0);
  assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,'KEEP')]).accepted.length,1);
+});
+
+test('opted-in proper-name repairs distinguish Latin persons from Hanja non-person names',()=>{
+ const personText='트럼프';
+ const person={...target('t0',personText,0,3,'可'),proper_noun:true,dictionary_person_name:true};
+ const personFixture=fixture(personText,[person],{protected_ranges:[[0,3]],person_name_ranges:[[0,3]],
+  experimentalLoanword:true,experimentalHanja:true});
+ const latin=validate(personFixture,[row(personFixture.sid,'replace',['t0'],0,3,personText,'Trump')]);
+ assert.equal(latin.accepted.length,1,JSON.stringify(latin.rejected));
+ assert.equal(latin.accepted[0].annotations[0].replacement,'Trump');
+ const hanja=validate(personFixture,[row(personFixture.sid,'replace',['t0'],0,3,personText,'特朗普')]);
+ assert.equal(hanja.accepted.length,0);
+ assert.match(hanja.rejected[0].reason,/personal-name Hanja/);
+ const companyText='삼성';
+ const company={...target('t0',companyText,0,2,'可'),proper_noun:true};
+ const companyFixture=fixture(companyText,[company],{protected_ranges:[[0,2]],experimentalHanja:true});
+ const properHanja=validate(companyFixture,[row(companyFixture.sid,'replace',['t0'],0,2,companyText,'三星')]);
+ assert.equal(properHanja.accepted.length,1,JSON.stringify(properHanja.rejected));
+ assert.equal(properHanja.accepted[0].annotations[0].replacement,'三星');
+ const disabled=fixture(personText,[person],{protected_ranges:[[0,3]],person_name_ranges:[[0,3]]});
+ assert.equal(validate(disabled,[row(disabled.sid,'replace',['t0'],0,3,personText,'Trump')]).accepted.length,0);
+ const masked=fixture(companyText,[company],{protected_ranges:[[0,2]],person_name_ranges:[[0,2]],experimentalHanja:true});
+ assert.equal(validate(masked,[row(masked.sid,'replace',['t0'],0,2,companyText,'三星')]).accepted.length,0);
 });
 
 test('omitted word with no existing target can be added in a one-pass scan-only sentence',()=>{
