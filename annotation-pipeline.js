@@ -14,7 +14,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const bypassCache=selectionReview || message.forceRegenerate;
  enabled=enabled || reviewAll || smartSegmentation;
  if(typeof message.operationId!=='string'||!message.operationId||!Array.isArray(sentences)||!sentences.length||sentences.length>20000||sentences.some(s=>typeof s.id!=='string'||!s.id||typeof s.text!=='string'||!s.text||s.text.length>20000)||new Set(sentences.map(s=>s.id)).size!==sentences.length)throw Error('Invalid sentence operation');
- const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false,filterDictionaryPeople:message.filterDictionaryPeople!==false};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
+ const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false,filterDictionaryPeople:message.filterDictionaryPeople!==false,experimentalLoanwordAudit:message.experimentalLoanwordAudit===true&&enabled&&!!message.modes?.loanword};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
  const stats={model_accepted:0,model_keep:0,model_literal_origins:0,repair_applied:0,repair_rejected:0,repair_offset_corrected:0,local_determined:0,pending:0,model_resolved:0,unresolved:0,structural_rejections:0,rejected_options:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const emit=(type,extra={})=>{signal?.throwIfAborted();post({type,operationId:message.operationId,...(smartSegmentation?{smartSegmentation:true}:{}),engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
@@ -149,7 +149,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     choices:options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))})),
     ...((config.experimentalHanja===true||config.experimentalLoanword===true)?{literalOrigin:{
      hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true,
-     eligible:canProposeExperimentalOption(target),
+     eligible:(config.experimentalHanja===true&&canProposeExperimentalOption(target,'hanja'))||(config.experimentalLoanword===true&&canProposeExperimentalOption(target,'loanword')),
      known:options.filter(o=>o.type==='hanja'||o.type==='loanword').map(o=>({type:o.type,replacement:o.replacement})),
       morphology:target.morphology||[]
     }}:{})};
