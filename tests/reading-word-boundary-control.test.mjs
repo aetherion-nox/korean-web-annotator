@@ -34,7 +34,10 @@ test('reading check defaults on but can be turned off without bypassing boundary
  assert.equal(literalOriginOption(t,'韓',{experimentalHanja:true}),null);
  assert.equal(literalOriginOption(t,'韓',{experimentalHanja:true,hanjaReadingCheck:false})?.type,'hanja');
  assert.equal(explainLiteralOriginRejection(t,'韓',{experimentalHanja:true}),'hanja_reading_conflict');
- assert.equal(literalOriginOption({...t,proper_noun:true},'韓',{experimentalHanja:true,hanjaReadingCheck:false}),null);
+ assert.equal(literalOriginOption({...t,proper_noun:true},'韓',{experimentalHanja:true,hanjaReadingCheck:false})?.type,'hanja',
+  'a POS-only NNP hint must not block a non-person proper noun');
+ for(const flag of ['dictionary_person_name','dictionary_name_homograph','suspected_person_name'])
+  assert.equal(literalOriginOption({...t,[flag]:true},'韓',{experimentalHanja:true,hanjaReadingCheck:false}),null,flag);
  assert.equal(literalOriginOption(t,'韓字',{experimentalHanja:true,hanjaReadingCheck:false}),null);
  const html=await readFile(new URL('../options.html',import.meta.url),'utf8');
  assert.match(html,/<input id="hanjaReadingCheck" type="checkbox" checked/);
