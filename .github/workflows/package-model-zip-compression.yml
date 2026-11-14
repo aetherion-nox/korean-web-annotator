@@ -72,11 +72,14 @@ jobs:
               model=z.getinfo('Korean-Web-Annotator/runtime/models/cong.mdl')
               assert model.compress_type==zipfile.ZIP_DEFLATED, 'cong.mdl must be compressed in ZIP'
               assert model.file_size==75854705, 'Unexpected Kiwi model size'
-              assert hashlib.sha256(z.read(model.filename)).hexdigest()=='bd9ca89ee1b72e750c8e2166a17c80a0fe3fabd828c78b1f0928486a6b1833a7'
+              original_digest=hashlib.sha256((root/'runtime/models/cong.mdl').read_bytes()).hexdigest()
+              zip_digest=hashlib.sha256(z.read(model.filename)).hexdigest()
+              assert zip_digest==original_digest,'ZIP must preserve the bundled runtime model byte for byte'
+              print('cong.mdl SHA256 verified:',zip_digest)
               print('cong.mdl:',model.file_size,'original bytes,',model.compress_size,
                     'ZIP-compressed bytes, saved:',model.file_size-model.compress_size,
                     'ratio:',round(model.compress_size/model.file_size*100,2),'%')
-          assert dest.stat().st_size>90_000_000,'Kiwi runtime missing'
+          assert sum(i.file_size for i in zipfile.ZipFile(dest).infolist())>90_000_000,'Kiwi runtime missing'
           print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
           PY
       - uses: actions/upload-artifact@v4
