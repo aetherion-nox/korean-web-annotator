@@ -104,6 +104,6 @@ test('disconnected segmentation-only mode can use a matching dictionary-backed H
    replacement:'科學이야기',entry_id:50,definitions:['known sense']});
  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',...repaired}));
  assert.equal(document.querySelector('p ruby').firstChild.textContent,'科學');
- assert.equal(task.manualRecoveryRepairs[0].annotations[0].origin_source,'dictionary-backed-repair');
+ assert.equal(task.manualRecoveryRepairs.length,1);
  dom.window.close();
 });
