@@ -481,7 +481,8 @@
       attributes:true,attributeFilter:['class','style','hidden','aria-hidden','inert','open']};
     const observed=new WeakSet();
     const observeOpenShadows=()=>{
-      for(const root of (indexedTextRoots()||openTextRoots()).slice(1))if(!observed.has(root)){
+      const roots=typeof indexedTextRoots==='function'?indexedTextRoots():null;
+      for(const root of (roots||openTextRoots()).slice(1))if(!observed.has(root)){
         observed.add(root);automaticObserver.observe(root,observeOptions);
       }
     };
@@ -564,29 +565,6 @@
 
   // Furiganator's TreeWalker -> conversion Map -> single fragment insertion pass.
   // Korean rt contains Hangul, so exclude the entire ruby subtree on later runs.
-  // An explicit collapsed article panel is still a real DOM subtree. Sites often
-  // use aria-controls rather than a recognizable CSS class to hide its text.
-  // Compute targets once per scan, never query selectors for every text node.
-  // Only article/main content qualifies: advertisements, menus and unrelated
-  // hidden templates must keep their ordinary visibility restrictions.
-  function controlledCollapsedArticlePanels() {
-    const panels=new Set();
-    for(const control of document.querySelectorAll('[aria-expanded="false"][aria-controls]')){
-      const ids=(control.getAttribute('aria-controls')||'').trim().split(/\s+/);
-      for(const id of ids){
-        if(!id)continue;
-        const panel=document.getElementById(id);
-        if(!panel||panel===control||control.contains(panel)||
-           !panel.matches('section,article,div,[role="region"],[role="group"]')||
-           !panel.closest('main,article,[role="main"],[itemprop~="articleBody"]')||
-           panel.closest('nav,aside,header,footer,[role="navigation"],[role="complementary"]'))
-          continue;
-        panels.add(panel);
-      }
-    }
-    return panels;
-  }
-
   function openTextRoots(root=document.body) {
     if(!root)return [];
     if(root===document.body){const cached=indexedTextRoots();if(cached)return cached;}
@@ -704,6 +682,29 @@
   function indexedTextRoots(){
     const state=ensureTextIndex();
     return state?[...state.roots].filter(root=>root===document.body||root.host?.isConnected):null;
+  }
+
+  // An explicit collapsed article panel is still a real DOM subtree. Sites often
+  // use aria-controls rather than a recognizable CSS class to hide its text.
+  // Compute targets once per scan, never query selectors for every text node.
+  // Only article/main content qualifies: advertisements, menus and unrelated
+  // hidden templates must keep their ordinary visibility restrictions.
+  function controlledCollapsedArticlePanels() {
+    const panels=new Set();
+    for(const control of document.querySelectorAll('[aria-expanded="false"][aria-controls]')){
+      const ids=(control.getAttribute('aria-controls')||'').trim().split(/\s+/);
+      for(const id of ids){
+        if(!id)continue;
+        const panel=document.getElementById(id);
+        if(!panel||panel===control||control.contains(panel)||
+           !panel.matches('section,article,div,[role="region"],[role="group"]')||
+           !panel.closest('main,article,[role="main"],[itemprop~="articleBody"]')||
+           panel.closest('nav,aside,header,footer,[role="navigation"],[role="complementary"]'))
+          continue;
+        panels.add(panel);
+      }
+    }
+    return panels;
   }
 
   function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false) {
@@ -2140,7 +2141,7 @@
     const domScanStarted=Date.now();
     // Explicit user scans are authoritative: rebuild the index to catch
     // shadow roots attached to existing hosts without a DOM childList event.
-    if(!message.automatic)ensureTextIndex(true);
+    if(!message.automatic&&typeof ensureTextIndex==='function')ensureTextIndex(true);
     const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
     const domScanMs=Date.now()-domScanStarted;
     const scan={...(lastScanStats||{}),collected:entries.size};
