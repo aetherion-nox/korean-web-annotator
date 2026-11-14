@@ -1540,8 +1540,12 @@
       if(!choice&&sentence)
         try{choice=await manualLiteralChoice(binding,row.c,sentence,task,row);}
         catch{choice=null;}
+      // An identified row with an unusable origin is not a structural
+      // failure: preserve the Korean source. A genuine approved literal was
+      // already checked by manualLiteralChoice above (including Latin KEEP).
+      if(!choice)choice=binding.choices.find(o=>o.choice_id==='KEEP');
       if(!choice){
-        reasons.set(id,'无效 c：'+String(row?.c??'(null)'));continue;
+        reasons.set(id,'当前目标缺少可用的原文保留选项');continue;
       }
       saved.set(id,{binding,choice});
     }
