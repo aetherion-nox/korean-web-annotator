@@ -48,7 +48,8 @@ export function validateSegmentationRepairs(targets,response,config={}){
  if(!config.smartSegmentation)return {accepted:[],rejected:[]};
  if(response?.repairs===undefined)return {accepted:[],rejected:[]};
  const payload=buildReviewPayload(config.context||'',targets,config).payload;
+ const repairConfig={...config,repairTargets:targets};
  return validateSegmentationRepairsCore(targets,response,{
-  ...config,payload,repairTargets:targets,verifyOrigin:details=>verifySegmentationOrigin({...details,config})
+  ...repairConfig,payload,verifyOrigin:details=>verifySegmentationOrigin({...details,config:repairConfig})
  });
 }
