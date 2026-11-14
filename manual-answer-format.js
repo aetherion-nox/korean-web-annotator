@@ -13,7 +13,7 @@ export function normalizeManualAnswer(value,{requestId,knownTargetIds}={}){
  // Do not guess what an arbitrary extra property means.
  const results=response.results.map(row=>{
   if(!row||typeof row!=='object'||Array.isArray(row)||
-     typeof row.t!=='string'||!/^n\\d+$/u.test(Object.keys(row).find(k=>k!=='t')||'')||
+     typeof row.t!=='string'||!/^n\d+$/u.test(Object.keys(row).find(k=>k!=='t')||'')||
      Object.keys(row).length!==2||Object.hasOwn(row,'c'))return row;
   return {t:row.t,c:null};
  });
