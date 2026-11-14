@@ -68,10 +68,10 @@ test('Hanja proper nouns are eligible except flagged personal names',()=>{
  }
 });
 
-test('partial_word is an advisory hint for correctly aligned compound components',()=>{
+test('compound components accept aligned Latin and Hanja origins without a boundary flag',()=>{
  const companyContext='L3해리스가 운영한다';
  const company={target_id:'t383',start:2,end:5,surface:'해리스',context:companyContext,
-  proper_noun:true,dictionary_person_name:true,partial_word:true,experimental_loanword_audit:true,
+  proper_noun:true,dictionary_person_name:true,experimental_loanword_audit:true,
   options:[{choice_id:'KEEP',type:'keep',replacement:'해리스',entry_id:null,definitions:[]}]};
  const companyResult=choose(company,'Harris',{experimentalLoanword:true});
  assert.equal(canProposeExperimentalOption(company,'loanword'),true);
@@ -81,7 +81,7 @@ test('partial_word is an advisory hint for correctly aligned compound components
  assert.equal(companyContext.slice(0,company.start)+'Harris'+companyContext.slice(company.end),'L3Harris가 운영한다');
 
  const compound={target_id:'t384',start:2,end:4,surface:'정책',context:'경제정책',
-  partial_word:true,options:[{choice_id:'KEEP',type:'keep',replacement:'정책',entry_id:null,definitions:[]}]};
+  options:[{choice_id:'KEEP',type:'keep',replacement:'정책',entry_id:null,definitions:[]}]};
  const hanjaResult=choose(compound,'政策',{experimentalHanja:true});
  assert.equal(canProposeExperimentalOption(compound,'hanja'),true);
  assert.equal(hanjaResult.accepted.length,1);
@@ -90,7 +90,7 @@ test('partial_word is an advisory hint for correctly aligned compound components
  assert.equal(choose(compound,'經濟政策',{experimentalHanja:true}).unresolved.length,1,
   'extra Hanja characters must not overwrite a partial source span');
 
- const partialDictionary={...hanja,partial_word:true};
+ const partialDictionary={...hanja};
  assert.equal(choose(partialDictionary,'c0',{experimentalHanja:true}).accepted.length,1,
   'pre-existing dictionary choices remain valid');
 });
@@ -130,7 +130,7 @@ test('only the enabled experimental origin rule is included in each manual/API p
   assert.ok(instructions.includes('Nonconversion dictionary senses'));
   assert.ok(instructions.includes('JSON null'));
   assert.ok(instructions.includes('dictionary_name_homograph'));
-  assert.ok(instructions.includes('partial_word'));
+  assert.ok(!instructions.includes('partial_word'));
   assert.ok(instructions.includes('sentence_id'));
   assert.ok(!/experimental_options|experimental_modes|x0|开启的实验类型|only if.*enabled/i.test(instructions));
  }
