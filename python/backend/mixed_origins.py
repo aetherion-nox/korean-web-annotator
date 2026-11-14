@@ -5,6 +5,7 @@ consumes one source syllable; native anchors must match verbatim; Latin runs
 consume an unknown positive number of syllables. Accept only a unique full map.
 """
 import re
+from bisect import bisect_left
 from functools import lru_cache
 from backend.offsets import to_utf16
 from backend.loanwords import CJK, HANGUL as HANGUL_CHAR, classify_origin, nonconversion_options
@@ -112,6 +113,10 @@ def candidate_spans(text,tokens):
 async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=(),review_ranges=()):
     spans=candidate_spans(text,tokens)
     proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
+    # Kiwi emits source-ordered tokens. Index their starts once so checking
+    # each short candidate span does not scan ALL tokens of a long paragraph.
+    token_starts=[t.start for t in tokens]
+    ordered=all(token_starts[i-1]<=token_starts[i] for i in range(1,len(token_starts)))
     entries=await engine.lookup_entries([form for _,_,form in spans],filter_people=modes.get('filterDictionaryPeople',False) is True)
     annotations=[];targets=[];ranges=[];skipped=0
     for start,end,word in spans:
@@ -121,7 +126,15 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
         if any(a<=start and end<=b and (a<start or end<b) for a,b in whole_word_ranges):continue
         if any(start<b and a<end for a,b in ranges):continue
         all_records=entries.get(word,[])
-        span_tokens=[t for t in tokens if start<=t.start and t.start+t.length<=end and t.length>0]
+        if ordered:
+            lo=bisect_left(token_starts,start)
+            hi=bisect_left(token_starts,end,lo)
+            span_tokens=[t for t in tokens[lo:hi]
+                         if t.length>0 and t.start+t.length<=end]
+        else:
+            # Defensive compatibility with unusual injected tokenizers.
+            span_tokens=[t for t in tokens if start<=t.start and
+                         t.start+t.length<=end and t.length>0]
         tag=span_tokens[0].tag if len(span_tokens)==1 else None
         records=[r for r in all_records if DisambiguationService()._pos_matches(tag,r.get('part_of_speech')) is not False] if tag else all_records
         options=[];mapped=0;signatures=set();unaligned=False;has_mixed=False;origin_kinds=set()
