@@ -65,6 +65,8 @@ export function buildReviewPayload(context,targets,config={}){
    return [choice_id,candidateIds.get(key)];
   }).filter(Boolean));
   const {context:unused,adjacent_context:unusedAdjacent,options:oldOptions,repair_context:unusedRepair,repair_sentence_key:unusedKey,original_target_id:unusedOriginal,...occurrence}=target;
+  // Do not carry a stale legacy boundary flag from a persisted target into the wire payload.
+  delete occurrence.partial_word;
   if(config.smartSegmentation===true&&target.scan_only===true)delete occurrence.surface;
   // Smart segmentation already sends the full Kiwi tokens once per sentence.
   // Repeating occurrence-level morphology (including name/POS risk evidence)
