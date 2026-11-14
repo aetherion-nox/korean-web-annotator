@@ -152,6 +152,12 @@ async def request(raw):
         result = {'ready':True,'preloaded':True}
     elif action == 'analyze':
         result = await analyze(message['text'],message.get('modes',{}),database)
+        # The paragraph text is already supplied by the caller. Do not
+        # serialize that same text again inside every individual target.
+        # Only the browser wire is compacted; direct Python/SRT consumers
+        # retain the original Engine.analyze schema unchanged.
+        for target in result.get('targets',()):
+            target.pop('context',None)
     elif action == 'import-db':
         result = await import_database(message['path'],database)
     elif action == 'import':
