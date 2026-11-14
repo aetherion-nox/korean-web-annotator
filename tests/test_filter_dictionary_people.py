@@ -98,6 +98,38 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(o.get('entry_id')==name for t in unfiltered['targets']
                             for o in t['options']),unfiltered)
 
+    async def test_hyphenated_biographical_lee_jae_myeong_respects_toggle(self):
+        # Real dictionary layout: 이-재명 -> 李在明, a historical biography.
+        # An identical modern person's spelling must not bypass an OFF filter.
+        entry=self.add('이-재명','李在明','명사',
+                       '독립운동가(1890~1910). 명동 성당에서 이완용을 습격하였다.')
+        with sqlite3.connect(self.path) as db:
+            db.execute("UPDATE entries SET semantic_category='人名' WHERE id=?",(entry,))
+        from app.services.dictionary import DictionaryService
+        dictionary=DictionaryService(str(self.path))
+        self.assertTrue(any(r['entry_id']==entry for r in
+                            (await dictionary.batch_lookup_candidates(['이재명']))['이재명']))
+        for name_protection in (True,False):
+            for review in (True,False):
+                for experimental in (True,False):
+                    engine=Engine(self.path,tokenizer=self.token('이재명','NNP'))
+                    filtered=await engine.analyze('이재명',dict(
+                        hanja=True,loanword=False,nameProtection=name_protection,
+                        filterDictionaryPeople=True,reviewLocalConversions=review,
+                        experimentalHanjaAudit=experimental))
+                    self.assertEqual(filtered['annotations'],[],filtered)
+                    self.assertFalse(any(
+                        o.get('entry_id')==entry or o.get('replacement')=='李在明'
+                        for t in filtered['targets'] for o in t['options']),filtered)
+                    self.assertFalse(any('李在明' in t.get('verified_person_hanja',[])
+                                         for t in filtered['targets']),filtered)
+        permitted=await self.run_case('이재명',filter_people=False,review=True)
+        matching=[o for t in permitted['targets'] for o in t['options']
+                  if o.get('entry_id')==entry and o.get('replacement')=='李在明']
+        self.assertEqual(len(matching),1,permitted)
+        self.assertTrue(any('李在明' in t.get('verified_person_hanja',[])
+                            for t in permitted['targets']),permitted)
+
     async def test_historical_person_homograph_does_not_remove_ordinary_sense(self):
         gloss='통일 신라 시대의 장군(?~846). 본명은 궁복(弓福).'
         person=self.add('장보고','張保皐','명사',gloss)
