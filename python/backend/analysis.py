@@ -126,6 +126,11 @@ class Engine:
         converter=ConverterService(self.tokenizer,self.disambiguation)
         tokens=await self.tokens(text)
         segments,_=await converter.convert(text,conversion_lookup,tokens=tokens)
+        # Preserve the first Kiwi token at each exact span, without searching
+        # the full source token array for every converted/reviewed word.
+        token_by_span={}
+        for token in tokens:
+            token_by_span.setdefault((token.start,token.start+token.length),token)
         dictionary_names,homograph_evidence,known_person_hanja=await dictionary_name_evidence(
             text,tokens,self.lookup_fn,include_person_hanja=True)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
@@ -159,12 +164,12 @@ class Engine:
             if s.status=='converted' and not review_conversions and not overlaps_proper_noun(s.start,s.end,proper_ranges):
                 if not safe_replacement(s.display_text) or any(s.start<b and a<s.end for a,b in occupied):rejected+=1;continue
                 occupied.append((s.start,s.end))
-                token=next((t for t in tokens if t.start==s.start and t.start+t.length==s.end),None)
+                token=token_by_span.get((s.start,s.end))
                 selected=next((c for c in s.candidates if c.get('entry_id')==s.matched_entry_id),{})
                 if modes.get('hanja',True):annotations.append(dict(start=to_utf16(text,s.start),end=to_utf16(text,s.end),surface=s.original,type='hanja',replacement=restore_mixed_display(s.original,s.display_text,s.origin_raw,token=token,written_form=selected.get('written_form'))))
             else:reviews.append((s.start,s.end,s.original,s.candidates))
         # Only review needs tokens to reproduce the original display builder.
-        review_tokens=tokens if reviews else []
+        review_tokens=token_by_span if reviews else {}
         definitions_by_entry=await self.dictionary.get_definitions_for_entries([c.get('entry_id') for _,_,_,candidates in reviews for c in candidates]) if self.dictionary is not None else {}
         choices=[]
         for start,end,surface,candidates in reviews:
@@ -174,7 +179,7 @@ class Engine:
                 replacement=c.get('replacement')
                 if (not review_conversions and not overlaps_proper_noun(start,end,proper_ranges) and not c.get('is_reliable')) or not safe_replacement(replacement):continue
                 # Preserve inflected Korean suffixes using unchanged upstream display builder.
-                token=next((t for t in review_tokens if t.start==start and t.start+t.length==end),None)
+                token=review_tokens.get((start,end))
                 if token is not None:
                     from app.services.disambiguation import CandidateScore
                     score=CandidateScore(**{k:c.get(k) for k in CandidateScore.__dataclass_fields__ if k in c})
