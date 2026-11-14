@@ -138,6 +138,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     allTargets:item.analysis.targets.filter(t=>!t.scan_only),
     localAnnotations:item.analysis.annotations,
     protected_ranges:item.analysis.repair_context?.protected_ranges||[],
+    person_name_ranges:item.analysis.repair_context?.person_name_ranges||[],
     selected:message.restrictToSelection===true?item.sentence.selected||[]:null,
     existingRepairs:item.repairs
    });
