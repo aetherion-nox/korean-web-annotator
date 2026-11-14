@@ -562,6 +562,29 @@
 
   // Furiganator's TreeWalker -> conversion Map -> single fragment insertion pass.
   // Korean rt contains Hangul, so exclude the entire ruby subtree on later runs.
+  // An explicit collapsed article panel is still a real DOM subtree. Sites often
+  // use aria-controls rather than a recognizable CSS class to hide its text.
+  // Compute targets once per scan, never query selectors for every text node.
+  // Only article/main content qualifies: advertisements, menus and unrelated
+  // hidden templates must keep their ordinary visibility restrictions.
+  function controlledCollapsedArticlePanels() {
+    const panels=new Set();
+    for(const control of document.querySelectorAll('[aria-expanded="false"][aria-controls]')){
+      const ids=(control.getAttribute('aria-controls')||'').trim().split(/\s+/);
+      for(const id of ids){
+        if(!id)continue;
+        const panel=document.getElementById(id);
+        if(!panel||panel===control||control.contains(panel)||
+           !panel.matches('section,article,div,[role="region"],[role="group"]')||
+           !panel.closest('main,article,[role="main"],[itemprop~="articleBody"]')||
+           panel.closest('nav,aside,header,footer,[role="navigation"],[role="complementary"]'))
+          continue;
+        panels.add(panel);
+      }
+    }
+    return panels;
+  }
+
   function openTextRoots(root=document.body) {
     if(!root)return [];
     const roots=[root],seen=new WeakSet();
@@ -584,6 +607,8 @@
     if(!document.body){lastScanStats=stats;return entries;}
     const roots=openTextRoots();
     stats.shadowRoots=Math.max(0,roots.length-1);
+    const controlledPanels=(typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false)
+      ?controlledCollapsedArticlePanels():new Set();
     const visibilityCache=new WeakMap();
     const visibilityReason=element=>{
       if(!element||element.nodeType!==1)return '';
@@ -620,7 +645,7 @@
               element.matches('section.collapsible-block[id^="mf-section-"]')&&
               element.parentElement?.matches('.mw-parser-output');
           const mediaWikiPanel=recognize&&(element.matches('.mw-collapsible-content')||
-              vectorList||vectorChild||minervaArticleSection);
+              vectorList||vectorChild||minervaArticleSection||controlledPanels.has(element));
           if((element.hidden||element.hasAttribute('inert')||
               element.getAttribute('aria-hidden')==='true')&&
              (!mediaWikiPanel||element.hasAttribute('inert')))reason='hidden';
@@ -862,6 +887,8 @@
       // Cross-origin frames may not expose frameElement: check the own DOM.
     }
     let checked=0,hidden=0,eligible=0;
+    const controlledPanels=(typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false)
+      ?controlledCollapsedArticlePanels():new Set();
     const isHidden=element=>{
       const seen=new Set();
       for(let node=element;node&&!seen.has(node);
@@ -880,7 +907,7 @@
           node.matches('section.collapsible-block[id^="mf-section-"]')&&
           node.parentElement?.matches('.mw-parser-output');
         const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||
-          vectorList||vectorChild||minervaArticleSection);
+          vectorList||vectorChild||minervaArticleSection||controlledPanels.has(node));
         if((node.hidden||node.hasAttribute?.('inert')||
             node.getAttribute?.('aria-hidden')==='true')&&
            (!mediaWikiPanel||node.hasAttribute?.('inert')))return true;
@@ -2193,8 +2220,8 @@
 
   send({ type: 'GET_UI_SETTINGS' }).then(reply => {
     if (!reply?.ok) return;
-    if(typeof window==='undefined'||window===window.top)
-      pageHasHangul=collectTextNodes().size>0;
+    // applySettings performs the first signal scan when the Hangul-only toolbar
+    // is enabled; avoid an entire duplicate collectTextNodes traversal here.
     applySettings(reply.uiSettings);
   });
 })();
