@@ -147,6 +147,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    const options=filterReviewTarget(target,config).options;
    return {target_id:t.target_id,sentenceId:item.sentence.id,start:target.start,end:target.end,surface:target.surface,
     choices:options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))})),
+    ...(target.dictionary_person_name===true&&target.verified_person_hanja?.length?{dictionaryPersonHanja:[...target.verified_person_hanja]}:{}),
     ...((config.experimentalHanja===true||config.experimentalLoanword===true)?{literalOrigin:{
      hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true,
      eligible:(config.experimentalHanja===true&&canProposeExperimentalOption(target,'hanja'))||(config.experimentalLoanword===true&&canProposeExperimentalOption(target,'loanword')),
