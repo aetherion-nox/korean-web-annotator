@@ -193,7 +193,8 @@
         const unresolved=Array.from(recoveryBlocks).filter(other=>!other.element.isConnected&&other.annotations.size&&other.text===block.text&&other.tag===block.tag&&other.selector===block.selector&&other.scopeIndex===block.scopeIndex);
         const matches=contextual.length===1?contextual:contextual.length===0&&candidates.length===1&&unresolved.length===1?candidates:[];
         if(matches.length!==1)continue;
-        element=matches[0];block.element=element;block.scope=scope;
+        element=matches[0];recoveryByElement.delete(block.element);
+        block.element=element;block.scope=scope;recoveryByElement.set(element,block);
       }
       // An existing node with identical source remains the same paragraph even
       // when adjacent content changed. Source spans are checked again below.
@@ -713,8 +714,11 @@
   function isKnownRecoverySource(node) {
     if(uiSettings.restoreExistingAnnotations===false||recoveryPage!==pageIdentity())return false;
     const element=node.parentElement?.closest(BLOCK_TAGS)||node.parentElement;
-    const block=Array.from(recoveryBlocks).find(b=>b.element===element&&b.annotations.size);
-    return Boolean(block&&sourceOf(element).text===block.text);
+    // Indexed lookup: avoid scanning thousands of recovery records for
+    // every Korean text node during automatic incremental annotation.
+    const block=recoveryByElement.get(element);
+    return Boolean(block&&recoveryBlocks.has(block)&&block.element===element&&
+      block.annotations.size&&sourceOf(element).text===block.text);
   }
 
   function loanwordDisplay(value) {
