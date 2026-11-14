@@ -17,7 +17,7 @@ import {
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.56.25-safe-null-choice-fallback';
+const CONTENT_SCRIPT_VERSION='1.1.56.26-dictionary-proven-person-hanja';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
