@@ -732,9 +732,12 @@
     if(!document.body?.classList.contains('skin-minerva')||
        !element?.matches?.('section.collapsible-block')||
        !element.parentElement?.matches('.mw-parser-output'))return false;
-    return [...element.classList].some(name=>/^mf-section-\d+$/u.test(name))||
-      /^mf-section-\d+$/u.test(element.id)||
-      /^content-collapsible-block-\d+$/u.test(element.id);
+    // Require both the Minerva section class AND an authentic Minerva
+    // section ID. An unrelated hidden widget with a copied class is not
+    // sufficient evidence to override content-visibility.
+    return [...element.classList].some(name=>/^mf-section-\d+$/u.test(name))&&
+      (/^mf-section-\d+$/u.test(element.id)||
+       /^content-collapsible-block-\d+$/u.test(element.id));
   }
   function hiddenUntilFoundAllowed(element,css) {
     return css?.contentVisibility==='hidden'&&
