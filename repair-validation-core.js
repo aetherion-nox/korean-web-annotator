@@ -106,11 +106,25 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
      (scope.existingRepairs||[]).some(r=>overlaps(span,r)||r.source_target_ids?.some(id=>oldNative.has(id))||r.old_target_ids?.some(id=>oldNative.has(id)))){
    fail(index,'source conflicts with another target, local annotation or prior repair',row);continue;
   }
+  const knownPerson=old.some(t=>t.suspected_person_name===true||
+   t.dictionary_person_name===true||t.dictionary_name_homograph===true)||
+   (scope.person_name_ranges||[]).some(([a,b])=>start<b&&a<end);
   const protectedRange=(scope.protected_ranges||[]).some(([a,b])=>start<b&&a<end)||
-   old.some(t=>t.proper_noun===true||t.suspected_person_name===true||
-    t.dictionary_person_name===true||t.dictionary_name_homograph===true);
+   knownPerson||old.some(t=>t.proper_noun===true);
   if(choice_id!=='KEEP'&&protectedRange){
-   fail(index,'protected name or proper noun',row);continue;
+   const latinOrigin=/\\p{Script=Latin}/u.test(choice_id)&&
+     !/\\p{Script=Han}/u.test(choice_id);
+   const hanjaOrigin=/\\p{Script=Han}/u.test(choice_id)&&
+     !/\\p{Script=Latin}/u.test(choice_id);
+   // An enabled Latin-origin audit may identify an authentic personal name;
+   // a Hanja audit may repair an NNP only when not flagged as a person.
+   // This changes only origin eligibility, not span/overlap validation.
+   const allowed=(latinOrigin&&config.experimentalLoanword===true)||
+    (hanjaOrigin&&config.experimentalHanja===true&&!knownPerson);
+   if(!allowed){
+    fail(index,knownPerson&&hanjaOrigin?'personal-name Hanja is not freely generated':
+      'protected name or proper noun',row);continue;
+   }
   }
   let annotations=[];
   if(choice_id!=='KEEP'){
