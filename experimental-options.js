@@ -77,10 +77,9 @@ export function literalOriginOption(target,choiceId,config={}){
  else return null;
  if(!canProposeExperimentalOption(target,type))return null;
  const aligned=type==='hanja'?alignedHanjaStemSuffix(target,choiceId):null;
- // Existing dictionary spellings must be selected by their supplied c/n key.
- // A literal spelling must not bypass sense/POS competition or make an
- // already-known etymology look like independent model evidence.
- if(target.options?.some(o=>o.type===type&&o.replacement===(aligned?.replacement||choiceId)))return null;
+ // Identical spellings can denote different senses or identities. Accept a
+ // verified literal independently of dictionary choices, without borrowing
+ // any dictionary entry ID or presenting it as a dictionary-backed sense.
  const option={choice_id:choiceId,type,
   replacement:aligned?.replacement||choiceId,entry_id:'experimental:'+type,
   definitions:['实验性模型词源：未经词典核实'],written_form:target.surface,origin_source:'model-unverified',
