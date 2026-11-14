@@ -11,7 +11,7 @@ const BLOCK_TAGS='p,li,dt,dd,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption';
 function scanner(html,recognizeCollapsedContent=true){
  const dom=new JSDOM(html,{url:'https://ko.wikisource.org/wiki/대한민국헌법_(제10호)'});
  const context={document:dom.window.document,NodeFilter:dom.window.NodeFilter,
-  OWN_RUBY:'ruby[kra-annotated="true"]',uiSettings:{recognizeCollapsedContent},
+  OWN_RUBY:'ruby[kra-annotated="true"]',BLOCK_TAGS,uiSettings:{recognizeCollapsedContent},
   lastScanStats:null,recoveryBlocks:new Set(),recoveryByElement:new WeakMap(),recoveryPage:null,
   seenSources:new Set(),analyzedNodeVersions:new WeakMap()};
  vm.createContext(context);
