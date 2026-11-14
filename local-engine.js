@@ -90,7 +90,7 @@ export function validateAnalysis(text,data){
   const nameOnlyReview=(t.suspected_person_name===true||t.dictionary_name_homograph===true)&&validOptions.some(o=>o.type==='nonconversion');
    // Dictionary-free inputs have KEEP only; the model can propose allowed
    // Hanja/Latin origins which are independently validated before application.
-   if(!convertible&&!nameOnlyReview&&!dictionaryFree){rejectedTargets++;continue;}
+   if(!convertible&&!nameOnlyReview&&!dictionaryFree&&t.experimental_loanword_audit!==true){rejectedTargets++;continue;}
   targets.push({...t,options:validOptions});ranges.push([t.start,t.end]);
  }
  ranges.sort((a,b)=>a[0]-b[0]);if(ranges.some((r,i)=>i&&r[0]<ranges[i-1][1]))throw Error('Overlapping engine spans');
