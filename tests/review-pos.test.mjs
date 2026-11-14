@@ -14,13 +14,14 @@ test('reliable POS families exclude incompatible review senses without changing 
 });
 test('Chinese, multiple and unknown POS labels are conservative',()=>{
  const t=target('NNB',[option('c0','依存名詞'),option('c1','不完全名词'),option('c2','名詞'),option('c3','動詞'),option('n0','명사 / 부사','nonconversion'),option('n1',null,'nonconversion'),option('n2','명사 · 新品詞','nonconversion')]);
- assert.deepEqual(ids(t),['c0','c1','n1','n2']);
+ assert.deepEqual(ids(t),['c0','c1']);
+ assert.equal(packed(t).targets[0].keep_senses.length,2);
  assert.deepEqual(ids(target('VA',[option('c0','명사 / 형용사'),option('c1','명사 / 未知詞性'),option('c2','명사 / 부사')])),['c0','c1']);
  for(const tag of ['UNKNOWN','USER0','VCP','VCN'])assert.deepEqual(ids(target(tag,[option('c0','명사'),option('c1','동사')])),['c0','c1']);
 });
 test('all conflicts restore original options and signal POS conflict',()=>{
  const t=target('MAG',[option('c0','명사'),option('n0','동사','nonconversion')]);
- const p=packed(t);assert.deepEqual(Object.keys(p.targets[0].options),['c0','n0']);assert.equal(p.targets[0].pos_conflict,true);
+ const p=packed(t);assert.deepEqual(Object.keys(p.targets[0].options),['c0']);assert.equal(p.targets[0].keep_senses.length,1);assert.equal(p.targets[0].pos_conflict,true);
  assert.match(buildManualPrompt('가',[t],'batch'),/pos_conflict/);
 });
 test('whole derived and inflected spans are checked as a whole, incomplete spans stay unknown',()=>{
@@ -38,7 +39,7 @@ test('manual and API export use identical allowed keys and validation rejects re
  assert.deepEqual(manual.targets[0].options,packed(t).targets[0].options);
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]}).accepted.length,0);
  assert.equal(validateChoices([t],{results:[{t:'t0',c:null}]}).accepted.length,1);
- assert.equal(validateChoices([t],{results:[{t:'t0',c:'n0'}]}).accepted.length,1);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'n0'}]}).accepted[0].option.type,'keep');
  assert.equal(modelTargets([target('MAG',[option('c0','명사')])])[0].pos_conflict,true);
 });
 test('merged choices use their own dictionary headword span, never the last token of a different word',()=>{
@@ -88,16 +89,17 @@ test('manual review session honors the captured switch for prompt and answer val
 test('NNB keeps only explicit dependent POS and unknown senses across API and manual review',()=>{
  const context='수능 2주앞… ‘AI 스마트안경’ 부정행위 차단 비상';const start=context.indexOf('주');
  const t={...target('NNB',[]),surface:'주',context,start,end:start+1,morphology:[{form:'주',tag:'NNB',start,end:start+1}],options:[{choice_id:'KEEP',type:'keep',replacement:'주'},option('c0','의존 명사'),option('c1','依存名詞'),option('c2','불완전 명사'),option('c3','명사'),option('c4','名詞'),option('c5','普通名词'),option('c6','명사 / 의존 명사'),{...option('c7','명사'),written_form:'주01'},option('n0',null,'nonconversion'),option('n1','명사','nonconversion'),option('n2','未知詞性','nonconversion')]};
- const expected=['c0','c1','c2','c6','n0','n2'];
+ const expected=['c0','c1','c2','c6'];
  assert.deepEqual(Object.keys(buildReviewPayload(context,[t]).payload.targets[0].options),expected);
- assert.deepEqual(modelTargets([t])[0].options.map(o=>o.choice_id),['KEEP',...expected]);
+ assert.deepEqual(modelTargets([t])[0].options.map(o=>o.choice_id),['KEEP',...expected,'n0','n2']);
+ assert.equal(buildReviewPayload(context,[t]).payload.targets[0].keep_senses.length,2);
  const manual=JSON.parse(buildManualPrompt(context,[t],'batch').split('\n').at(-1));
  assert.deepEqual(Object.keys(manual.targets[0].options),expected);assert.equal(manual.sentences[0].text,context);
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]}).accepted.length,0);
  assert.deepEqual(modelTargets([t],{reviewPosFilter:false})[0].options.map(o=>o.choice_id),t.options.map(o=>o.choice_id));
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]},{reviewPosFilter:false}).accepted.length,1);
  const conflicted=packed(target('NNB',[option('c0','명사'),option('n0','名詞','nonconversion')]));
- assert.equal(conflicted.targets[0].pos_conflict,true);assert.deepEqual(Object.keys(conflicted.targets[0].options),['c0','n0']);
+ assert.equal(conflicted.targets[0].pos_conflict,true);assert.deepEqual(Object.keys(conflicted.targets[0].options),['c0']);
  // Ordinary noun occurrences still keep the broader noun category.
  assert.deepEqual(ids(target('NNG',[option('c0','명사'),option('c1','부사')])),['c0']);
 });
