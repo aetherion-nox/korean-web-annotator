@@ -1,0 +1,61 @@
+name: Diagnose real Wikisource HTML and DOM layout
+on:
+  push:
+    branches:
+      - diagnose/v1.1.56.31-real-wikisource-html
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch public page and inspect DOM structure
+        run: |
+          python3 -m pip install beautifulsoup4 --quiet
+          python3 - <<'PY'
+          import urllib.request,collections,re,html
+          from bs4 import BeautifulSoup
+          urls=[
+            'https://ko.wikisource.org/wiki/%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)',
+            'https://ko.wikisource.org/w/index.php?title=%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)&action=render'
+          ]
+          body=None
+          for url in urls:
+            try:
+              req=urllib.request.Request(url,headers={'User-Agent':'KoreanWebAnnotatorDiagnostics/1.0 (public HTML inspection; contact: github.com/aetherion-nox/korean-web-annotator)','Accept':'text/html'})
+              with urllib.request.urlopen(req,timeout=25) as response:
+                data=response.read();print('FETCH',response.status,response.url,len(data))
+              if b'<html' in data.lower() or b'mw-parser-output' in data:body=data;break
+            except Exception as exc:print('FETCH_ERROR',type(exc).__name__,str(exc))
+          if not body:
+            print('CANNOT_INSPECT_REAL_HTML')
+            raise SystemExit(0)
+          s=BeautifulSoup(body,'html.parser')
+          print('HTML_BYTES',len(body))
+          for css in ['.mw-parser-output','.mw-collapsible','.mw-collapsible-content','.mw-collapsed',
+                      '#mw-content-text','#bodyContent','.mw-page-container','.mw-table-of-contents-container',
+                      '.vector-toc','.vector-toc-collapsed','.toc','.mw-heading','section','details','summary',
+                      '[hidden]','[aria-hidden=true]','[style*=none]','.mw-collapsible-toggle','.mw-customtoggle']:
+            items=s.select(css);print('CSS',css,len(items))
+            for node in items[:4]:
+              print(' EXAMPLE',node.name,repr(dict(node.attrs))[:650],repr(node.get_text(' ',strip=True)[:95]))
+          main=s.select_one('.mw-parser-output') or s.select_one('#mw-content-text') or s
+          print('ARTICLE_CHARS',len(main.get_text(' ',strip=True)))
+          print('ARTICLE_SUBTREE_TAGS',collections.Counter(e.name for e in main.descendants if getattr(e,'name',None)).most_common(15))
+          txts=[]
+          for e in main.find_all(string=True):
+            if not e.strip() or not re.search('[가-힣]',e):continue
+            p=e.parent;closest=p.find_parent(['p','li','blockquote','pre','h1','h2','h3','h4','h5','h6']) if p else None
+            node=closest or p
+            txts.append((len(str(e)),str(e)[:60],node.name,dict(node.attrs)))
+          print('HANGUL_TEXT_NODES',len(txts))
+          print('BLOCK_DISTRIBUTION',collections.Counter(x[2] for x in txts).most_common(15))
+          print('LONGEST_TEXT_NODES',sorted(txts,reverse=True)[:8])
+          for node in s.select('.mw-collapsible,.mw-collapsible-content,.vector-toc,.toc,details,section')[:20]:
+            trail=[];p=node
+            for n in range(5):
+              if p is None:break
+              trail.append(p.name+'#'+str(p.get('id',''))+'.'+'.'.join(p.get('class',[])))
+              p=p.parent
+            print('STRUCTURE','>'.join(trail),len(node.get_text(' ',strip=True)))
+          PY
