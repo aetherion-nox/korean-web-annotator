@@ -56,13 +56,24 @@ test('script, alignment and enabled-mode guards reject invented or malformed val
  }
 });
 
-test('never invent new origins for flagged proper names or incomplete source words',()=>{
- for(const flag of ['proper_noun','suspected_person_name','dictionary_person_name','dictionary_name_homograph','partial_word']){
+test('script-specific proper-name policy blocks unattested personal Hanja but permits Latin identities',()=>{
+ for(const flag of ['proper_noun','suspected_person_name','dictionary_person_name','dictionary_name_homograph']){
   const t={...hanja,[flag]:true};
-  assert.equal(canProposeExperimentalOption(t),false);
-  assert.equal(choose(t,'原潛',{experimentalHanja:true}).unresolved.length,1,flag);
-  assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys are independent of literal filter');
+  assert.equal(canProposeExperimentalOption(t,'loanword'),true,flag);
+  assert.equal(choose(t,'OriginalName',{experimentalLoanword:true}).accepted.length,1,flag);
+  assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys remain valid');
+  if(flag==='proper_noun'){
+   assert.equal(canProposeExperimentalOption(t,'hanja'),true);
+   assert.equal(choose(t,'原潛',{experimentalHanja:true}).accepted.length,1);
+  }else{
+   assert.equal(canProposeExperimentalOption(t,'hanja'),false);
+   assert.equal(choose(t,'原潛',{experimentalHanja:true}).accepted.length,0,flag);
+  }
  }
+ const partial={...hanja,partial_word:true,proper_noun:true};
+ assert.equal(canProposeExperimentalOption(partial,'hanja'),false);
+ assert.equal(canProposeExperimentalOption(partial,'loanword'),false);
+ assert.equal(choose(partial,'OriginalName',{experimentalLoanword:true}).unresolved.length,1);
 });
 
 test('cross-batch, duplicate, extra fields and obsolete experimental arrays are rejected',()=>{
