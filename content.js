@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.34-always-folded-indexed';
+  const VERSION = '1.1.56.35-live-minerva-until-found';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -724,6 +724,24 @@
   // Compute targets once per scan, never query selectors for every text node.
   // Only article/main content qualifies: advertisements, menus and unrelated
   // hidden templates must keep their ordinary visibility restrictions.
+  // Live Minerva's JavaScript rewrites section#mf-section-2 into
+  // section#content-collapsible-block-1.mf-section-2.collapsible-block-js
+  // and marks it hidden="until-found". The numeric mf-section-N class is
+  // stable across both initial server HTML and post-hydration DOM.
+  function isMinervaArticleSection(element) {
+    if(!document.body?.classList.contains('skin-minerva')||
+       !element?.matches?.('section.collapsible-block')||
+       !element.parentElement?.matches('.mw-parser-output'))return false;
+    return [...element.classList].some(name=>/^mf-section-\d+$/u.test(name))||
+      /^mf-section-\d+$/u.test(element.id)||
+      /^content-collapsible-block-\d+$/u.test(element.id);
+  }
+  function hiddenUntilFoundAllowed(element,css) {
+    return css?.contentVisibility==='hidden'&&
+      element?.getAttribute('hidden')==='until-found'&&
+      isMinervaArticleSection(element);
+  }
+
   function controlledCollapsedArticlePanels() {
     const panels=new Set();
     for(const control of document.querySelectorAll('[aria-expanded="false"][aria-controls]')){
@@ -775,9 +793,7 @@
         const vectorChild=element.matches('.vector-toc-list-item')&&
           element.parentElement?.matches('.vector-toc-list')&&
           Boolean(element.closest('#vector-toc'));
-        const minervaArticleSection=document.body?.classList.contains('skin-minerva')&&
-          element.matches('section.collapsible-block[id^="mf-section-"]')&&
-          element.parentElement?.matches('.mw-parser-output');
+        const minervaArticleSection=isMinervaArticleSection(element);
         // Only recognized folded content is exempt from being hidden.
         // Ordinary hidden advertisements, templates and inert descendants
         // still follow their original visibility rules.
@@ -788,9 +804,11 @@
            (!folded||element.hasAttribute('inert')))reason='hidden';
         else {
           const css=document.defaultView?.getComputedStyle?.(element);
+          const blockedContentVisibility=css?.contentVisibility==='hidden'&&
+            !hiddenUntilFoundAllowed(element,css);
           if((css?.display==='none'||css?.visibility==='hidden'||
-              css?.visibility==='collapse'||css?.contentVisibility==='hidden')&&
-             (!folded||css?.contentVisibility==='hidden'))reason='hidden';
+              css?.visibility==='collapse'||blockedContentVisibility)&&
+             (!folded||blockedContentVisibility))reason='hidden';
         }
       }
       if(!reason){
@@ -1037,18 +1055,18 @@
         const vectorList=node.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'));
         const vectorChild=node.matches('.vector-toc-list-item')&&
           node.parentElement?.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'));
-        const minervaArticleSection=document.body?.classList.contains('skin-minerva')&&
-          node.matches('section.collapsible-block[id^="mf-section-"]')&&
-          node.parentElement?.matches('.mw-parser-output');
+        const minervaArticleSection=isMinervaArticleSection(node);
         const folded=node.matches('.mw-collapsible-content')||
           vectorList||vectorChild||minervaArticleSection||controlledPanels.has(node);
         if((node.hidden||node.hasAttribute?.('inert')||
             node.getAttribute?.('aria-hidden')==='true')&&
            (!folded||node.hasAttribute?.('inert')))return true;
         const style=document.defaultView?.getComputedStyle?.(node);
+        const blockedContentVisibility=style?.contentVisibility==='hidden'&&
+          !hiddenUntilFoundAllowed(node,style);
         if((style?.display==='none'||style?.visibility==='hidden'||
-            style?.visibility==='collapse'||style?.contentVisibility==='hidden')&&
-           (!folded||style?.contentVisibility==='hidden'))return true;
+            style?.visibility==='collapse'||blockedContentVisibility)&&
+           (!folded||blockedContentVisibility))return true;
       }
       return false;
     };
