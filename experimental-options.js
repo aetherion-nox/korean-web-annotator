@@ -30,7 +30,10 @@ const RESERVED=/^[cnxp]\d+$/i;
 // Script-specific permissions: NNP is not itself a veto; personal-name Hanja is.
 export function canProposeExperimentalOption(target,type){
  const surface=target?.surface||'';
- if(!/[가-힣]/u.test(surface)||/\s/u.test(surface)||target.scan_only===true||target.partial_word===true)return false;
+ // partial_word is advisory: a compound component can have its own valid origin.
+ // Source-span projection, Hanja character count/readings, and whitespace checks
+ // remain the authoritative local guards for literal origins.
+ if(!/[가-힣]/u.test(surface)||/\s/u.test(surface)||target.scan_only===true)return false;
  if(type==='loanword')return true;
  if(type==='hanja')return !(target.dictionary_person_name===true||
    target.dictionary_name_homograph===true||target.suspected_person_name===true);
@@ -104,7 +107,7 @@ export function explainLiteralOriginRejection(target,choiceId,config={}){
  if(kind==='hanja'&&config.experimentalHanja!==true)return 'hanja_mode_disabled';
  if(kind==='loanword'&&config.experimentalLoanword!==true)return 'loanword_mode_disabled';
  if(!canProposeExperimentalOption(target,kind)){
-  if(!/[가-힣]/u.test(target?.surface||'')||/\s/u.test(target?.surface||'')||target.scan_only===true||target.partial_word===true)
+  if(!/[가-힣]/u.test(target?.surface||'')||/\s/u.test(target?.surface||'')||target.scan_only===true)
    return 'partial_or_cross_word_boundary';
   return kind==='hanja'?'person_name_hanja_blocked':'source_boundary_or_name_blocked';
  }
