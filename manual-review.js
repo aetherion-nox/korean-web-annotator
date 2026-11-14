@@ -50,7 +50,7 @@ export function prepareManualRequest(config,targets){
    dictionary_person_name:t.dictionary_person_name===true,dictionary_name_homograph:t.dictionary_name_homograph===true
   })),scopes:[...scopes]};
  })():undefined;
- return {requestId,bindings,repairValidation,smartSegmentation:config.smartSegmentation===true,hanjaReadingCheck:config.hanjaReadingCheck!==false,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:targets.length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
+ return {requestId,bindings,repairValidation,smartSegmentation:config.smartSegmentation===true,hanjaReadingCheck:config.hanjaReadingCheck!==false,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:wireTargets.filter(t=>!(config.smartSegmentation===true&&t.scan_only===true)).length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
 }
 
 // Preserve the original shared pools and restrict retry work to unsolved IDs.
@@ -172,6 +172,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
         reasons.set(id,'重复 target_id（本次 '+rows.length+' 条），请只返回一条');continue;
       }
       const target=known.get(id),row=rows[0];
+      if(current.smartSegmentation&&target.scan_only===true)continue; // Review-only placeholders need no answer.
       const selected=experimental?
         validateExperimentalChoices([target],{results:[row]},choicesConfig):
         validateChoices([target],{results:[row]},choicesConfig);
@@ -183,19 +184,19 @@ export function createManualReviewSession({operationId,post,signal}={}){
       const selectedOption=selected.accepted[0].option;
       current.acceptedRows.set(id,{t:id,c:selectedOption.type==='keep'?null:selectedOption.choice_id});
     }
-    const missing=current.wireTargets.filter(t=>
-      !current.acceptedRows.has(t.target_id)&&!retired.has(t.target_id)&&
-      !(current.smartSegmentation&&t.scan_only===true));
+    const required=current.wireTargets.filter(t=>!(current.smartSegmentation&&t.scan_only===true));
+    const missing=required.filter(t=>!current.acceptedRows.has(t.target_id)&&!retired.has(t.target_id));
+    const completedCount=required.filter(t=>current.acceptedRows.has(t.target_id)||retired.has(t.target_id)).length;
     if(missing.length){
-      const retry=manualRetryPrompt(current.originalPrompt,current.requestId,missing,reasons,current.acceptedRows.size);
+      const retry=manualRetryPrompt(current.originalPrompt,current.requestId,missing,reasons,completedCount);
       const detail=missing.slice(0,12).map(t=>t.target_id+'（'+(reasons.get(t.target_id)||'未提交')+'）').join('；');
       notify('MANUAL_REVIEW_ERROR',{requestId:current.requestId,
-        error:'本批已保留 '+current.acceptedRows.size+'/'+current.wireTargets.length+
+        error:'本批已保留 '+completedCount+'/'+required.length+
           ' 条有效答案，剩余 '+missing.length+' 条待补交：'+detail+
           (missing.length>12?'；其余见补交提示词':'')+
           (unknown.length?'。已忽略 '+unknown.length+' 条未知或跨批 target_id':'')+
           '。请复制新的补交提示词，只回答剩余目标。',
-        acceptedCount:current.acceptedRows.size+retired.size,
+        acceptedCount:completedCount,
         acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.t)),
         acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired],
         invalidTargetIds:missing.map(t=>t.target_id),
@@ -211,7 +212,7 @@ export function createManualReviewSession({operationId,post,signal}={}){
       t:ids.get(row.t),c:row.c
     })),...proposed};
     notify('MANUAL_REVIEW_ACCEPTED',{requestId:current.requestId,
-      targetCount:current.wireTargets.length,
+      targetCount:required.length,
       acceptedRows:[...current.acceptedRows.values()].filter(row=>!retired.has(row.t)),
       acceptedRepairs:current.savedRepairs,retiredTargetIds:[...retired]});
     current.resolve(mapped);return true;
