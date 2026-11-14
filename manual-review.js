@@ -5,6 +5,7 @@ import {filterReviewTarget} from './review-pos.js';
 import {explainLiteralOriginRejection} from './experimental-options.js';
 import {describeBatchBudget} from './batch-budget.js';
 import {validateSegmentationRepairs} from './segmentation-repairs.js';
+import {normalizeManualAnswer} from './manual-answer-format.js';
 
 // Split occurrences, including a long sentence, while retaining the actual owners.
 // Keep an oversized single dictionary entry intact rather than losing senses.
@@ -28,7 +29,7 @@ function parseAnswer(text){
  let source=text.trim();
  const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
  let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效。请复制完整结果或完整的 ```json 代码块，不要包含解释文字。');}
- if(!response||!Array.isArray(response.results))throw Error('结果需要包含 results 数组。请按导出提示词规定的格式返回。');
+ // The active request, not the model's wrapper, determines the batch identity.
  return response;
 }
 
@@ -106,10 +107,9 @@ export function createManualReviewSession({operationId,post,signal}={}){
    }
    const current=pending;
    try{
-    const response=parseAnswer(message.text);
-    // No old answer protocol: manual submissions must belong to this exact batch.
-    if(response.batch_id!==current.requestId)
-      throw Error('batch_id 与当前批次不一致，请检查是否粘贴了其他批次的答案。');
+    const response=normalizeManualAnswer(parseAnswer(message.text),{
+      requestId:current.requestId,knownTargetIds:new Set(current.wireTargets.map(t=>t.target_id))
+    });
     if(Object.prototype.hasOwnProperty.call(response,'experimental_options'))
       throw Error('新版协议只需要 results；请不要包含 experimental_options。');
     const experimental=current.experimentalHanja||current.experimentalLoanword;
