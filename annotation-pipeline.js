@@ -29,7 +29,9 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const dictionary=identity.dictionary_metadata||{};
  diagnostic({stage:'dictionary',level:'info',message:dictionaryFree?'未导入外部词典：Kiwi 生成待审核词，由实验性 LLM 补全词源；本地不自动转换。':'当前使用的本机词典与引擎。',detail:JSON.stringify({source_filename:dictionary.source_filename||'未知',data_version:dictionary.data_version||'未知',total_entries:dictionary.total_entries??'未知',total_senses:dictionary.total_senses??'未知',engine_version:identity.engine_version,dictionary_fingerprint:identity.dictionary_fingerprint})});
  let hasOriginalCounts=false;
+ const localStageStarted=Date.now();let slowestSentenceMs=0,slowestSentenceId='',slowestSentenceChars=0;
  for(const sentence of sentences){
+  const oneSentenceStarted=Date.now();
   signal?.throwIfAborted();
   const currentSentence=completedSentences+1;
   const progress=detail=>loading({...detail,currentSentence,sentenceCharacters:sentence.text.length});
@@ -45,6 +47,13 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     analysis={...analysis,targets:analysis.targets.filter(t=>sentence.selected.some(r=>Number.isInteger(r.start)&&Number.isInteger(r.end)&&t.start>=r.start&&t.end<=r.end))};
    }
    analysis.stats={...analysis.stats,pending:analysis.targets.length};
+  }
+  const oneSentenceMs=Date.now()-oneSentenceStarted;
+  if(oneSentenceMs>slowestSentenceMs){slowestSentenceMs=oneSentenceMs;slowestSentenceId=sentence.id;slowestSentenceChars=sentence.text.length;}
+  if(oneSentenceMs>=1800){
+   diagnostic({stage:'performance',level:'warning',
+    message:`本地分析慢段：${sentence.id}（${sentence.text.length} 字符）耗时 ${oneSentenceMs}ms。`,
+    detail:JSON.stringify({sentence_id:sentence.id,characters:sentence.text.length,localMs:oneSentenceMs})});
   }
   if(message.restrictToSelection===true){
    if(!Array.isArray(sentence.selected)||sentence.selected.some(r=>!Number.isInteger(r.start)||!Number.isInteger(r.end)||r.start<0||r.end<=r.start||r.end>sentence.text.length))throw Error('Invalid paragraph selection');
@@ -73,6 +82,9 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    repair_context:analysis.repair_context||{kiwi_tokens:[],protected_ranges:[]}}))};
   work.push({sentence,analysis,localKey,repairs:[]});
  }
+ diagnostic({stage:'performance',level:'info',
+  message:`本地分析汇总：${sentences.length} 段共耗时 ${Date.now()-localStageStarted}ms；最慢段 ${slowestSentenceId}（${slowestSentenceChars} 字符）${slowestSentenceMs}ms，缓存命中 ${stats.cacheHits}。`,
+  detail:JSON.stringify({paragraphs:sentences.length,totalLocalMs:Date.now()-localStageStarted,slowestSentenceMs,slowestSentenceId,slowestSentenceChars,cacheHits:stats.cacheHits})});
  if(stats.protected_names)diagnostic({stage:'rules',level:'info',message:`已按完整名称范围保留 ${stats.protected_names} 处疑似姓名，未使用内部普通词义替换。`,detail:JSON.stringify({protected_names:stats.protected_names})});
  if(hasOriginalCounts)diagnostic({stage:'rules',level:'info',message:`原作者规则：自动转换 ${stats.upstream_converted}，歧义 ${stats.upstream_ambiguous}，未匹配 ${stats.upstream_no_match}；本地标注 ${stats.local_determined}，待审核 ${stats.pending}。`,detail:JSON.stringify({upstream_converted:stats.upstream_converted,upstream_ambiguous:stats.upstream_ambiguous,upstream_no_match:stats.upstream_no_match,upstream_kept:stats.upstream_kept,local_determined:stats.local_determined,pending:stats.pending,structural_rejections:stats.structural_rejections,rejected_options:stats.rejected_options,skipped_mixed:stats.skipped_mixed})});
  let config;
