@@ -1222,8 +1222,8 @@
     const loanword=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u.test(choiceId)&&
       /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&task.modes.loanword===true;
     if(!hanja&&!loanword)return null;
-    if(hanja&&meta.hanjaEligible!==true||loanword&&meta.loanwordEligible!==true)return null;
-    if(!/^[가-힣]+$/u.test(binding.surface))return null;
+    if(hanja&&meta.hanjaEligible===false||loanword&&meta.loanwordEligible===false)return null;
+    if(!/[가-힣]/u.test(binding.surface)||/\s/u.test(binding.surface))return null;
     if(entry.text.slice(binding.start,binding.end)!==binding.surface)return null;
     const surface=binding.surface,type=hanja?'hanja':'loanword',annotations=[];
     const base={type,entry_id:'experimental:'+type,origin_source:'model-unverified',confidence:1};
