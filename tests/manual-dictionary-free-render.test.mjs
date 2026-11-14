@@ -164,7 +164,7 @@ test('disconnected page uses the dictionary option for a proven person Hanja spe
  assert.equal(task.manualRecoveryAccepted.get('t0').choice.choice_id,'c0');
  assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,1);
  assert.equal(document.querySelector('p ruby').firstChild.textContent,'經濟');
- assert.equal(document.querySelector('p ruby').getAttribute('data-kra-source'),'');
+ assert.equal(document.querySelector('p ruby').getAttribute('data-kra-source'),'dictionary');
  assert.equal(task.finished,true);
  dom.window.close();
 });
