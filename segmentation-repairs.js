@@ -29,7 +29,7 @@ export function verifySegmentationOrigin({start,end,surface,choice_id,sentence,o
   const scope=config.repairScopes?.get(old_target_ids[0]);
   if(dictionarySupportedRepairOrigin({start,end,surface,choice_id,old_target_ids},
        config.repairTargets||[],scope)){
-   option={choice_id,type:/\\p{Script=Han}/u.test(choice_id)?'hanja':'loanword',
+   option={choice_id,type:/\p{Script=Han}/u.test(choice_id)?'hanja':'loanword',
      replacement:choice_id,entry_id:'dictionary:repair',
      origin_source:'dictionary-backed-repair'};
   }
