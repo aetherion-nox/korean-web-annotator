@@ -66,4 +66,31 @@ class Tests(unittest.IsolatedAsyncioTestCase):
   self.assertLess(counter[0],n*35,
                   'candidate token lookup should not be quadratic')
 
+ async def test_large_whole_word_range_index_avoids_per_candidate_scans(self):
+  class CountedRanges(list):
+   visits=0
+   def __iter__(self):
+    self.visits+=1
+    return super().__iter__()
+  n=1400
+  text='학교 '*n
+  tokens=[types.SimpleNamespace(start=3*i,length=2,form='학교',tag='NNG') for i in range(n)]
+  whole=CountedRanges((3*i,3*i+2) for i in range(n))
+  class EmptyDictionary:
+   async def lookup_entries(self,forms,*,filter_people=False):
+    return {form:[] for form in forms}
+  result=await collect_mixed(EmptyDictionary(),text,tokens,dict(hanja=True),
+                             whole_word_ranges=whole)
+  self.assertEqual(result['annotations'],[])
+  self.assertEqual(result['targets'],[])
+  self.assertLessEqual(whole.visits,3,'indexed ranges must not be rescanned per word')
+
+ async def test_local_token_span_index_keeps_review_options_identical(self):
+  result=await self.analyze()
+  self.assertEqual(len(result['targets']),30)
+  self.assertTrue(all(t['morphology'] and t['morphology'][0]['form']=='학교'
+                      for t in result['targets']))
+  self.assertTrue(all(sorted(o['replacement'] for o in t['options'] if o['type']=='hanja')
+                      == ['學敎','學校'] for t in result['targets']))
+
 if __name__=='__main__':unittest.main(verbosity=2)
