@@ -1,5 +1,6 @@
 # 韩语网页标注器
 
+> **v1.1.56.35 — 修复真实 Minerva 移动版 `hidden=until-found`：** 实际网页 JavaScript 初始化后会把静态 HTML 中 `section#mf-section-2.collapsible-block` 改成 `section#content-collapsible-block-1.mf-section-2.collapsible-block-js[hidden="until-found"]`。旧版只按 `id^="mf-section-"` 识别，并把隐藏节的 `content-visibility:hidden` 无条件排除，导致真实手机网页 `조문` 正文遗漏。现按稳定的 `mf-section-N` 类与文章父节点识别，允许被浏览器原生 `hidden=until-found` 折叠的正文章节进入本地分析与 DOM 标注；普通隐藏广告/模板和无关隐藏内容仍被排除。新增真实带 JS 加载的 Chrome Minerva 页面检查及全流程回归，未改变词典、Kiwi、JSON 词源审核或整页分段长度。\n\n
 > **v1.1.56.34：折叠韩语始终识别** — 取消主弹出页的「识别折叠栏内的韩语」开关，已加载在 DOM 中的 MediaWiki、Vector、Minerva、原生 details 和明确受控的正文折叠区统一识别，不需要点击展开。以前保存的关闭状态不再生效；普通隐藏的广告、模板和未加载内容依旧不会被扫描。本版同时保留统一韩文节点索引和手动 JSON 误写字段容错；下面历史版本说明中涉及该开关的内容仅用于版本记录。
 
 

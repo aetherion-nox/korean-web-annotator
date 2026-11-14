@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.34-always-folded-indexed';
+const CONTENT_SCRIPT_VERSION = '1.1.56.35-live-minerva-until-found';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
