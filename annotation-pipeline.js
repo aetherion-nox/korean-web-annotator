@@ -83,7 +83,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  if(config){const upstreamDiagnostic=config.onDiagnostic;config={...config,onDiagnostic:d=>{upstreamDiagnostic?.(d);diagnostic({...d,message:safeDetail(d.message,config),detail:safeDetail(d.detail,config)});}};}
 
  const experimental=!!(config?.experimentalHanja&&modes.hanja||config?.experimentalLoanword&&modes.loanword);
- if(config)config={...config,smartSegmentation:smartSegmentation&&config.smartSegmentation===true,experimentalHanja:experimental&&config.experimentalHanja===true&&modes.hanja,experimentalLoanword:experimental&&config.experimentalLoanword===true&&modes.loanword,hanjaReadingCheck:config.hanjaReadingCheck!==false,dictionaryFree,repairModes:{hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true}};
+ if(config)config={...config,smartSegmentation:smartSegmentation&&config.smartSegmentation===true,experimentalHanja:experimental&&config.experimentalHanja===true&&modes.hanja,experimentalLoanword:experimental&&config.experimentalLoanword===true&&modes.loanword,hanjaReadingCheck:config.hanjaReadingCheck!==false,dictionaryFree,repairModes:{hanja:modes.hanja,loanword:modes.loanword}};
  const context=message.context || sentences.map(s=>s.text).join('\n');
  const progressive=message.progressiveAnnotation===true;
  const lastPublished=new Map();
