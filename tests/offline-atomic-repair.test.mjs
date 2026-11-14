@@ -6,7 +6,7 @@ import {createRequire} from 'node:module';
 import {createParagraphPlan} from '../paragraph-plan.js';
 import {buildManualPrompt} from '../review-payload.js';
 import {validateModelHanjaReadings} from '../hanja-reading-check.js';
-import {validateSegmentationRepairsCore} from '../repair-validation-core.js';
+import {validateSegmentationRepairsCore,dictionarySupportedRepairOrigin} from '../repair-validation-core.js';
 const {JSDOM}=createRequire(import.meta.url)('jsdom');
 
 function setup(){
@@ -28,7 +28,7 @@ function setup(){
  const scope={text,allTargets:[target],localAnnotations:[],protected_ranges:[],
   selected:[{start:0,end:text.length}],existingRepairs:[]};
  const backup={requestId:'batch1',batchNumber:1,batchTotal:1,targetCount:1,text:prompt,
-  smartSegmentation:true,hanjaReadingCheck:true,
+  smartSegmentation:true,hanjaReadingCheck:true,experimentalHanja:true,experimentalLoanword:true,
   repairValidation:{targets:[{target_id:'t0',original_target_id:'t0',
     repair_sentence_key:'p0',start:0,end:text.length,surface:text}],
     scopes:[['p0',scope]]},
@@ -80,5 +80,30 @@ test('invalid repair in disconnected mode cannot retire the original or write a 
  assert.equal(task.manualRecoveryRepairs.length,0);
  assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
  assert.equal(task.finished,false);
+ dom.window.close();
+});
+
+test('disconnected segmentation-only mode cannot smuggle a speculative Hanja origin',async()=>{
+ const {dom,document,context,task}=setup();
+ task.manualBackup.experimentalHanja=false;
+ task.manualBackup.experimentalLoanword=false;
+ task.manualDictionaryEvidence=Promise.resolve(dictionarySupportedRepairOrigin);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',...repaired})),
+   /不完整|无效/);
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
+ dom.window.close();
+});
+
+test('disconnected segmentation-only mode can use a matching dictionary-backed Hanja fragment',async()=>{
+ const {dom,document,context,task}=setup();
+ task.manualBackup.experimentalHanja=false;
+ task.manualBackup.experimentalLoanword=false;
+ task.manualDictionaryEvidence=Promise.resolve(dictionarySupportedRepairOrigin);
+ const scope=task.manualBackup.repairValidation.scopes[0][1];
+ scope.allTargets[0].options.push({choice_id:'c0',type:'hanja',
+   replacement:'科學이야기',entry_id:50,definitions:['known sense']});
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',...repaired}));
+ assert.equal(document.querySelector('p ruby').firstChild.textContent,'科學');
+ assert.equal(task.manualRecoveryRepairs[0].annotations[0].origin_source,'dictionary-backed-repair');
  dom.window.close();
 });
