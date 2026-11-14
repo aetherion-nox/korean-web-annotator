@@ -106,11 +106,20 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
      (scope.existingRepairs||[]).some(r=>overlaps(span,r)||r.source_target_ids?.some(id=>oldNative.has(id))||r.old_target_ids?.some(id=>oldNative.has(id)))){
    fail(index,'source conflicts with another target, local annotation or prior repair',row);continue;
   }
-  const protectedRange=(scope.protected_ranges||[]).some(([a,b])=>start<b&&a<end)||
+  const inRanges=ranges=>ranges.some(([a,b])=>start<b&&a<end);
+  const protectedRange=inRanges(scope.protected_ranges||[])||
    old.some(t=>t.proper_noun===true||t.suspected_person_name===true||
     t.dictionary_person_name===true||t.dictionary_name_homograph===true);
-  if(choice_id!=='KEEP'&&protectedRange){
-   fail(index,'protected name or proper noun',row);continue;
+  // Only explicit evidence of a human name blocks Hanja-origin invention.
+  // For old snapshots without person_ranges, remain conservative.
+  const personRange=inRanges(scope.person_ranges||scope.protected_ranges||[])||
+   old.some(t=>t.suspected_person_name===true||
+     t.dictionary_person_name===true||t.dictionary_name_homograph===true);
+  const experimentalLatin=config.experimentalLoanword===true&&/\\p{Script=Latin}/u.test(choice_id);
+  const experimentalHanja=config.experimentalHanja===true&&/\\p{Script=Han}/u.test(choice_id);
+  if(choice_id!=='KEEP'&&protectedRange&&
+     !(experimentalLatin||(experimentalHanja&&!personRange))){
+   fail(index,experimentalHanja&&personRange?'protected personal-name Hanja':'protected proper noun or name',row);continue;
   }
   let annotations=[];
   if(choice_id!=='KEEP'){
