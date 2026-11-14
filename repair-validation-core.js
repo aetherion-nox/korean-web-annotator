@@ -4,7 +4,7 @@
 //  surface,choice_id:literal Hanja|literal Latin original (or KEEP for legacy delete).
 // All positions are UTF-16 offsets in sentences[].text. A repair replaces
 // its referenced original targets atomically; results[] may omit them.
-const HANGUL_SPAN=/^[가-힣]+(?: [가-힣]+){0,3}$/u;
+const HANGUL_SPAN=/^[가-힣]+$/u;
 const overlaps=(a,b)=>a.start<b.end&&b.start<a.end;
 const isInt=Number.isInteger;
 
