@@ -22,10 +22,10 @@ export function dictionarySupportedRepairOrigin(repair,wireTargets,scope){
  const originalIds=new Set(linked.map(t=>t.original_target_id||t.target_id));
  const sourceTargets=(scope.allTargets||[]).filter(t=>originalIds.has(t.target_id));
  if(!sourceTargets.length)return false;
- const HAN=/\\p{Script=Han}/u;
+ const HAN=/\p{Script=Han}/u;
  const src=[...surface],dst=[...choice_id];
  // Latin originals must match one complete, real dictionary candidate.
- if(/\\p{Script=Latin}/u.test(choice_id)&&!HAN.test(choice_id))
+ if(/\p{Script=Latin}/u.test(choice_id)&&!HAN.test(choice_id))
   return sourceTargets.some(t=>t.start===start&&t.end===end&&t.surface===surface&&
    t.options?.some(o=>o.entry_id!=null&&o.type==='loanword'&&o.replacement===choice_id));
  // Sino-Korean compounds can combine aligned fragments from several known
