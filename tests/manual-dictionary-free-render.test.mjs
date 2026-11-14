@@ -149,3 +149,39 @@ test('offline page treats unsupported Hangul and protected-person Hanja as null'
  assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
  dom.window.close();
 });
+
+test('disconnected page uses the dictionary option for a proven person Hanja spelling',async()=>{
+ const {dom,document,context,task}=environment();
+ const b=task.manualBackup.bindings[0];
+ b.dictionaryPersonHanja=['經濟'];
+ b.literalOrigin={eligible:false,hanja:false,loanword:false};
+ b.choices.push({choice_id:'c0',annotations:[{
+   start:0,end:2,surface:'경제',replacement:'經濟',type:'hanja'
+ }]});
+ await context.applyManualRecovery(task,JSON.stringify({
+  batch_id:'batch1',results:[{t:'t0',c:'經濟'},{t:'t1',c:null},{t:'t2',c:null}]
+ }));
+ assert.equal(task.manualRecoveryAccepted.get('t0').choice.choice_id,'c0');
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,1);
+ assert.equal(document.querySelector('p ruby').firstChild.textContent,'經濟');
+ assert.equal(document.querySelector('p ruby').getAttribute('data-kra-source'),'');
+ assert.equal(task.finished,true);
+ dom.window.close();
+});
+
+test('disconnected page still keeps an unsupported person Hanja guess',async()=>{
+ const {dom,document,context,task}=environment();
+ const b=task.manualBackup.bindings[0];
+ b.dictionaryPersonHanja=['經濟'];
+ b.literalOrigin={eligible:false,hanja:false,loanword:false};
+ b.choices.push({choice_id:'c0',annotations:[{
+  start:0,end:2,surface:'경제',replacement:'經濟',type:'hanja'
+ }]});
+ await context.applyManualRecovery(task,JSON.stringify({
+  batch_id:'batch1',results:[{t:'t0',c:'經製'},{t:'t1',c:null},{t:'t2',c:null}]
+ }));
+ assert.equal(task.manualRecoveryAccepted.get('t0').choice.choice_id,'KEEP');
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
+ assert.equal(task.finished,true);
+ dom.window.close();
+});
