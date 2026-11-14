@@ -1575,6 +1575,8 @@
     }
     if(!dryRun)task.manualRecoveryAccepted=verified;
     const scanOnly=new Set((backup.repairValidation?.targets||[]).filter(t=>t.scan_only).map(t=>t.target_id));
+    const actionable=backup.bindings.filter(b=>!scanOnly.has(b.target_id));
+    const completedCount=actionable.filter(b=>verified.has(b.target_id)||retired.has(b.target_id)).length;
     const missing=backup.bindings.filter(b=>!verified.has(b.target_id)&&
       !retired.has(b.target_id)&&!scanOnly.has(b.target_id));
     if(missing.length){
@@ -1596,10 +1598,10 @@
       if(panel){
         panel.querySelector('.kra-manual-prompt').value=manualRetryPrompt(task,missing,reasons);
         panel.querySelector('.kra-manual-summary').textContent+=
-          '\n已保存 '+(verified.size+retired.size)+'/'+bindings.size+' 条；仅需补交 '+missing.length+' 条。';
+          '\n已保存 '+completedCount+'/'+actionable.length+' 条；仅需补交 '+missing.length+' 条。';
       }
       const details=manualMissingTargetDetails(missing,reasons);
-      const message='本批结果不完整：已验证 '+(verified.size+retired.size)+'/'+bindings.size+' 条，页面已预览 '+count+
+      const message='本批结果不完整：已验证 '+completedCount+'/'+actionable.length+' 条，页面已预览 '+count+
         ' 个标注；剩余 '+missing.length+' 条待补交：'+details+
         (missing.length>8?'；其余见补交提示词':'')+
         (unknown.length?'。已忽略未知或跨批 target_id '+unknown.slice(0,4).join('、'):'')+
