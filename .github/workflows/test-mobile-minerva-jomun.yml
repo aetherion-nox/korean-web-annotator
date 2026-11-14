@@ -83,6 +83,8 @@ jobs:
           PY
       - name: Install headless Chrome driver
         run: npm install --no-save --ignore-scripts --no-audit --no-fund playwright-core
+      - name: Run Vector, Minerva and generic folded article regression tests
+        run: node --test tests/wikisource-dd-toc.test.mjs
       - name: Test mobile closed 조문 with original extension scanner and DOM writer
         run: node scripts/diagnose_mobile_closed_jomun.mjs
       - uses: actions/upload-artifact@v4
