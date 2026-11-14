@@ -19,6 +19,14 @@ function matchedWireOption(target,value,config){
  const options=filterReviewTarget(target,config).options;
  if(value===null)return options.find(o=>o.type==='keep')||null;
  const selected=options.find(o=>o.type!=='keep'&&o.choice_id===value);
+ // A literal Hanja personal name is permitted ONLY when the local dictionary
+ // supplied that exact writing for this full occurrence. Treat it as the
+ // original dictionary sense, not as an unverified experimental guess.
+ if(!selected&&typeof value==='string'&&target.dictionary_person_name===true&&
+    target.verified_person_hanja?.includes(value)){
+  const matched=options.find(o=>o.type==='hanja'&&o.replacement===value&&o.entry_id!=null);
+  if(matched)return matched;
+ }
  // A nonexistent numbered dictionary option means no conversion, in both
  // ordinary and experimental modes. Authentic literal origins remain distinct.
  if(selected)return selected;
