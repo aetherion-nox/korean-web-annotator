@@ -32,7 +32,44 @@ test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>
  }
  assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'nonconversion');
  assert.equal(validateChoices([hanja],reply('t0','原潛')).accepted.length,0,'ordinary mode must not accept raw origins');
- assert.equal(choose(hanja,'元箴',{experimentalHanja:true}).unresolved.length,1,'existing dictionary spelling requires its c0 key');
+ assert.equal(choose(hanja,'元箴',{experimentalHanja:true}).accepted.length,1,'matching dictionary spelling can be proposed independently');
+});
+
+test('identical literal origin and dictionary spelling remain separate evidence for Musk, Yugo and Hanja',()=>{
+ const musk={target_id:'t560',start:2,end:5,surface:'머스크',context:'멜론머스크',
+  suspected_person_name:true,proper_noun:true,options:[
+   {choice_id:'KEEP',type:'keep',replacement:'머스크',entry_id:null,definitions:[]},
+   ...['c0','c1','c2'].map((id,i)=>({choice_id:id,type:'loanword',
+    replacement:'musk',entry_id:100+i,definitions:['unrelated dictionary meaning']}))
+  ]};
+ const yugo={target_id:'t577',start:1,end:3,surface:'유고',context:'‘유고의 그림자’',
+  suspected_person_name:true,options:[
+   {choice_id:'KEEP',type:'keep',replacement:'유고',entry_id:null,definitions:[]},
+   {choice_id:'c9',type:'loanword',replacement:'Yugo',entry_id:209,definitions:['former country']}
+  ]};
+ for(const [target,raw,existingKey] of [[musk,'musk','c0'],[yugo,'Yugo','c9']]){
+  const independent=choose(target,raw,{experimentalLoanword:true});
+  assert.equal(independent.accepted.length,1,raw);
+  assert.equal(independent.experimentalAccepted,1);
+  assert.equal(independent.accepted[0].option.origin_source,'model-unverified');
+  assert.equal(independent.accepted[0].option.entry_id,'experimental:loanword');
+  assert.deepEqual(projectAnnotation(target.context,{...target,...independent.accepted[0].option})
+   .map(a=>[a.start,a.end,a.replacement]),[[target.start,target.end,raw]]);
+  const dictionary=choose(target,existingKey,{experimentalLoanword:true});
+  assert.equal(dictionary.experimentalAccepted,0);
+  assert.equal(dictionary.accepted[0].option.entry_id,target.options.find(o=>o.choice_id===existingKey).entry_id);
+  assert.equal(choose(target,raw,{}).accepted.length,0,'open-origin still requires enabling loanword mode');
+ }
+ const oldHanja={...hanja,options:[
+  hanja.options[0],{...hanja.options[1],replacement:'原潛'}
+ ]};
+ const literal=choose(oldHanja,'原潛',{experimentalHanja:true});
+ assert.equal(literal.accepted.length,1);
+ assert.equal(literal.experimentalAccepted,1);
+ assert.equal(literal.accepted[0].option.entry_id,'experimental:hanja');
+ assert.equal(choose(oldHanja,'c0',{experimentalHanja:true}).accepted[0].option.entry_id,10);
+ assert.equal(choose({...oldHanja,dictionary_person_name:true},'原潛',{experimentalHanja:true}).unresolved.length,1,
+  'personal-name Hanja protection must remain enforced');
 });
 
 test('Latin spelling is validated as loanword without trusting an invented pool key',()=>{
