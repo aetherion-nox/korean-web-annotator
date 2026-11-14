@@ -16,6 +16,25 @@ try{
      openFunction:typeof window.mfTempOpenSection,heading:!!document.querySelector('[onclick*="mfTempOpenSection(2)"]')};
   });
   console.log('LIVE_BEFORE',JSON.stringify(before));
+  const actual=await page.evaluate(()=>{
+    const title=document.querySelector('#조문'), dd=document.querySelector('.mw-parser-output dd');
+    const trail=el=>{const arr=[];for(let i=0;el&&i<12;i++,el=el.parentElement){
+      const css=getComputedStyle(el);
+      arr.push({tag:el.tagName,id:el.id,classes:String(el.className||'').slice(0,110),
+       display:css.display,visibility:css.visibility,hidden:el.hidden,
+       textLength:el.textContent?.length||0});
+    }return arr;};
+    return {url:location.href,title:document.title,bodyClasses:document.body.className,
+     htmlClasses:document.documentElement.className,
+     sectionCount:document.querySelectorAll('.mw-parser-output section').length,
+     foldedCount:document.querySelectorAll('.collapsible-block').length,
+     firstSection:document.querySelector('.mw-parser-output section')?.outerHTML.slice(0,350),
+     h2s:[...document.querySelectorAll('h2')].map(e=>e.textContent?.slice(0,40)).slice(0,12),
+     jomun:!!title,jomunTrail:trail(title),ddTrail:trail(dd),
+     mainTextLength:document.querySelector('.mw-parser-output')?.textContent?.length,
+     firstDD:dd?.textContent.slice(0,160)};
+  });
+  console.log('LIVE_DOM_STRUCTURE',JSON.stringify(actual));
   if(before.hasSection){
    const pre=await page.evaluate(()=>{
     const section=document.querySelector('#mf-section-2'),
