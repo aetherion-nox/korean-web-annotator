@@ -17,8 +17,8 @@ function validWireRow(row,known){
 }
 function matchedWireOption(target,value,config){
  const options=filterReviewTarget(target,config).options;
- if(value===null)return options.find(o=>o.type==='keep')||null;
- return options.find(o=>o.type!=='keep'&&o.choice_id===value)||null;
+ if(value===null||(typeof value==='string'&&/^n\d+$/u.test(value)))return options.find(o=>o.type==='keep')||null;
+ return options.find(o=>o.type!=='keep'&&o.type!=='nonconversion'&&o.choice_id===value)||null;
 }
 export function validateChoices(targets,response,config={}){
  const accepted=[],unresolved=[];
