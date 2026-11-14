@@ -28,7 +28,7 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
             word,dict(hanja=hanja,loanword=loanword,nameProtection=name_protection,
                       filterDictionaryPeople=filter_people,reviewLocalConversions=review))
 
-    async def test_person_only_hanja_is_reviewed_when_dictionary_proven(self):
+    async def test_person_only_hanja_is_suppressed_when_filter_enabled(self):
         person=self.person('이수민','李壽民')
         self.assertTrue(is_dictionary_person({'subject_category':'인명'}))
         self.assertFalse(is_dictionary_person({'subject_category':'일반어'}))
@@ -36,13 +36,13 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(unfiltered['annotations'] or unfiltered['targets'],unfiltered)
         filtered=await self.run_case('이수민',filter_people=True)
         self.assertEqual(filtered['annotations'],[])
-        self.assertEqual(len(filtered['targets']),1)
-        self.assertEqual(filtered['targets'][0]['verified_person_hanja'],['李壽民'])
-        self.assertTrue(any(o['entry_id']==person for o in filtered['targets'][0]['options']))
+        self.assertEqual(filtered['targets'],[],filtered)
         reviewed=await self.run_case('이수민',filter_people=True,review=True)
         self.assertEqual(reviewed['annotations'],[])
-        self.assertEqual(len(reviewed['targets']),1)
-        self.assertEqual(reviewed['targets'][0]['verified_person_hanja'],['李壽民'])
+        self.assertEqual(reviewed['targets'],[],reviewed)
+        explicit=await self.run_case('이수민',filter_people=False,review=True)
+        self.assertTrue(any(o.get('entry_id')==person and o['replacement']=='李壽民'
+                            for t in explicit['targets'] for o in t['options']),explicit)
 
     async def test_person_loanword_and_mixed_are_filtered_without_rediscovery(self):
         for word,origin in [('마이클','Michael'),('김게임','金game')]:
@@ -59,7 +59,7 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
         result=await self.run_case('학교',filter_people=True,name_protection=False,review=True)
         options=[o for target in result['targets'] for o in target['options'] if o['type']!='keep']
         self.assertTrue(any(o['replacement']=='學校' for o in options),result)
-        self.assertTrue(any(o.get('entry_id')==person and o['replacement']=='李校' for o in options),result)
+        self.assertFalse(any(o.get('entry_id')==person for o in options),result)
         off=await self.run_case('학교',filter_people=False,name_protection=False,review=True)
         self.assertTrue(any(o.get('entry_id')==person for t in off['targets'] for o in t['options']),off)
 
@@ -73,8 +73,9 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
         filtered=await self.run_case('이수민',filter_people=True,name_protection=True)
         self.assertEqual(filtered['annotations'],[])
         self.assertGreater(filtered['stats']['protected_names'],0)
+        self.assertEqual(filtered['targets'],[],filtered)
 
-    async def test_historical_biography_without_category_is_a_verified_person_candidate(self):
+    async def test_historical_biography_without_category_is_filtered(self):
         # Real dictionaries sometimes supply "人名" only in an external
         # dictionary renderer, while the imported DB category is blank.
         from backend.proper_nouns import is_person_biography
@@ -89,11 +90,10 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(row,(None,None))
         protected=await self.run_case('장보고',filter_people=True,name_protection=True)
         self.assertEqual(protected['annotations'],[],protected)
-        self.assertEqual(len(protected['targets']),1,protected)
-        self.assertEqual(protected['targets'][0]['verified_person_hanja'],['張保皐'])
+        self.assertEqual(protected['targets'],[],protected)
         filtered=await self.run_case('장보고',filter_people=True,name_protection=False,review=True)
         self.assertEqual(filtered['annotations'],[],filtered)
-        self.assertEqual(len(filtered['targets']),1,filtered)
+        self.assertEqual(filtered['targets'],[],filtered)
         unfiltered=await self.run_case('장보고',filter_people=False,name_protection=False,review=True)
         self.assertTrue(any(o.get('entry_id')==name for t in unfiltered['targets']
                             for o in t['options']),unfiltered)
@@ -104,9 +104,10 @@ class FilterDictionaryPeople(unittest.IsolatedAsyncioTestCase):
         ordinary=self.add('장보고','長保庫','명사','특정 물건을 보관하는 창고.')
         result=await self.run_case('장보고',filter_people=True,name_protection=False,review=True)
         ids=[o.get('entry_id') for t in result['targets'] for o in t['options']]
-        self.assertIn(person,ids,result)
+        self.assertNotIn(person,ids,result)
         self.assertIn(ordinary,ids,result)
-        self.assertEqual(result['targets'][0]['verified_person_hanja'],['張保皐'])
+        off=await self.run_case('장보고',filter_people=False,name_protection=False,review=True)
+        self.assertTrue(any(o.get('entry_id')==person for t in off['targets'] for o in t['options']),off)
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
