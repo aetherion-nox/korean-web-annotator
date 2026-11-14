@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.12-adaptive-frame-collection';
+  const VERSION = '1.1.56.13-targeted-offline-validation-errors';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -1060,7 +1060,8 @@
         }).catch(error=>{
           if(currentTask!==task||task.finished||task.manualRequest!==submission.requestId)return;
           if(task.manualSubmission===submission)task.manualSubmission=null;
-          note('答案尚未全部应用：'+String(error.message||error)+'。可直接修改后自动重试，或点击手动按钮；当前批次保留。');
+          const reason=String(error.message||error).replace(/[。！!]+$/u,'');
+          note('答案尚未全部应用：'+reason+'。可直接修改后自动重试，或点击手动按钮；当前批次保留。');
           applyButton.disabled=false;importButton.disabled=false;
         });
         return true;
@@ -1483,6 +1484,23 @@
     return {applied:applied.map(({repair})=>repair),retired,groups,reasons};
   }
 
+  // Cross-frame offline dry runs must report the original target and cause.
+  // This is diagnostic only; the atomic validate-then-commit rule is unchanged.
+  function manualMissingTargetDetails(missing,reasons,limit=8){
+    const details=missing.slice(0,limit).map(binding=>{
+      const id=String(binding.target_id||'(无 ID)');
+      const surface=String(binding.surface||'').replace(/\s+/g,' ').slice(0,60);
+      const location=typeof binding.sentenceId==='string'?
+        '［'+binding.sentenceId+
+          (Number.isInteger(binding.start)&&Number.isInteger(binding.end)?
+            ':'+binding.start+'-'+binding.end:'')+'］':'';
+      const reason=String(reasons.get(binding.target_id)||'本批答案中未找到有效结果').slice(0,180);
+      return id+'「'+(surface||'原词未知')+'」'+location+'：'+reason;
+    });
+    return details.join('；')+
+      (missing.length>limit?'；其余 '+(missing.length-limit)+' 个目标请查看本批原始提示词':'');
+  }
+
   // Construct a retry prompt from the original shared pool, keeping the
   // same batch ID and only the sentences/candidates the missing targets need.
   function manualRetryPrompt(task,missing,reasons){
@@ -1545,6 +1563,8 @@
          Object.keys(row).sort().join(',')!=='c,t'||
          !bindings.has(row.t)||
          !(row.c===null||(typeof row.c==='string'&&row.c.length>0))){
+        if(typeof row?.t==='string'&&bindings.has(row.t))
+          reasons.set(row.t,'答案字段不符合 t/c 格式或 c 类型无效');
         unknown.push(String(row?.t??'(无效)'));continue;
       }
       if(!incoming.has(row.t))incoming.set(row.t,[]);
@@ -1612,7 +1632,8 @@
     const missing=backup.bindings.filter(b=>!verified.has(b.target_id)&&
       !retired.has(b.target_id)&&!scanOnly.has(b.target_id));
     if(missing.length){
-      if(dryRun)throw Error('尚有 '+missing.length+' 个目标无法与当前原文安全对应或选择无效。');
+      if(dryRun)throw Error('尚有 '+missing.length+' 个目标未通过安全校验：'+
+         manualMissingTargetDetails(missing,reasons));
       // Preview only, never commit or finish until all targets are verified.
       const prepared=[...groups].map(([entry,group])=>{
         const model=[...(entry.committedModelAnnotations||[]).filter(a=>
@@ -1631,7 +1652,7 @@
         panel.querySelector('.kra-manual-summary').textContent+=
           '\n已保存 '+(verified.size+retired.size)+'/'+bindings.size+' 条；仅需补交 '+missing.length+' 条。';
       }
-      const details=missing.slice(0,8).map(b=>b.target_id+'（'+(reasons.get(b.target_id)||'未提交')+'）').join('；');
+      const details=manualMissingTargetDetails(missing,reasons);
       const message='本批结果不完整：已验证 '+(verified.size+retired.size)+'/'+bindings.size+' 条，页面已预览 '+count+
         ' 个标注；剩余 '+missing.length+' 条待补交：'+details+
         (missing.length>8?'；其余见补交提示词':'')+
