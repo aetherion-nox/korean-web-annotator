@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.28-respect-filter-dictionary-people';
+const CONTENT_SCRIPT_VERSION = '1.1.56.29-long-document-analysis';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
