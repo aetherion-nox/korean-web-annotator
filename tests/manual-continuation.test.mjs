@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
 import {normalizeBatchContextTier,describeBatchBudget} from '../batch-budget.js';
+import {normalizeManualAnswer} from '../manual-answer-format.js';
 test('explicit capacities migrate current to 32k and include 256k',()=>{
  assert.equal(normalizeBatchContextTier('current'),'32k');
  for(const [tier,size] of [['32k',32000],['128k',128000],['256k',256000],['512k',512000],['1m',1000000]]){
@@ -10,7 +11,7 @@ function environment(){
  const nodes=new Map();const panel={dataset:{operationId:'op'},querySelector:key=>{if(!nodes.has(key))nodes.set(key,{value:'',textContent:'',disabled:false});return nodes.get(key);}};
  const entry={id:'s',text:'가나',selected:[{start:0,end:2}],annotations:[],localAnnotations:[]};
  const event=(n)=>({type:'MANUAL_REVIEW_REQUEST',requestId:'batch'+n,batchNumber:n,batchTotal:2,targetCount:1,text:'prompt'+n,bindings:[{target_id:'t0',sentenceId:'s',start:n-1,end:n,surface:entry.text[n-1],choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{start:n-1,end:n,surface:entry.text[n-1],replacement:n===1?'可':'那',type:'hanja'}]}]}]});
- const task={operationId:'op',entries:new Map([['node',entry]]),modes:{hanja:true},manualBackup:event(1),manualRequest:'batch1',manualLocalOnly:true,manualPlan:[event(1),event(2)],paint:()=>entry.annotations.length};
+ const task={operationId:'op',entries:new Map([['node',entry]]),modes:{hanja:true},manualAnswerNormalizer:Promise.resolve(normalizeManualAnswer),manualBackup:event(1),manualRequest:'batch1',manualLocalOnly:true,manualPlan:[event(1),event(2)],paint:()=>entry.annotations.length};
  const context={uiSettings:{hideToolbarOnFirstManual:false},configureRecovery:()=>{},seenSources:new Set(),configureAutomaticAnnotation:()=>{},currentTask:task,document:{querySelector:()=>panel},manualPanel:()=>panel,getToolbar:()=>panel,status:()=>{},refreshManualReopen:()=>{},publishState:()=>{},clearTimeout:()=>{},clearInterval:()=>{},setTimeout:()=>1,finishTask:(t,m,done)=>{t.finished=true;t.completed=done;},console};
  vm.createContext(context);const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');const code=source.slice(source.indexOf('  function recoverManualConnection'),source.indexOf('  function status(',source.indexOf('  function recoverManualConnection')));vm.runInContext(code,context);
  return {context,task,entry,panel};
@@ -48,7 +49,7 @@ test('page-only recovery rejects direct Hanja string when experimental mode meta
  assert.equal(task.manualRequest,'batch1');
 });
 
-test('disconnected page recovery requires exact batch_id and valid t/c rows',async()=>{
+test('disconnected page recovery accepts omitted batch ID only with valid active targets',async()=>{
  const {context,task,entry}=environment();
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[]})),/batch_id/);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'other',c:'c0'}]})),/target_id/);
@@ -59,9 +60,9 @@ test('disconnected page recovery requires exact batch_id and valid t/c rows',asy
  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch2',results:[{t:'t0',c:null}]}));
  assert.equal(task.completed,true);assert.equal(entry.annotations.length,1);
 });
-test('missing batch_id is rejected before experimental-origin eligibility checks',async()=>{
+test('missing batch_id still enforces experimental-origin eligibility checks',async()=>{
  const {context,task,entry}=environment();
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'可'}]})),/batch_id/);
+ await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'可'}]})),/无效 c|不完整/);
  assert.equal(task.manualRequest,'batch1');
  assert.equal(entry.annotations.length,0);
 });
