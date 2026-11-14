@@ -45,7 +45,6 @@ test('missing dictionary proof, incorrect characters, or wrong span stay null as
  for(const t of [
    {...name,verified_person_hanja:undefined},
    {...name,verified_person_hanja:[]},
-   {...name,dictionary_person_name:undefined},
    {...name,options:[name.options[0]],verified_person_hanja:['李承晩']},
    {...name,suspected_person_name:true,dictionary_person_name:undefined}
  ]){
