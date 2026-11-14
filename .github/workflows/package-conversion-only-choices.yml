@@ -1,0 +1,128 @@
+name: Validate and Package v1.1.56.23 Conversion-Only Model Choices
+on:
+  push:
+    branches:
+      - fix/v1.1.56.23-conversion-only-choices
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v1.1.56.23-conversion-only-choices
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify version
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.23'
+          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.23'
+          PY
+      - name: Restore frozen Kiwi and Python runtime
+        run: |
+          python3 restore_distribution.py
+          git restore runtime/python-sources.json
+      - name: Run complete tests
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          PYTHONPATH=python/browser-support npm test
+      - name: Verify current compact model response schema in prompts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          files=['review-payload.js','experimental-options.js','smart-segmentation-prompt.js']
+          for f in files:
+              text=Path(f).read_text()
+              for fragment in ['results[].choice_id','{"target_id":"t0","choice_id":"c0"}','Return KEEP','choose KEEP','shared-pools-v3','{target_id,choice_id}']:
+                  assert fragment not in text, (f,fragment)
+          print('Only compact t/c response instructions.')
+          PY
+      - name: Build and verify complete ZIP
+        run: |
+          python3 - <<'PY'
+          import subprocess,zipfile,json,hashlib
+          from pathlib import Path
+          root=Path.cwd()
+          tracked=[Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if p]
+          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests','scripts'}
+                 and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          dest=root/'Korean-Web-Annotator-v1.1.56.23-conversion-only-choices.zip'
+          with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
+              for p in sorted(files):
+                  mode=zipfile.ZIP_DEFLATED
+                  z.write(root/p,'Korean-Web-Annotator/'+p.as_posix(),
+                          compress_type=mode,compresslevel=9 if p.suffix.lower()=='.mdl' else 6)
+          with zipfile.ZipFile(dest) as z:
+              assert z.testzip() is None
+              needed=['manifest.json','content.js','service-worker.js','review-payload.js',
+                      'choice-review.js','model-stream.js','manual-review.js',
+                      'browser-worker.js','engine-page.js','runtime/models/cong.mdl']
+              assert all('Korean-Web-Annotator/'+p in z.namelist() for p in needed)
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.23'
+              model=z.getinfo('Korean-Web-Annotator/runtime/models/cong.mdl')
+              assert model.compress_type==zipfile.ZIP_DEFLATED, 'cong.mdl must be compressed in ZIP'
+              assert model.file_size==75854705, 'Unexpected Kiwi model size'
+              original_digest=hashlib.sha256((root/'runtime/models/cong.mdl').read_bytes()).hexdigest()
+              zip_digest=hashlib.sha256(z.read(model.filename)).hexdigest()
+              assert zip_digest==original_digest,'ZIP must preserve the bundled runtime model byte for byte'
+              print('cong.mdl SHA256 verified:',zip_digest)
+              print('cong.mdl:',model.file_size,'original bytes,',model.compress_size,
+                    'ZIP-compressed bytes, saved:',model.file_size-model.compress_size,
+                    'ratio:',round(model.compress_size/model.file_size*100,2),'%')
+          assert sum(i.file_size for i in zipfile.ZipFile(dest).infolist())>90_000_000,'Kiwi runtime missing'
+          print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-v1.1.56.23
+          path: Korean-Web-Annotator-v1.1.56.23-conversion-only-choices.zip
+          compression-level: 0
+          if-no-files-found: error
+  windows-verify-publish:
+    runs-on: windows-latest
+    needs: package
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-v1.1.56.23
+          path: artifact
+      - name: Verify Windows Expand-Archive and 7-Zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
+          if(-not $zip){throw 'Missing archive'}
+          $dest=Join-Path $env:RUNNER_TEMP 'unpacked'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force -ErrorAction Stop
+          $manifest=Get-ChildItem $dest -Recurse -Filter manifest.json -File | Select-Object -First 1
+          $model=Get-ChildItem $dest -Recurse -Filter cong.mdl -File | Select-Object -First 1
+          if(-not $manifest -or -not $model){throw 'Missing runtime files'}
+          if($model.Length -ne 75854705){throw "Unexpected Kiwi runtime length: $($model.Length)"}
+          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.23'){throw 'Wrong manifest version'}
+          $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if(Test-Path $sevenZip){& $sevenZip t $zip;if($LASTEXITCODE -ne 0){throw '7-Zip validation failed'}}
+      - name: Publish distinct prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='v1.1.56.23-conversion-only-choices.1'
+          $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
+          gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
+          if($LASTEXITCODE -eq 0){
+            gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
+          } else {
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.23 — conversion-only c choices and native null semantics' --prerelease --notes 'Based on v1.1.56.22. The LLM now only selects conversion c keys, open-ended authentic origins when enabled, or JSON null for no conversion. Nonconversion dictionary senses are reference-only pooled keep_senses, never selectable n keys. If a model nevertheless returns any n-numbered row, safely normalize its output to null (KEEP) rather than creating an invalid-choice retry, including online/API, manual, offline and stream previews. Preserve all original local lexical evidence, POS filtering, split/merge repairs and origin protections. Ensure partial manual retry and multi-frame recovery retain native sense pooled references, while leaving all other features and the compressed cong.mdl unchanged. Run complete regression and Windows ZIP extraction checks.'
+          }
+          if($LASTEXITCODE -ne 0){throw 'Release publishing failed'}
