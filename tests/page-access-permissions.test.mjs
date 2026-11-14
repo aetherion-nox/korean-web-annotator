@@ -7,7 +7,7 @@ const popup=source('popup.js'),worker=source('service-worker.js'),content=source
 const options=source('options.js'),pkg=JSON.parse(source('package.json'));
 
 test('website host permissions cover HTTP/HTTPS top frames and cross-origin iframes',()=>{
- assert.equal(manifest.version,'1.1.56.31');
+ assert.equal(manifest.version,'1.1.56.32');
  assert.equal(pkg.version,manifest.version);
  assert.ok(manifest.host_permissions?.includes('https://*/*'));
  assert.ok(manifest.host_permissions?.includes('http://*/*'));
@@ -21,7 +21,7 @@ test('website host permissions cover HTTP/HTTPS top frames and cross-origin ifra
 });
 
 test('popup, worker and content script share the current content-script version',()=>{
- const version='1.1.56.31-wikisource-dd-toc-performance';
+ const version='1.1.56.32-real-bottlenecks-and-folded-toc';
  assert.ok(popup.includes("const CONTENT_SCRIPT_VERSION = '"+version+"';"));
  assert.ok(worker.includes("const CONTENT_SCRIPT_VERSION='"+version+"';"));
  assert.ok(content.includes("const VERSION = '"+version+"';"));
