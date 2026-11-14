@@ -70,7 +70,7 @@ test('batchless partial valid answers can be saved, then retry only missing or i
  const partial=batch.events.find(e=>e.type==='MANUAL_REVIEW_ERROR'&&e.acceptedRows);
  assert.equal(partial.acceptedCount,1);
  assert.deepEqual(partial.invalidTargetIds,['t1']);
- assert.equal(batch.submit({results:[{t:'t1',c:'missing'}]}),false);
+ assert.equal(batch.submit({results:[{t:'t1',c:42}]}),false);
  assert.equal(batch.submit({results:[{t:'t1',c:'c0'}]}),true);
  assert.deepEqual((await batch.pending).results.map(x=>x.c),[null,'c0']);
 });
