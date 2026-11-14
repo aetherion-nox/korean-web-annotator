@@ -4,7 +4,11 @@ import json
 import random
 import time
 import unittest
-from dataclasses import dataclass
+import sys
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]
+sys.path[:0]=[str(ROOT/'python'),str(ROOT/'python/backend/upstream'),
+              str(ROOT/'python/browser-support')]
 from app.services.tokenizer import MorphToken
 from app.services.quantity import has_quantity_before,indexed_quantity_before
 from backend.loanwords import collect
