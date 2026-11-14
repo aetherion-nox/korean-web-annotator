@@ -41,12 +41,12 @@ test('accepted batch remains available before later model events arrive',async()
  assert.equal(task.manualRequest,'batch2');assert.equal(entry.annotations.length,1);
 });
 
-test('page-only recovery rejects direct Hanja string when experimental mode metadata is absent',async()=>{
+test('page-only recovery keeps Korean when direct Hanja is disabled',async()=>{
  const {context,task,entry}=environment();
  const proposed={batch_id:'batch1',results:[{t:'t0',c:'可'}]};
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify(proposed)),/无效 c|不完整/);
+ await context.applyManualRecovery(task,JSON.stringify(proposed));
  assert.equal(entry.annotations.length,0);
- assert.equal(task.manualRequest,'batch1');
+ assert.equal(task.manualRequest,'batch2');
 });
 
 test('disconnected page recovery accepts omitted batch ID only with valid active targets',async()=>{
@@ -60,10 +60,10 @@ test('disconnected page recovery accepts omitted batch ID only with valid active
  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch2',results:[{t:'t0',c:null}]}));
  assert.equal(task.completed,true);assert.equal(entry.annotations.length,1);
 });
-test('missing batch_id still enforces experimental-origin eligibility checks',async()=>{
+test('missing batch_id still rejects an unauthorized conversion and preserves Korean',async()=>{
  const {context,task,entry}=environment();
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'可'}]})),/无效 c|不完整/);
- assert.equal(task.manualRequest,'batch1');
+ await context.applyManualRecovery(task,JSON.stringify({results:[{t:'t0',c:'可'}]}));
+ assert.equal(task.manualRequest,'batch2');
  assert.equal(entry.annotations.length,0);
 });
 
@@ -90,13 +90,15 @@ test('disconnected recovery accepts identical spelling independently from dictio
  assert.equal(task.manualRequest,'batch2');
 });
 
-test('disconnected recovery fails closed for prohibited names and malformed Hanzi spans',async()=>{
+test('disconnected recovery falls back for blocked origins, but still rejects malformed row structure',async()=>{
+ for(const origin of ['game','韓字']){
+  const {context,task,entry}=environment();
+  task.manualBackup.bindings[0].literalOrigin={eligible:origin!=='game',hanja:true,loanword:true,known:[]};
+  task.modes.loanword=true;
+  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:origin}]}));
+  assert.equal(entry.annotations.length,0);assert.equal(task.manualRequest,'batch2');
+ }
  const {context,task,entry}=environment();
- const meta={eligible:false,hanja:true,loanword:true,known:[]};
- task.manualBackup.bindings[0].literalOrigin=meta;task.modes.loanword=true;
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]})),/无效 c|不完整/);
- meta.eligible=true;
- await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'韓字'}]})),/无效 c|不完整/);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game',extra:true}]})),/无效 c|不完整/);
  assert.equal(entry.annotations.length,0);assert.equal(task.manualRequest,'batch1');
 });
@@ -121,7 +123,7 @@ test('partial page results preview valid rows, preserve them and complete after 
    choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{start:1,end:2,surface:'나',replacement:'那',type:'hanja'}]}]};
  task.manualBackup.bindings.push(other);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({
-   batch_id:'batch1',results:[{t:'t0',c:'c0'},{t:'t1',c:'invalid'}]
+   batch_id:'batch1',results:[{t:'t0',c:'c0'},{t:'t1',c:42}]
  })),/已验证 1\/2/);
  assert.equal(task.manualRequest,'batch1');
  assert.equal(task.manualRecoveryAccepted.size,1);
