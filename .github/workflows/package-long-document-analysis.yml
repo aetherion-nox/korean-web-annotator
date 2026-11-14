@@ -2,7 +2,7 @@ name: Validate and Package v1.1.56.29 Long Document Local Analysis Performance
 on:
   push:
     branches:
-      - fix/v1.1.56.29-long-document-analysis
+      - perf/v1.1.56.29-long-document-analysis
   workflow_dispatch:
 permissions:
   contents: write
