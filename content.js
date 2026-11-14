@@ -606,8 +606,14 @@
         if(!recognize&&(details&&element!==details&&!element.closest('summary')||foldedVector))
           reason='hidden';
         else {
+          const vectorChild=recognize&&element.matches('.vector-toc-list-item')&&
+            element.parentElement?.matches('.vector-toc-list')&&
+            Boolean(element.closest('#vector-toc'));
+          // Live Vector CSS hides each child <li> (display:none), *not* the
+          // enclosing <ul>. This exception is limited to these actual TOC
+          // list items; unrelated hidden spans/templates are still excluded.
           const mediaWikiPanel=recognize&&(element.matches('.mw-collapsible-content')||
-              vectorList);
+              vectorList||vectorChild);
           if((element.hidden||element.hasAttribute('inert')||
               element.getAttribute('aria-hidden')==='true')&&
              (!mediaWikiPanel||element.hasAttribute('inert')))reason='hidden';
@@ -860,7 +866,10 @@
         const foldedVector=vectorList&&node.parentElement?.matches(
           '.vector-toc-list-item:not(.vector-toc-list-item-expanded)');
         if(!recognize&&(closed&&closed!==node&&!node.closest('summary')||foldedVector))return true;
-        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||vectorList);
+        const vectorChild=recognize&&node.matches('.vector-toc-list-item')&&
+          node.parentElement?.matches('.vector-toc-list')&&
+          Boolean(node.closest('#vector-toc'));
+        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||vectorList||vectorChild);
         if((node.hidden||node.hasAttribute?.('inert')||
             node.getAttribute?.('aria-hidden')==='true')&&
            (!mediaWikiPanel||node.hasAttribute?.('inert')))return true;
