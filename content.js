@@ -1214,13 +1214,17 @@
   // path remains unchanged; unknown spellings are never treated as dictionary choices.
   async function manualLiteralChoice(binding,choiceId,entry,task,row){
     const meta=binding?.literalOrigin;
-    if(!meta||!(meta.hanjaEligible===true||meta.loanwordEligible===true)||typeof choiceId!=='string'||!choiceId||choiceId.length>160||
+    // Older already-open manual batches only carry the common eligible bit.
+    // For newly generated batches, the explicit per-script bits take priority.
+    const eligible=script=>meta?.[script+'Eligible']===true||
+      (meta?.[script+'Eligible']===undefined&&meta?.eligible===true);
+    if(!meta||!(eligible('hanja')||eligible('loanword'))||typeof choiceId!=='string'||!choiceId||choiceId.length>160||
        choiceId!==choiceId.trim()||/[<>\x00-\x1f\x7f]/u.test(choiceId)||
        /^[cnxp]\d+$/i.test(choiceId)||
        Object.keys(row).sort().join(',')!=='c,t')return null;
-    const hanja=/^[\p{Script=Han}]+$/u.test(choiceId)&&meta.hanja===true&&meta.hanjaEligible===true&&task.modes.hanja===true;
+    const hanja=/^[\p{Script=Han}]+$/u.test(choiceId)&&meta.hanja===true&&eligible('hanja')&&task.modes.hanja===true;
     const loanword=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u.test(choiceId)&&
-      /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&meta.loanwordEligible===true&&task.modes.loanword===true;
+      /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&eligible('loanword')&&task.modes.loanword===true;
     if(!hanja&&!loanword)return null;
     if(entry.text.slice(binding.start,binding.end)!==binding.surface)return null;
     const surface=binding.surface,type=hanja?'hanja':'loanword',annotations=[];
