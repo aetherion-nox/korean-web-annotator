@@ -2,11 +2,11 @@ import {buildReviewPayload} from './review-payload.js';
 import {literalOriginOption} from './experimental-options.js';
 import {projectAnnotation} from './local-engine.js';
 import {validateModelHanjaReadings} from './hanja-reading-check.js';
-import {validateSegmentationRepairsCore,dictionarySupportedRepairOrigin} from './repair-validation-core.js';
+import {validateSegmentationRepairsCore} from './repair-validation-core.js';
 
 // Keep the established literal-origin checks for worker-side repairs. The
 // geometric validator is shared with the offline page recovery path.
-export function verifySegmentationOrigin({start,end,surface,choice_id,sentence,old_target_ids=[],config}){
+export function verifySegmentationOrigin({start,end,surface,choice_id,sentence,config}){
  const virtual={target_id:'repair',start,end,surface,context:sentence.text,
   options:[{choice_id:'KEEP',type:'keep',replacement:surface,definitions:[],entry_id:null}]};
  let option=literalOriginOption(virtual,choice_id,{
@@ -22,25 +22,13 @@ export function verifySegmentationOrigin({start,end,surface,choice_id,sentence,o
     [...choice_id].every((char,i)=>/\p{Script=Han}/u.test(char)||char===[...surface][i]))
    option={choice_id,type:'hanja',replacement:choice_id,entry_id:'experimental:hanja',
     definitions:['未经词典核实的修复词源']};
- // When open-ended origin generation is OFF, only a supplied dictionary
- // reading attached to the linked old targets can authorize a structural fix.
- // In particular, a scan-only add is never evidence of an invented origin.
- if(!option&&old_target_ids.length){
-  const scope=config.repairScopes?.get(old_target_ids[0]);
-  if(dictionarySupportedRepairOrigin({start,end,surface,choice_id,old_target_ids},
-       config.repairTargets||[],scope)){
-   option={choice_id,type:/\p{Script=Han}/u.test(choice_id)?'hanja':'loanword',
-     replacement:choice_id,entry_id:'dictionary:repair',
-     origin_source:'dictionary-backed-repair'};
-  }
- }
  if(!option)return null;
  try{
   let annotations=projectAnnotation(sentence.text,{...virtual,...option});
   if(!annotations.length)return null;
   if(option.type==='hanja'&&config.hanjaReadingCheck!==false&&
      validateModelHanjaReadings(sentence.text,annotations).status==='mismatch')return null;
-  return annotations.map(a=>({...a,origin_source:option.origin_source||'model-unverified'}));
+  return annotations.map(a=>({...a,origin_source:'model-unverified'}));
  }catch{return null;}
 }
 
@@ -48,8 +36,7 @@ export function validateSegmentationRepairs(targets,response,config={}){
  if(!config.smartSegmentation)return {accepted:[],rejected:[]};
  if(response?.repairs===undefined)return {accepted:[],rejected:[]};
  const payload=buildReviewPayload(config.context||'',targets,config).payload;
- const repairConfig={...config,repairTargets:targets};
  return validateSegmentationRepairsCore(targets,response,{
-  ...repairConfig,payload,verifyOrigin:details=>verifySegmentationOrigin({...details,config:repairConfig})
+  ...config,payload,verifyOrigin:details=>verifySegmentationOrigin({...details,config})
  });
 }
