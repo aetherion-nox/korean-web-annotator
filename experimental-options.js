@@ -11,7 +11,7 @@ export function buildExperimentalOriginInstructions(config={}){
   :hanja?'genuine Hanja spelling of a Sino-Korean word'
          :'original Latin-script spelling of a borrowed word';
  const caution=hanja&&loanword
-  ?'For Latin-script origins, proper nouns including foreign personal names may use an established original spelling, never a guessed romanization of a native Korean name. Hanja origins allow non-person proper nouns but never open-ended Hanja for personal names. Keep original source word boundaries and Hanja-to-syllable alignment.'
+  ?'For Latin-script origins, proper nouns including foreign personal names may use an established original spelling, never a guessed romanization of a native Korean name. For personal-name Hanja use ONLY a dictionary c key or a spelling in verified_person_hanja; do not generate unverified personal Hanja. Keep original source word boundaries and Hanja-to-syllable alignment.'
   :hanja?'Non-person proper nouns may use established Hanja origins. A personal name may use ONLY a matching dictionary c key or an exact verified_person_hanja spelling supplied by the local dictionary; otherwise return null. Preserve source word boundaries and syllable alignment.'
          :'Proper nouns, including identifiable foreign personal names, may use their established Latin-script original. Do not romanize native Korean names or guess identity. Preserve source word boundaries.';
  return [
