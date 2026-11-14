@@ -1214,13 +1214,13 @@
   // path remains unchanged; unknown spellings are never treated as dictionary choices.
   async function manualLiteralChoice(binding,choiceId,entry,task,row){
     const meta=binding?.literalOrigin;
-    if(!meta?.eligible||typeof choiceId!=='string'||!choiceId||choiceId.length>160||
+    if(!meta||!(meta.hanjaEligible===true||meta.loanwordEligible===true)||typeof choiceId!=='string'||!choiceId||choiceId.length>160||
        choiceId!==choiceId.trim()||/[<>\x00-\x1f\x7f]/u.test(choiceId)||
        /^[cnxp]\d+$/i.test(choiceId)||
        Object.keys(row).sort().join(',')!=='c,t')return null;
-    const hanja=/^[\p{Script=Han}]+$/u.test(choiceId)&&meta.hanja===true&&task.modes.hanja===true;
+    const hanja=/^[\p{Script=Han}]+$/u.test(choiceId)&&meta.hanja===true&&meta.hanjaEligible===true&&task.modes.hanja===true;
     const loanword=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u.test(choiceId)&&
-      /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&task.modes.loanword===true;
+      /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&meta.loanwordEligible===true&&task.modes.loanword===true;
     if(!hanja&&!loanword)return null;
     if(entry.text.slice(binding.start,binding.end)!==binding.surface)return null;
     const surface=binding.surface,type=hanja?'hanja':'loanword',annotations=[];
@@ -1308,7 +1308,9 @@
     const {start,end,surface,choice_id}=repair;
     if(!sentence||sentence.text.slice(start,end)!==surface)return null;
     const binding={start,end,surface,literalOrigin:{
-      eligible:true,hanja:task.modes.hanja===true,loanword:task.modes.loanword===true,
+      hanjaEligible:task.manualBackup?.experimentalHanja===true,
+      loanwordEligible:task.manualBackup?.experimentalLoanword===true,
+      hanja:task.modes.hanja===true,loanword:task.modes.loanword===true,
       known:[],morphology:[]}};
     const row={t:'repair',c:choice_id};
     const direct=await manualLiteralChoice(binding,choice_id,sentence,task,row);
@@ -1383,6 +1385,8 @@
       import(chrome.runtime.getURL('repair-validation-core.js')).then(m=>m.validateSegmentationRepairsCore));
     return validator(targets,{repairs:rows},{
       smartSegmentation:true,payload,repairScopes,
+      experimentalHanja:backup.experimentalHanja===true,
+      experimentalLoanword:backup.experimentalLoanword===true,
       verifyOrigin:({start,end,surface,choice_id,sentence})=>
         verified.get(JSON.stringify([sentence.sentence_id,start,end,surface,choice_id]))||null
     });
