@@ -7,8 +7,10 @@ try{
  const context=await browser.newContext({viewport:{width:393,height:852},deviceScaleFactor:2.75,
   isMobile:true,hasTouch:true,ignoreHTTPSErrors:true,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'});
  const page=await context.newPage();
+ let loaded=false;
  try{
   const response=await page.goto(url,{waitUntil:'domcontentloaded',timeout:20000});
+  loaded=true;
   console.log('LIVE_NAVIGATE',JSON.stringify({status:response?.status(),url:page.url()}));
   await page.waitForTimeout(1500);
   const before=await page.evaluate(()=>{
@@ -85,6 +87,6 @@ try{
   });
   console.log('LIVE_AFTER_EXPANSION',JSON.stringify(after));
 
- }catch(error){console.log('LIVE_FETCH_UNAVAILABLE',String(error).slice(0,450));}
+ }catch(error){if(loaded)throw error;console.log('LIVE_FETCH_UNAVAILABLE',String(error).slice(0,450));}
  await context.close();
 }finally{await browser.close();}
