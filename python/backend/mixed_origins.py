@@ -89,31 +89,28 @@ def align_mixed(surface, origin):
     if not is_mixed_origin(origin):return None
     return _align_origin(surface,origin) if CJK.search(origin) else _align_native_loanword(surface,origin)
 
-def candidate_spans(text,tokens,*,include_spaced=False):
-    """Exact possible dictionary spans, allowing at most three internal spaces.
+def candidate_spans(text,tokens):
+    """Candidate targets must occupy one contiguous source word.
 
-    Spaced forms are used only when an actual dictionary entry matches;
-    don't create arbitrary cross-sentence words or skip particles/punctuation.
+    Whitespace/hyphen/caret variants belong solely to the indexed dictionary
+    lookup alias layer. Never stitch text across source spaces into targets,
+    even if a stripped spelling happens to match a dictionary entry.
     """
     spans=set()
     for i,token in enumerate(tokens):
         if token.tag.split('-')[0] not in LEXICAL:continue
-        start=token.start;end=start;spaces=0
+        start=token.start;end=start
         for nxt in tokens[i:i+8]:
             if nxt.tag.split('-')[0] not in LEXICAL:break
-            gap=text[end:nxt.start]
-            if gap:
-                if not include_spaced or gap!=' ' or spaces>=3:break
-                spaces+=1
+            if text[end:nxt.start]:break
             end=nxt.start+nxt.length
             word=text[start:end]
-            letters=word.replace(' ','')
-            if spaces and len(letters)>16:break
-            if HANGUL.fullmatch(letters):spans.add((start,end,word))
+            if len(word)>16:break
+            if HANGUL.fullmatch(word):spans.add((start,end,word))
     return sorted(spans,key=lambda r:(r[0],-r[1]))
 
 async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=(),review_ranges=()):
-    spans=candidate_spans(text,tokens,include_spaced=True)
+    spans=candidate_spans(text,tokens)
     proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
     entries=await engine.lookup_entries([form for _,_,form in spans],filter_people=modes.get('filterDictionaryPeople',False) is True)
     annotations=[];targets=[];ranges=[];skipped=0
@@ -123,35 +120,6 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
         # native whole words. Equal spans are still unified here.
         if any(a<=start and end<=b and (a<start or end<b) for a,b in whole_word_ranges):continue
         if any(start<b and a<end for a,b in ranges):continue
-        # A spaced headword has no single contiguous one-to-one Hanja source.
-        # Map each original whitespace-delimited word to its lexical Hanja
-        # segment, leaving the original page whitespace untouched.
-        if ' ' in word:
-            from backend.spaced_phrases import spaced_hanja_option
-            records=entries.get(word,[])
-            available=[]
-            if modes.get('hanja',True):
-                for record in records:
-                    option=spaced_hanja_option(word,record)
-                    if option:available.append(option)
-            if not available:continue
-            # The entire phrase, not a pair of nearby words, was verified
-            # against an indexed dictionary headword before this point.
-            ranges.append((start,end))
-            signatures={o['replacement'] for o in available}
-            certain=(len(signatures)==1 and len(available)==len(records)
-                     and all(r.get('part_of_speech')=='명사' for r in records))
-            if certain and not modes.get('reviewAll',False) and not overlaps_proper_noun(start,end,proper_ranges):
-                for part in available[0]['segments']:
-                    annotations.append({**part,'start':to_utf16(text,start)+part['start'],
-                                        'end':to_utf16(text,start)+part['end']})
-            else:
-                keep=dict(choice_id='KEEP',type='keep',replacement=word,entry_id=None,definitions=[])
-                native=nonconversion_options(word,records,hanja=modes.get('hanja',True),loanword=modes.get('loanword',False))
-                for n,option in enumerate(available):option['choice_id']=f'c{n}'
-                targets.append(dict(target_id=f'phrase{len(targets)}',start=to_utf16(text,start),
-                                    end=to_utf16(text,end),surface=word,context=text,options=[keep]+native+available))
-            continue
         all_records=entries.get(word,[])
         span_tokens=[t for t in tokens if start<=t.start and t.start+t.length<=end and t.length>0]
         tag=span_tokens[0].tag if len(span_tokens)==1 else None
