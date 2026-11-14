@@ -17,7 +17,7 @@ export function buildExperimentalOriginInstructions(config={}){
  return [
   'OPEN-ENDED ORIGIN AUDIT: dictionary keys are only candidate meanings, not an exhaustive inventory of authentic origins. With an enabled origin type, an authentic Hanja/Latin spelling may be placed directly into results[].c.',
   'For EACH occurrence, FIRST infer its contextual meaning and actual etymological word boundaries; THEN compare every offered dictionary sense and origin, favoring a matching local c/n option key.',
-  'When no supplied dictionary sense matches and the authentic '+origin+' is reliably known, put that spelling directly in c, even when an offered dictionary sense has the same origin spelling. A raw origin is independent, unverified model evidence, NOT validation of that dictionary meaning. Never invent a dictionary key or choose an unrelated meaning.',
+  'When no supplied dictionary sense matches and the authentic '+origin+' is reliably known, put that spelling directly in c, even when an offered dictionary sense has the same origin spelling. A raw origin is independent, unverified model evidence, NOT validation of that dictionary meaning; never invent a dictionary key or choose an unrelated meaning.',
   'Use actual JSON null for native words, unverified identity, unclear boundaries, or genuinely uncertain origins. A proper-noun tag alone is not grounds to return null; follow the enabled script and personal-name rules.',
   'Hanja must align with the Korean source; explicitly tagged native suffixes can be preserved. '+caution,
   'Output exactly one {t,c} row per target unless superseded by a validated segmentation repair; t matches target_id, c is an option key, genuine enabled source spelling, or JSON null.'
