@@ -9,7 +9,8 @@ export const REVIEW_INSTRUCTIONS=[
  'For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c must be the matching local c/n key, actual JSON null to preserve the Korean original, or (when enabled) a genuinely known Hanja/Latin origin string.',
  'Return only {"results":[{"t":"t0","c":"c0"},{"t":"t1","c":null}]}, and for manual review also copy batch_id exactly. Do not use string "null" for actual null, and never put explanatory text or other fields into a result row.',
  'Decide meaning from the sentence and adjacent context BEFORE selecting a dictionary sense. Nonconversion dictionary senses use their n key. Use JSON null if the word is native or the origin cannot be reliably established.',
- 'Names require exact identity evidence; proper_noun and dictionary_name_homograph flags and Kiwi morphology are hints rather than proof. Check suspected names and homographs carefully; partial_word is an advisory Kiwi boundary hint, not a veto: a compound component may be converted when its origin matches precisely that source span. Follow origin-specific proper-name rules only when a corresponding experimental origin mode is enabled; never invent personal-name spellings.',
+ 'Names require exact identity evidence; proper_noun and dictionary_name_homograph flags and Kiwi morphology are hints rather than proof. Check suspected names and homographs carefully; a compound component may be converted when its origin matches precisely that source span. Follow origin-specific proper-name rules only when a corresponding experimental origin mode is enabled; never invent personal-name spellings.',
+ 'An empty options object {} supplies NO local c/n keys. Never answer c0 or another invented key for such a target; use a genuinely known enabled literal origin, otherwise actual JSON null.',
  'Do not invent or repeat t identifiers, and do not change source start/end positions. Preserve every source word boundary and native suffix.'
 ].join('\n');
 
@@ -65,8 +66,12 @@ export function buildReviewPayload(context,targets,config={}){
   }).filter(Boolean));
   const {context:unused,adjacent_context:unusedAdjacent,options:oldOptions,repair_context:unusedRepair,repair_sentence_key:unusedKey,original_target_id:unusedOriginal,...occurrence}=target;
   if(config.smartSegmentation===true&&target.scan_only===true)delete occurrence.surface;
-  // The local POS filter has already checked these tags. Preserve unknown/conflicting evidence.
-  if(canTrimReviewMorphology(target,config)){
+  // Smart segmentation already sends the full Kiwi tokens once per sentence.
+  // Repeating occurrence-level morphology (including name/POS risk evidence)
+  // is redundant in that mode; background validation still receives it intact.
+  if(config.smartSegmentation===true){
+   delete occurrence.morphology;
+  }else if(canTrimReviewMorphology(target,config)){
    if(target.morphology.length===1&&target.morphology[0].form===target.surface&&target.morphology[0].start===target.start&&target.morphology[0].end===target.end){
     delete occurrence.morphology;
    }else{
