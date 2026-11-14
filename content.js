@@ -296,13 +296,14 @@
     const detect=()=>{
       if(!document?.body)return false;
       const hangul=/[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]/u;
+      const indexed=indexedKoreanTextNodes();
+      if(indexed)for(const node of indexed)
+        if(hangul.test(node.data)&&!isOwn(node)&&
+           !node.parentElement?.closest('script,style,noscript,input,textarea,select'))return true;
       for(const root of openTextRoots()){
-        const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-        let node;
-        while((node=walker.nextNode()))
-          if(hangul.test(node.data)&&!isOwn(node)&&
-             !node.parentElement?.closest('script,style,noscript,input,textarea,select'))
-            return true;
+        if(!indexed){const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
+          while((node=walker.nextNode()))if(hangul.test(node.data)&&!isOwn(node)&&
+             !node.parentElement?.closest('script,style,noscript,input,textarea,select'))return true;}
         if([...root.querySelectorAll(OWN_RUBY)].some(r=>!isOwn(r)&&
           hangul.test(r.getAttribute('data-kra-original')||'')))return true;
       }
@@ -480,7 +481,7 @@
       attributes:true,attributeFilter:['class','style','hidden','aria-hidden','inert','open']};
     const observed=new WeakSet();
     const observeOpenShadows=()=>{
-      for(const root of openTextRoots().slice(1))if(!observed.has(root)){
+      for(const root of (indexedTextRoots()||openTextRoots()).slice(1))if(!observed.has(root)){
         observed.add(root);automaticObserver.observe(root,observeOptions);
       }
     };
@@ -586,8 +587,102 @@
     return panels;
   }
 
+  // Shared text-discovery index. Build the complete DOM/text list once, then
+  // maintain Korean candidates from actual childList/characterData mutations.
+  // Visibility/selection/annotation safety still runs live at application time.
+  let textIndexState=null;
+  const INDEX_HANGUL=/[가-힣]/u;
+  function indexTextNode(state,node,removed=false) {
+    if(!node||node.nodeType!==3)return;
+    if(removed){
+      if(state.known.delete(node))state.totalTextNodes--;
+      if(state.korean.delete(node))state.dirty=true;
+      return;
+    }
+    if(!state.known.has(node)){state.known.add(node);state.totalTextNodes++;}
+    const contains=INDEX_HANGUL.test(node.data||'')&&/\S/u.test(node.data||'');
+    if(contains){if(!state.korean.has(node)){state.korean.add(node);state.dirty=true;}}
+    else if(state.korean.delete(node))state.dirty=true;
+  }
+  function indexTextSubtree(state,node,removed=false){
+    if(!node)return;
+    if(node.nodeType===3){indexTextNode(state,node,removed);return;}
+    if(![1,9,11].includes(node.nodeType))return;
+    const considerElement=element=>{
+      const root=element.shadowRoot;
+      if(!root)return;
+      if(removed){
+        if(state.roots.delete(root))indexTextSubtree(state,root,true);
+      }else if(!state.roots.has(root)){
+        state.roots.add(root);
+        state.observer.observe(root,{subtree:true,childList:true,characterData:true});
+        indexTextSubtree(state,root,false);
+      }
+    };
+    if(node.nodeType===1)considerElement(node);
+    const walker=document.createTreeWalker(node,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
+    let current;
+    while((current=walker.nextNode())){
+      if(current.nodeType===3)indexTextNode(state,current,removed);
+      else considerElement(current);
+    }
+  }
+  function updateTextIndex(state,records){
+    if(textIndexState!==state)return;
+    for(const record of records){
+      if(record.type==='characterData')indexTextNode(state,record.target);
+      else if(record.type==='childList'){
+        for(const node of record.removedNodes)indexTextSubtree(state,node,true);
+        for(const node of record.addedNodes)indexTextSubtree(state,node,false);
+      }
+    }
+  }
+  function ensureTextIndex(forceRebuild=false){
+    if(!document.body)return null;
+    if(forceRebuild||textIndexState?.body!==document.body){
+      textIndexState?.observer.disconnect();textIndexState=null;
+    }
+    if(!textIndexState){
+      const Observer=document.defaultView?.MutationObserver||
+        (typeof MutationObserver==='function'?MutationObserver:null);
+      if(!Observer)return null;
+      const state={body:document.body,known:new WeakSet(),korean:new Set(),
+        roots:new Set([document.body]),totalTextNodes:0,dirty:true,ordered:[]};
+      state.observer=new Observer(records=>updateTextIndex(state,records));
+      textIndexState=state;
+      // The outer HTML root also sees replacement of <body> in SPA pages.
+      state.observer.observe(document.documentElement||document.body,
+        {subtree:true,childList:true,characterData:true});
+      indexTextSubtree(state,document.body);
+    }
+    const records=textIndexState.observer.takeRecords?.()||[];
+    if(records.length)updateTextIndex(textIndexState,records);
+    return textIndexState;
+  }
+  function indexedKoreanTextNodes(forceRebuild=false){
+    const state=ensureTextIndex(forceRebuild);
+    if(!state)return null;
+    if(state.dirty){
+      const roots=new Map([...state.roots].map((root,i)=>[root,i]));
+      const order=node=>roots.get(node.getRootNode?.())??0;
+      state.ordered=[...state.korean].filter(node=>node.isConnected).sort((a,b)=>{
+        const aRoot=a.getRootNode?.(),bRoot=b.getRootNode?.();
+        if(aRoot!==bRoot)return order(a)-order(b);
+        const relation=a.compareDocumentPosition(b);
+        return relation&4?-1:relation&2?1:0;
+      });
+      state.dirty=false;
+    }
+    return state.ordered;
+  }
+  function indexedTextRoots(){
+    const state=ensureTextIndex();
+    return state?[...state.roots].filter(root=>root===document.body||root.host?.isConnected):null;
+  }
+
   function openTextRoots(root=document.body) {
     if(!root)return [];
+    if(root===document.body){const cached=indexedTextRoots();if(cached)return cached;}
     const roots=[root],seen=new WeakSet();
     // TreeWalker doesn't descend into open Shadow DOM. Include those roots
     // explicitly, including nested ones. Closed roots cannot be inspected.
@@ -606,6 +701,7 @@
       skippedHidden:0,skippedExcluded:0,skippedProcessed:0,skippedSelection:0,
       recoveryCapReached:0,shadowRoots:0};
     if(!document.body){lastScanStats=stats;return entries;}
+    const index=ensureTextIndex();
     const roots=openTextRoots();
     stats.shadowRoots=Math.max(0,roots.length-1);
     const controlledPanels=(typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false)
@@ -674,11 +770,15 @@
       const list=cache.detachedByKey.get(key)||[];
       list.push(block);cache.detachedByKey.set(key,list);
     }
+    const indexed=indexedKoreanTextNodes();
+    if(indexed)stats.textNodes=index?.totalTextNodes??0;
     for(const root of roots){
-      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-      let node;
-      while((node=walker.nextNode())){
-        stats.textNodes++;
+      const walker=indexed?null:document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      const relevant=indexed?indexed.filter(node=>node.getRootNode()===root||
+        root===document.body&&node.getRootNode()===document):null;
+      let node,position=0;
+      while((node=indexed?relevant[position++]:walker.nextNode())){
+        if(!indexed)stats.textNodes++;
         if(!/[가-힣]/u.test(node.data)||!/\S/u.test(node.data))continue;
         stats.hangulNodes++;
         const reason=visibilityReason(node.parentElement);
@@ -922,10 +1022,13 @@
       }
       return false;
     };
+    const indexed=indexedKoreanTextNodes();
     for(const root of openTextRoots()){
-      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-      let node;
-      while((node=walker.nextNode())){
+      const walker=indexed?null:document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      const relevant=indexed?indexed.filter(node=>node.getRootNode()===root||
+        root===document.body&&node.getRootNode()===document):null;
+      let node,position=0;
+      while((node=indexed?relevant[position++]:walker.nextNode())){
         checked++;
         if(!/[가-힣]/u.test(node.data))continue;
         const parent=node.parentElement;
@@ -2024,6 +2127,9 @@
     if(!message.automatic){toolbarDismissed=false;diagnostics.length=0;}
     const ranges=message.ranges||null;
     const domScanStarted=Date.now();
+    // Explicit user scans are authoritative: rebuild the index to catch
+    // shadow roots attached to existing hosts without a DOM childList event.
+    if(!message.automatic)ensureTextIndex(true);
     const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
     const domScanMs=Date.now()-domScanStarted;
     const scan={...(lastScanStats||{}),collected:entries.size};
