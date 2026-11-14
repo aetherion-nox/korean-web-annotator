@@ -18,7 +18,9 @@ test('name homograph bypasses Kiwi POS and retains both candidate definitions',(
 test('surname-suspect keeps NNP evidence and native meaning if no Hanja exists',()=>{
  const t={...target,dictionary_person_name:undefined,dictionary_name_homograph:undefined,suspected_person_name:true,options:[target.options[0],{choice_id:'n0',type:'nonconversion',replacement:'이상',entry_id:3,definitions:['native meaning'],part_of_speech:'명사'}]};
  const out=buildReviewPayload(t.context,[t]).payload;
- assert.deepEqual(Object.keys(out.targets[0].options),['n0']);
+ assert.deepEqual(Object.keys(out.targets[0].options),[]);
+ assert.equal(out.targets[0].keep_senses.length,1);
+ assert.equal(out.candidates[0].definitions[0],'native meaning');
  assert.equal(out.targets[0].suspected_person_name,true);
  assert.equal(out.targets[0].morphology[0].tag,'NNG');
 });
