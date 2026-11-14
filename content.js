@@ -1534,6 +1534,11 @@
         binding.choices.find(o=>o.choice_id!=='KEEP'&&o.choice_id===row.c);
       // Use the same nonexistent numbered-key fallback as background review;
       // never apply an unrelated dictionary entry or skip a valid repair.
+      if(!choice&&typeof row.c==='string'&&binding.dictionaryPersonHanja?.includes(row.c))
+        choice=binding.choices.find(o=>o.choice_id!=='KEEP'&&
+          o.annotations?.length===1&&o.annotations[0].type==='hanja'&&
+          o.annotations[0].start===binding.start&&o.annotations[0].end===binding.end&&
+          o.annotations[0].replacement===row.c);
       if(!choice&&typeof row.c==='string'&&/^[cn]\d+$/u.test(row.c))
         choice=binding.choices.find(o=>o.choice_id==='KEEP');
       const sentence=sourceSentences.get(binding.sentenceId)||entries.get(binding.sentenceId);
