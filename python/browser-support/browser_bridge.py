@@ -132,6 +132,14 @@ def import_dictionary(zip_path, db_path=None):
         if old_environment is None: os.environ.pop('HANJA_DB_PATH',None)
         else: os.environ['HANJA_DB_PATH'] = old_environment
 
+def compact_analysis_wire(result):
+    """Remove repeated full-paragraph context only from the browser JSON wire."""
+    if not isinstance(result,dict) or not isinstance(result.get('targets'),list):
+        return result
+    return {**result,'targets':[
+        {key:value for key,value in target.items() if key!='context'}
+        for target in result['targets']]}
+
 async def analyze_json(text, modes, db_path=None): return json.dumps(await analyze(text,modes,db_path),ensure_ascii=False)
 async def status_json(db_path=None): return json.dumps(await status(db_path),ensure_ascii=False)
 def import_dictionary_json(zip_path, db_path=None): return json.dumps(import_dictionary(zip_path,db_path),ensure_ascii=False)
@@ -151,13 +159,8 @@ async def request(raw):
         await _get_engine(database)
         result = {'ready':True,'preloaded':True}
     elif action == 'analyze':
-        result = await analyze(message['text'],message.get('modes',{}),database)
-        # The paragraph text is already supplied by the caller. Do not
-        # serialize that same text again inside every individual target.
-        # Only the browser wire is compacted; direct Python/SRT consumers
-        # retain the original Engine.analyze schema unchanged.
-        for target in result.get('targets',()):
-            target.pop('context',None)
+        result = compact_analysis_wire(
+            await analyze(message['text'],message.get('modes',{}),database))
     elif action == 'import-db':
         result = await import_database(message['path'],database)
     elif action == 'import':
