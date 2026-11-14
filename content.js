@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.33-mobile-minerva-folded-sections';
+  const VERSION = '1.1.56.34-always-folded-indexed';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -9,7 +9,7 @@
   const MAX_RECOVERY_BLOCKS = 12000;
   let currentTask = null;
   let sequence = 0;
-  let uiSettings = { toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul', recognizeCollapsedContent:true };
+  let uiSettings = { toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
   let toolbar = null;
   let toolbarDismissed = false;
   let toolbarForcedOpen = false;
@@ -716,8 +716,7 @@
     const index=ensureTextIndex();
     const roots=openTextRoots();
     stats.shadowRoots=Math.max(0,roots.length-1);
-    const controlledPanels=(typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false)
-      ?controlledCollapsedArticlePanels():new Set();
+    const controlledPanels=controlledCollapsedArticlePanels();
     const visibilityCache=new WeakMap();
     const visibilityReason=element=>{
       if(!element||element.nodeType!==1)return '';
@@ -728,42 +727,26 @@
          '.kra-floating-ball,.kra-manual-reopen,[contenteditable="true"]'))
         reason='excluded';
       else {
-        const recognize=typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false;
-        const details=element.closest('details:not([open])');
         const vectorList=element.matches('.vector-toc-list')&&Boolean(element.closest('#vector-toc'));
-        // Vector's chapter navigation may remain CSS-visible in a headless
-        // or dynamic layout even when the parent item is semantically folded.
-        // Use the actual Vector expansion class, not CSS alone, to implement
-        // the OFF setting. All text nodes under this list inherit this guard.
-        const foldedVector=vectorList&&element.parentElement?.matches(
-          '.vector-toc-list-item:not(.vector-toc-list-item-expanded)');
-        if(!recognize&&(details&&element!==details&&!element.closest('summary')||foldedVector))
-          reason='hidden';
+        const vectorChild=element.matches('.vector-toc-list-item')&&
+          element.parentElement?.matches('.vector-toc-list')&&
+          Boolean(element.closest('#vector-toc'));
+        const minervaArticleSection=document.body?.classList.contains('skin-minerva')&&
+          element.matches('section.collapsible-block[id^="mf-section-"]')&&
+          element.parentElement?.matches('.mw-parser-output');
+        // Only recognized folded content is exempt from being hidden.
+        // Ordinary hidden advertisements, templates and inert descendants
+        // still follow their original visibility rules.
+        const folded=element.matches('.mw-collapsible-content')||
+          vectorList||vectorChild||minervaArticleSection||controlledPanels.has(element);
+        if((element.hidden||element.hasAttribute('inert')||
+            element.getAttribute('aria-hidden')==='true')&&
+           (!folded||element.hasAttribute('inert')))reason='hidden';
         else {
-          const vectorChild=recognize&&element.matches('.vector-toc-list-item')&&
-            element.parentElement?.matches('.vector-toc-list')&&
-            Boolean(element.closest('#vector-toc'));
-          // Live Vector CSS hides each child <li> (display:none), *not* the
-          // enclosing <ul>. This exception is limited to these actual TOC
-          // list items; unrelated hidden spans/templates are still excluded.
-          // Minerva mobile folds the *entire* article section (e.g.
-          // #mf-section-2 for 조문) with display:none, not a TOC child.
-          // Only bypass visibility for a top-level Minerva article section;
-          // unrelated hidden ads/templates and hidden descendants stay excluded.
-          const minervaArticleSection=recognize&&document.body?.classList.contains('skin-minerva')&&
-              element.matches('section.collapsible-block[id^="mf-section-"]')&&
-              element.parentElement?.matches('.mw-parser-output');
-          const mediaWikiPanel=recognize&&(element.matches('.mw-collapsible-content')||
-              vectorList||vectorChild||minervaArticleSection||controlledPanels.has(element));
-          if((element.hidden||element.hasAttribute('inert')||
-              element.getAttribute('aria-hidden')==='true')&&
-             (!mediaWikiPanel||element.hasAttribute('inert')))reason='hidden';
-          else {
-            const css=document.defaultView?.getComputedStyle?.(element);
-            if((css?.display==='none'||css?.visibility==='hidden'||
-                css?.visibility==='collapse'||css?.contentVisibility==='hidden')&&
-               (!mediaWikiPanel||css?.contentVisibility==='hidden'))reason='hidden';
-          }
+          const css=document.defaultView?.getComputedStyle?.(element);
+          if((css?.display==='none'||css?.visibility==='hidden'||
+              css?.visibility==='collapse'||css?.contentVisibility==='hidden')&&
+             (!folded||css?.contentVisibility==='hidden'))reason='hidden';
         }
       }
       if(!reason){
@@ -1003,34 +986,27 @@
       // Cross-origin frames may not expose frameElement: check the own DOM.
     }
     let checked=0,hidden=0,eligible=0;
-    const controlledPanels=(typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false)
-      ?controlledCollapsedArticlePanels():new Set();
+    const controlledPanels=controlledCollapsedArticlePanels();
     const isHidden=element=>{
       const seen=new Set();
       for(let node=element;node&&!seen.has(node);
           node=node.parentElement||node.getRootNode?.().host){
         seen.add(node);
-        const recognize=typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false;
-        const closed=node.closest('details:not([open])');
         const vectorList=node.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'));
-        const foldedVector=vectorList&&node.parentElement?.matches(
-          '.vector-toc-list-item:not(.vector-toc-list-item-expanded)');
-        if(!recognize&&(closed&&closed!==node&&!node.closest('summary')||foldedVector))return true;
-        const vectorChild=recognize&&node.matches('.vector-toc-list-item')&&
-          node.parentElement?.matches('.vector-toc-list')&&
-          Boolean(node.closest('#vector-toc'));
-        const minervaArticleSection=recognize&&document.body?.classList.contains('skin-minerva')&&
+        const vectorChild=node.matches('.vector-toc-list-item')&&
+          node.parentElement?.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'));
+        const minervaArticleSection=document.body?.classList.contains('skin-minerva')&&
           node.matches('section.collapsible-block[id^="mf-section-"]')&&
           node.parentElement?.matches('.mw-parser-output');
-        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||
-          vectorList||vectorChild||minervaArticleSection||controlledPanels.has(node));
+        const folded=node.matches('.mw-collapsible-content')||
+          vectorList||vectorChild||minervaArticleSection||controlledPanels.has(node);
         if((node.hidden||node.hasAttribute?.('inert')||
             node.getAttribute?.('aria-hidden')==='true')&&
-           (!mediaWikiPanel||node.hasAttribute?.('inert')))return true;
+           (!folded||node.hasAttribute?.('inert')))return true;
         const style=document.defaultView?.getComputedStyle?.(node);
         if((style?.display==='none'||style?.visibility==='hidden'||
             style?.visibility==='collapse'||style?.contentVisibility==='hidden')&&
-           (!mediaWikiPanel||style?.contentVisibility==='hidden'))return true;
+           (!folded||style?.contentVisibility==='hidden'))return true;
       }
       return false;
     };

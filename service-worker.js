@@ -17,7 +17,7 @@ import {
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.56.33-mobile-minerva-folded-sections';
+const CONTENT_SCRIPT_VERSION='1.1.56.34-always-folded-indexed';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -247,7 +247,6 @@ function sanitizeUiSettings(value) {
     selectAnnotations:source.selectAnnotations ?? false,
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
-    recognizeCollapsedContent:source.recognizeCollapsedContent !== false,
     restoreExistingAnnotations:source.restoreExistingAnnotations ?? true,
     hideToolbarOnFirstManual:source.hideToolbarOnFirstManual !== false,
     toolbarHangulOnly:source.toolbarHangulOnly ?? true,
