@@ -4,7 +4,8 @@ import {canProposeExperimentalOption} from './experimental-options.js';
 import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
-export const CACHE_KEY='kraDictionaryReviewCacheV1Alignment3';
+export const CACHE_KEY='kraDictionaryReviewCacheV1Alignment4';
+const compactReviewTargets=targets=>targets.map(({context,repair_context,...target})=>target);
 export async function runSentencePipeline(message,post,{signal,analyze=analyzeLocal,status=engineStatus,modelConfig,enabled=false,cache=new Map(),persist=async()=>{}}={}){
  const sentences=message.sentences;
  const selectionReview=message.reviewAll===true;
@@ -121,7 +122,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   if(config && analysis.targets.length){
    const fingerprint=JSON.stringify([config.hanjaReadingCheck!==false,smartSegmentation?'id-review-v21-single-pass-segmentation-repair':experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
    item.reviewFingerprint=fingerprint;
-   item.reviewKey=JSON.stringify([localKey,fingerprint,analysis.targets,context]);
+   item.reviewKey=JSON.stringify([localKey,fingerprint,compactReviewTargets(analysis.targets),context]);
    const cached=!experimental&&!smartSegmentation&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
    if(cached){item.result=validateChoices(analysis.targets,cached,config);if(progressive)publishModel(item);stats.cacheHits++;diagnostic({stage:'cache',level:'info',message:'使用已验证的模型审核缓存；无需重复请求。'});}
    if(item.result.unresolved.length){pending.push(item);progress.modelTotal+=item.result.unresolved.length;}
@@ -204,7 +205,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    const retired=new Set((item.repairs||[]).flatMap(r=>r.source_target_ids));
    item.result.unresolved=item.analysis.targets.filter(t=>
      !answered.has(t.target_id)&&!retired.has(t.target_id)&&!t.scan_only);
-   const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,item.analysis.targets,batch.context]);
+   const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,compactReviewTargets(item.analysis.targets),batch.context]);
    if(!experimental&&!smartSegmentation&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({t:a.target.target_id,c:a.option.type==='keep'?null:a.option.choice_id}))});
   }
   await persist(cache);
