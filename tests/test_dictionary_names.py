@@ -34,7 +34,7 @@ class DictionaryNames(unittest.IsolatedAsyncioTestCase):
                         o['replacement']=='李壽民' for o in person['options']))
     self.assertGreater(r['stats']['protected_names'],0)
 
- async def test_filtered_dictionary_person_keeps_only_verified_hanja_candidate(self):
+ async def test_filtered_dictionary_person_removes_verified_hanja_candidate(self):
   from backend.analysis import Engine
   t=self.tokenized('이수민 씨')
   r=await Engine(self.path,tokenizer=t).analyze('이수민 씨',dict(
