@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.27-lazy-conditional-review-prompts';
+  const VERSION = '1.1.56.28-respect-filter-dictionary-people';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
