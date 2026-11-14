@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.13-targeted-offline-validation-errors';
+  const VERSION = '1.1.56.14-remove-15s-post-page-rescan';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -29,9 +29,6 @@
   let automaticTimer = null;
   // One bounded event-triggered pass for content loaded after an explicit
   // whole-page run; continuous future scanning remains opt-in.
-  let hydrationGraceObserver = null;
-  let hydrationGraceTimer = null;
-  let hydrationGraceDeadline = null;
   const seenSources = new Set(); // legacy session bookkeeping; NOT a deduplication key
   const analyzedNodeVersions = new WeakMap();
   let lastScanStats = null;
@@ -470,47 +467,6 @@
     if(record.type==='attributes')return hasFreshHangul(record.target);
     if(record.type==='characterData')return hasFreshHangul(record.target);
     return Array.from(record.addedNodes||[]).some(hasFreshHangul);
-  }
-
-  function stopHydrationGrace(){
-    hydrationGraceObserver?.disconnect();hydrationGraceObserver=null;
-    clearTimeout(hydrationGraceTimer);hydrationGraceTimer=null;
-    clearTimeout(hydrationGraceDeadline);hydrationGraceDeadline=null;
-  }
-
-  function startHydrationGrace(task){
-    stopHydrationGrace();
-    if(!task.wholePage||task.startedAutomatically||task.manualPanelShown||
-       uiSettings.stopAutoAfterPageComplete===false||!document.body)return;
-    const generation=sequence,originalUrl=task.startPageUrl;
-    const check=()=>{
-      hydrationGraceTimer=null;
-      if(sequence!==generation||!pageCompleted||location.href!==originalUrl){
-        stopHydrationGrace();return;
-      }
-      if(currentTask)return; // Still analyzing; the observer can retry on completion.
-      const unseen=collectTextNodes(null,false,true,false);
-      if(!unseen.size)return;
-      addDiagnostic({stage:'scan',level:'info',
-        message:`整页标注后的异步内容补扫：发现 ${unseen.size} 个新增韩文文本节点（仅补扫一次）。`,
-        detail:JSON.stringify({late_nodes:unseen.size,source:'hydration-grace'})});
-      stopHydrationGrace();
-      startAnnotation({automatic:true,modes:task.modes});
-    };
-    const schedule=(delay=450)=>{
-      if(hydrationGraceTimer!==null)return;
-      hydrationGraceTimer=setTimeout(check,delay);
-    };
-    hydrationGraceObserver=new MutationObserver(records=>{
-      if(records.some(relevantKoreanMutation))schedule();
-    });
-    hydrationGraceObserver.observe(document.body,{subtree:true,childList:true,
-      characterData:true,attributes:true,
-      attributeFilter:['class','style','hidden','aria-hidden','inert','open']});
-    // Keep the existing one-time settling scan, plus a bounded response to
-    // later comments inserted while the user first scrolls the article.
-    schedule(1200);
-    hydrationGraceDeadline=setTimeout(stopHydrationGrace,15000);
   }
 
   function configureAutomaticAnnotation() {
@@ -1841,7 +1797,6 @@
 
   function restorePage() {
     resetRecovery();
-    stopHydrationGrace();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();history.length=0;redoStack.length=0;seenSources.clear();
     // A full restore removes extension rubies in THIS frame, including
     // open Shadow DOM. The tab coordinator calls every accessible frame.
@@ -1877,7 +1832,6 @@
     if(!operation)return {ok:false,error:'没有可撤销的标注'};
     if(groupId!==null&&operation.groupId!==groupId)
       return {ok:false,skipped:true,error:'其他框架的历史步骤不属于本次撤销'};
-    stopHydrationGrace();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
     if(history.at(-1)!==operation)
       return {ok:false,error:'任务刚刚写入新结果，请再次点击撤销最新的步骤。'};
@@ -1914,7 +1868,6 @@
     if(!operation)return {ok:false,error:'没有可重做的标注'};
     if(groupId!==null&&operation.groupId!==groupId)
       return {ok:false,skipped:true,error:'其他框架的历史步骤不属于本次重做'};
-    stopHydrationGrace();
     cancelTask();pageCompleted=false;configureAutomaticAnnotation();
     if(redoStack.at(-1)!==operation)
       return {ok:false,error:'期间有新的标注完成，不能再重做旧步骤。'};
@@ -1961,7 +1914,6 @@
     }
     const modes = { hanja: message.modes?.hanja ?? true, loanword: message.modes?.loanword ?? true };
     if (!modes.hanja && !modes.loanword) return { ok: false, error: '请至少启用一种标注模式。' };
-    stopHydrationGrace();
     cancelTask();
     const oldManual=document.querySelector('.kra-manual-review');if(oldManual){oldManual.hidden=true;delete oldManual.dataset.operationId;}
     const oldReopen=document.querySelector('.kra-manual-reopen');if(oldReopen)oldReopen.hidden=true;
@@ -2133,7 +2085,6 @@
       // Runs for normal AND merged multi-frame page operations. Manual
       // reviews do not open unexpected extra prompts; continuous monitoring
       // remains governed by its separate opt-in setting.
-      if(!ranges)startHydrationGrace(task);
       addDiagnostic({message:`完成：${count} 个标注`,detail:JSON.stringify(result.stats||{})});
       publishState();
     });
