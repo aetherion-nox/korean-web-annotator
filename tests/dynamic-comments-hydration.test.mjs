@@ -26,7 +26,8 @@ test('real mobile comment-content span is included in normal DOM collection',()=
   openTextRoots:()=>[dom.window.document.body],selectedIntervals:(node,text)=>[{start:0,end:text.length}],
   analyzedNodeVersions:new WeakMap(),isKnownRecoverySource:()=>false};
  vm.createContext(ctx);
- vm.runInContext(SOURCE.slice(SOURCE.indexOf('  function collectTextNodes('),SOURCE.indexOf('  function isKnownRecoverySource(')),ctx);
+ // The scanner now owns the incremental text index and folded-panel helper.
+ vm.runInContext(SOURCE.slice(SOURCE.indexOf('  function openTextRoots('),SOURCE.indexOf('  function isKnownRecoverySource(')),ctx);
  try{
   const entries=ctx.collectTextNodes(null,false,false,false);
   const node=dom.window.document.querySelector('.comment-card__commentcontent').firstChild;
