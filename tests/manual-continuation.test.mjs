@@ -149,3 +149,13 @@ test('duplicate or extra target IDs cannot discard independent valid decisions',
  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t1',c:null}]}));
  assert.equal(task.manualRequest,'batch2');
 });
+
+test('offline page recovery normalizes unlisted n0 to KEEP without re-requesting the batch',async()=>{
+ const {context,task,entry}=environment();
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'n0'}]}));
+ assert.equal(task.manualRequest,'batch2');
+ assert.equal(entry.annotations.length,0);
+ await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch2',results:[{t:'t0',c:'n999'}]}));
+ assert.equal(task.completed,true);
+ assert.equal(entry.annotations.length,0);
+});
