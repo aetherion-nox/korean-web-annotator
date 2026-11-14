@@ -1214,7 +1214,15 @@
     const fenced=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(json);
     if(fenced)json=fenced[1].trim();
     let response;try{response=JSON.parse(json);}catch{throw Error('JSON 格式无效。');}
-    if(Array.isArray(response)||!response||typeof response!=='object'||!Object.hasOwn(response,'batch_id')){
+    // Also normalize malformed nonconversion property names in replies that
+    // already carry the right batch_id; otherwise offline recovery diverges
+    // from the background validator on the same answer.
+    const hasNPropertySlip=Array.isArray(response?.results)&&response.results.some(row=>
+      row&&typeof row==='object'&&!Array.isArray(row)&&typeof row.t==='string'&&
+      Object.keys(row).length===2&&Object.keys(row).some(k=>/^n\d+$/u.test(k))&&
+      !Object.hasOwn(row,'c'));
+    if(Array.isArray(response)||!response||typeof response!=='object'||
+       !Object.hasOwn(response,'batch_id')||hasNPropertySlip){
       const normalize=await (task.manualAnswerNormalizer||import(chrome.runtime.getURL('manual-answer-format.js')).then(m=>m.normalizeManualAnswer));
       response=normalize(response,{requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id))});
     }
@@ -1560,7 +1568,15 @@
     let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
     let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
     // A missing wrapper is unambiguous only if every t is in the active batch.
-    if(Array.isArray(response)||!response||typeof response!=='object'||!Object.hasOwn(response,'batch_id')){
+    // Also normalize malformed nonconversion property names in replies that
+    // already carry the right batch_id; otherwise offline recovery diverges
+    // from the background validator on the same answer.
+    const hasNPropertySlip=Array.isArray(response?.results)&&response.results.some(row=>
+      row&&typeof row==='object'&&!Array.isArray(row)&&typeof row.t==='string'&&
+      Object.keys(row).length===2&&Object.keys(row).some(k=>/^n\d+$/u.test(k))&&
+      !Object.hasOwn(row,'c'));
+    if(Array.isArray(response)||!response||typeof response!=='object'||
+       !Object.hasOwn(response,'batch_id')||hasNPropertySlip){
       const normalize=await (task.manualAnswerNormalizer||import(chrome.runtime.getURL('manual-answer-format.js')).then(m=>m.normalizeManualAnswer));
       response=normalize(response,{requestId:backup.requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id))});
     }
