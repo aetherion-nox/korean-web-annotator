@@ -585,21 +585,29 @@
   // Visibility/selection/annotation safety still runs live at application time.
   let textIndexState=null;
   const INDEX_HANGUL=/[가-힣]/u;
-  function indexTextNode(state,node,removed=false) {
+  function indexTextNode(state,node,removed=false,changed=false) {
     if(!node||node.nodeType!==3)return;
     if(removed){
       if(state.known.delete(node))state.totalTextNodes--;
       if(state.korean.delete(node))state.dirty=true;
+      state.pending.delete(node);
       return;
     }
-    if(!state.known.has(node)){state.known.add(node);state.totalTextNodes++;}
+    const isNew=!state.known.has(node);
+    if(isNew){state.known.add(node);state.totalTextNodes++;}
     const contains=INDEX_HANGUL.test(node.data||'')&&/\S/u.test(node.data||'');
-    if(contains){if(!state.korean.has(node)){state.korean.add(node);state.dirty=true;}}
-    else if(state.korean.delete(node))state.dirty=true;
+    if(contains){
+      if(!state.korean.has(node)){state.korean.add(node);state.dirty=true;changed=true;}
+      // Revisions prevent a late DONE from clearing nodes edited mid-review.
+      if(isNew||changed)state.pending.set(node,++state.revision);
+    }else{
+      if(state.korean.delete(node))state.dirty=true;
+      state.pending.delete(node);
+    }
   }
-  function indexTextSubtree(state,node,removed=false){
+  function indexTextSubtree(state,node,removed=false,changed=false){
     if(!node)return;
-    if(node.nodeType===3){indexTextNode(state,node,removed);return;}
+    if(node.nodeType===3){indexTextNode(state,node,removed,changed);return;}
     if(![1,9,11].includes(node.nodeType))return;
     const considerElement=element=>{
       const root=element.shadowRoot;
@@ -608,25 +616,38 @@
         if(state.roots.delete(root))indexTextSubtree(state,root,true);
       }else if(!state.roots.has(root)){
         state.roots.add(root);
-        state.observer.observe(root,{subtree:true,childList:true,characterData:true});
-        indexTextSubtree(state,root,false);
+        state.observer.observe(root,state.observeOptions);
+        indexTextSubtree(state,root,false,changed);
+      }else if(changed){
+        // Visibility of shadow content also depends on the host element.
+        indexTextSubtree(state,root,false,true);
       }
     };
     if(node.nodeType===1)considerElement(node);
     const walker=document.createTreeWalker(node,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
     let current;
     while((current=walker.nextNode())){
-      if(current.nodeType===3)indexTextNode(state,current,removed);
+      if(current.nodeType===3)indexTextNode(state,current,removed,changed);
       else considerElement(current);
     }
   }
   function updateTextIndex(state,records){
     if(textIndexState!==state)return;
     for(const record of records){
-      if(record.type==='characterData')indexTextNode(state,record.target);
+      if(record.type==='characterData')indexTextNode(state,record.target,false,true);
       else if(record.type==='childList'){
         for(const node of record.removedNodes)indexTextSubtree(state,node,true);
         for(const node of record.addedNodes)indexTextSubtree(state,node,false);
+      }else if(record.type==='attributes'){
+        // A previously hidden subtree can become visible without changing
+        // its text. Queue ONLY descendants of the changed container.
+        indexTextSubtree(state,record.target,false,true);
+        if(record.attributeName==='aria-expanded'||record.attributeName==='aria-controls'){
+          for(const id of (record.target.getAttribute?.('aria-controls')||'').split(/\s+/)){
+            const panel=id&&document.getElementById(id);
+            if(panel)indexTextSubtree(state,panel,false,true);
+          }
+        }
       }
     }
   }
@@ -640,33 +661,47 @@
         (typeof MutationObserver==='function'?MutationObserver:null);
       if(!Observer)return null;
       const state={body:document.body,known:new WeakSet(),korean:new Set(),
+        pending:new Map(),revision:0,
         roots:new Set([document.body]),totalTextNodes:0,dirty:true,ordered:[]};
+      state.observeOptions={subtree:true,childList:true,characterData:true,
+        attributes:true,attributeFilter:['class','style','hidden','aria-hidden',
+          'inert','open','aria-expanded','aria-controls']};
       state.observer=new Observer(records=>updateTextIndex(state,records));
       textIndexState=state;
       // The outer HTML root also sees replacement of <body> in SPA pages.
-      state.observer.observe(document.documentElement||document.body,
-        {subtree:true,childList:true,characterData:true});
+      state.observer.observe(document.documentElement||document.body,state.observeOptions);
       indexTextSubtree(state,document.body);
     }
     const records=textIndexState.observer.takeRecords?.()||[];
     if(records.length)updateTextIndex(textIndexState,records);
     return textIndexState;
   }
-  function indexedKoreanTextNodes(forceRebuild=false){
-    const state=ensureTextIndex(forceRebuild);
+  function indexedKoreanTextNodes(onlyPending=false){
+    const state=ensureTextIndex();
     if(!state)return null;
-    if(state.dirty){
+    const sortNodes=nodes=>{
       const roots=new Map([...state.roots].map((root,i)=>[root,i]));
       const order=node=>roots.get(node.getRootNode?.())??0;
-      state.ordered=[...state.korean].filter(node=>node.isConnected).sort((a,b)=>{
+      return nodes.sort((a,b)=>{
         const aRoot=a.getRootNode?.(),bRoot=b.getRootNode?.();
         if(aRoot!==bRoot)return order(a)-order(b);
         const relation=a.compareDocumentPosition(b);
         return relation&4?-1:relation&2?1:0;
       });
+    };
+    if(onlyPending)return sortNodes([...state.pending.keys()].filter(node=>
+      state.korean.has(node)&&node.isConnected));
+    if(state.dirty){
+      state.ordered=sortNodes([...state.korean].filter(node=>node.isConnected));
       state.dirty=false;
     }
     return state.ordered;
+  }
+  function acknowledgeIndexedAutoScan(snapshot){
+    const state=ensureTextIndex(); // First drain mutations since the scan.
+    if(!state||!(snapshot instanceof Map))return;
+    for(const [node,revision]of snapshot)
+      if(state.pending.get(node)===revision)state.pending.delete(node);
   }
   function indexedKoreanByRoot(nodes){
     if(!nodes)return null;
@@ -716,6 +751,15 @@
     const index=ensureTextIndex();
     const roots=openTextRoots();
     stats.shadowRoots=Math.max(0,roots.length-1);
+    const indexed=indexedKoreanTextNodes(automatic);
+    const snapshot=automatic&&index&&indexed?
+      new Map(indexed.map(node=>[node,index.pending.get(node)])):null;
+    if(snapshot)Object.defineProperty(entries,'indexSnapshot',{value:snapshot});
+    if(indexed)stats.textNodes=index?.totalTextNodes??0;
+    if(automatic&&indexed&&!indexed.length){
+      lastScanStats=stats;
+      return entries;
+    }
     const controlledPanels=controlledCollapsedArticlePanels();
     const visibilityCache=new WeakMap();
     const visibilityReason=element=>{
@@ -765,9 +809,7 @@
       const list=cache.detachedByKey.get(key)||[];
       list.push(block);cache.detachedByKey.set(key,list);
     }
-    const indexed=indexedKoreanTextNodes();
     const byRoot=indexedKoreanByRoot(indexed);
-    if(indexed)stats.textNodes=index?.totalTextNodes??0;
     for(const root of roots){
       const walker=indexed?null:document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
       const relevant=indexed?(byRoot.get(root)||[]):null;
@@ -2128,6 +2170,7 @@
         detail:JSON.stringify({...scan,source:'DOM',mode:message.automatic?'incremental':'initial'})});
     }
     if (!entries.size&&!message.mergeGroupId) {
+      if(message.automatic)acknowledgeIndexedAutoScan(entries.indexSnapshot);
       status('没有未标注的韩语文字', 100);
       return {ok:true,started:false};
     }
@@ -2152,6 +2195,7 @@
       mergeGroupId:message.mergeGroupId,
       mergedGroup:typeof message.mergeGroupId==='string'&&message.mergeGroupId.length>0,
       mergedHost:message.mergeHost===true,startedAutomatically:message.automatic===true,
+      indexSnapshot:message.automatic?entries.indexSnapshot:null,
       startPageUrl:typeof location!=='undefined'?location.href:document.location?.href||'', finished: false, progressive:uiSettings.progressiveAnnotation===true, wholePage:!ranges,
       operation:[], historyRecorded:false };
     // Associate all frames of one whole-page review with the same undo
@@ -2286,6 +2330,7 @@
           analyzedNodeVersions.set(entry.node,entry.text);
       }
       status(`完成：${count} 个标注`, 100);
+      if(task.startedAutomatically)acknowledgeIndexedAutoScan(task.indexSnapshot);
       finishTask(task,`本次标注已完成，当前显示 ${count} 个标注。`,true);
       configureRecovery();
       if(!ranges)pageCompleted=true;configureAutomaticAnnotation();
