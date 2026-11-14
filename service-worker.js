@@ -650,7 +650,7 @@ async function testApi(){
 }
 async function loadCache(){
  if(cacheLoaded)return;
- if(!cacheLoadPromise)cacheLoadPromise=(async()=>{await prepareCacheSession(chrome.storage,CACHE_KEY);const saved=(await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];if(Array.isArray(saved))for(const [key,value] of saved)cache.set(key,value);cacheLoaded=true;})().finally(()=>{cacheLoadPromise=null;});
+ if(!cacheLoadPromise)cacheLoadPromise=(async()=>{await prepareCacheSession(chrome.storage,CACHE_KEY);await chrome.storage.local.remove('kraDictionaryReviewCacheV1Alignment3');const saved=(await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];if(Array.isArray(saved))for(const [key,value] of saved)cache.set(key,value);cacheLoaded=true;})().finally(()=>{cacheLoadPromise=null;});
  await cacheLoadPromise;
 }
 async function runModern(message,post,signal,manualSession){
