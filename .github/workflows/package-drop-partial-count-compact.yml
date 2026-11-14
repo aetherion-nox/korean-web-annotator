@@ -1,0 +1,118 @@
+name: Validate and Package v1.1.56.18 Drop Boundary Flag, Correct Counts and Compress Review Payloads
+on:
+  push:
+    branches:
+      - fix/v1.1.56.18-drop-partial-count-compact
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v1.1.56.18-drop-partial-count-compact
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify version
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.18'
+          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.18'
+          PY
+      - name: Restore frozen Kiwi and Python runtime
+        run: |
+          python3 restore_distribution.py
+          git restore runtime/python-sources.json
+      - name: Run complete tests
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          PYTHONPATH=python/browser-support npm test
+      - name: Verify no old model response schema in prompts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          files=['review-payload.js','experimental-options.js','smart-segmentation-prompt.js']
+          for f in files:
+              text=Path(f).read_text()
+              for fragment in ['results[].choice_id','{"target_id":"t0","choice_id":"c0"}','Return KEEP','choose KEEP','shared-pools-v3','{target_id,choice_id}']:
+                  assert fragment not in text, (f,fragment)
+          print('Only compact t/c response instructions.')
+          PY
+      - name: Build and verify complete ZIP
+        run: |
+          python3 - <<'PY'
+          import subprocess,zipfile,json,hashlib
+          from pathlib import Path
+          root=Path.cwd()
+          tracked=[Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if p]
+          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests','scripts'}
+                 and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          dest=root/'Korean-Web-Annotator-v1.1.56.18-drop-partial-count-compact.zip'
+          with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
+              for p in sorted(files):
+                  mode=zipfile.ZIP_STORED if p.suffix.lower()=='.mdl' else zipfile.ZIP_DEFLATED
+                  z.write(root/p,'Korean-Web-Annotator/'+p.as_posix(),
+                          compress_type=mode,compresslevel=6 if mode==zipfile.ZIP_DEFLATED else None)
+          with zipfile.ZipFile(dest) as z:
+              assert z.testzip() is None
+              needed=['manifest.json','content.js','service-worker.js','review-payload.js',
+                      'choice-review.js','model-stream.js','manual-review.js',
+                      'browser-worker.js','engine-page.js','runtime/models/cong.mdl']
+              assert all('Korean-Web-Annotator/'+p in z.namelist() for p in needed)
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.18'
+          assert dest.stat().st_size>90_000_000,'Kiwi runtime missing'
+          print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-v1.1.56.18
+          path: Korean-Web-Annotator-v1.1.56.18-drop-partial-count-compact.zip
+          compression-level: 0
+          if-no-files-found: error
+  windows-verify-publish:
+    runs-on: windows-latest
+    needs: package
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-v1.1.56.18
+          path: artifact
+      - name: Verify Windows Expand-Archive and 7-Zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
+          if(-not $zip){throw 'Missing archive'}
+          $dest=Join-Path $env:RUNNER_TEMP 'unpacked'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force -ErrorAction Stop
+          $manifest=Get-ChildItem $dest -Recurse -Filter manifest.json -File | Select-Object -First 1
+          $model=Get-ChildItem $dest -Recurse -Filter cong.mdl -File | Select-Object -First 1
+          if(-not $manifest -or -not $model){throw 'Missing runtime files'}
+          if($model.Length -ne 75854705){throw "Unexpected Kiwi runtime length: $($model.Length)"}
+          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.18'){throw 'Wrong manifest version'}
+          $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if(Test-Path $sevenZip){& $sevenZip t $zip;if($LASTEXITCODE -ne 0){throw '7-Zip validation failed'}}
+      - name: Publish distinct prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='v1.1.56.18-drop-partial-count-compact.1'
+          $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
+          gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
+          if($LASTEXITCODE -eq 0){
+            gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
+          } else {
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.18 — remove redundant boundary flags, correct manual counts and compact Kiwi payloads' --prerelease --notes 'Based on v1.1.56.17. Remove legacy partial_word generation, transport and prompt dependency. Fix manual and disconnected-review accepted/total counters to exclude scan_only repair probes, while keeping them available for segmentation repair. Do not accept nonexistent c0 options; prompt now explicitly explains empty option maps. Deduplicate per-target morphology when sentence-level Kiwi tokens already include all forms, POS and UTF-16 spans, retaining original background safety validation and normal mode morphology. Preserve Hanja count/readings, whitespace safety, dictionary choice validation and existing features. Run full regressions and Windows ZIP extraction verification.'
+          }
+          if($LASTEXITCODE -ne 0){throw 'Release publishing failed'}
