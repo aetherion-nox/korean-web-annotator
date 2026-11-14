@@ -24,6 +24,7 @@ class SmartSegmentationContext(unittest.IsolatedAsyncioTestCase):
         info=enabled['repair_context']
         self.assertEqual(info['kiwi_tokens'],[dict(form=text,tag='NNG',start=0,end=2)])
         self.assertEqual(info['protected_ranges'],[])
+        self.assertTrue(all('partial_word' not in target for target in enabled['targets']))
 
     async def test_proper_noun_is_guarded_even_with_no_dictionary_target(self):
         text='이수민'
