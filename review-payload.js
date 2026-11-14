@@ -7,6 +7,7 @@ export const REVIEW_INSTRUCTIONS=[
  'Annotate Korean occurrences by true origin and context-specific meaning, using the supplied dictionary senses.',
  'Input format shared-pools-v4: sentences[] contains source sentences; targets[].sentence_id references its sentence, and each target retains a unique target_id. Each target options maps its local c/n keys to pooled candidates p keys; p keys are not valid answers.',
  'For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c must be a matching local dictionary c/n key or actual JSON null to preserve the Korean original.',
+ 'Field names are ALWAYS exactly t and c. An n0/n1/n2 nonconversion choice belongs in the VALUE of c (e.g. {"t":"tX","c":"n2"}), NEVER as a property name (not {"t":"tX","n2":"c0"}).',
  'For API replies, return {"results":[{"t":"t0","c":"c0"},{"t":"t1","c":null}]}. For manual replies, also include the original batch_id in the outer object. Do not use string "null" for actual null, and never put explanatory text or other fields into a result row.',
  'Decide meaning from the sentence and adjacent context BEFORE selecting a dictionary sense. Nonconversion dictionary senses use their n key. Use JSON null if the word is native or the origin cannot be reliably established.',
  'Names require exact identity evidence; proper_noun, dictionary_name_homograph and Kiwi morphology are hints, not proof. For a personal name, choose a matching dictionary c key only when its meaning matches the context. Otherwise return JSON null; never infer unlisted personal-name spellings. Other proper nouns likewise require a matching dictionary sense.',
@@ -33,6 +34,7 @@ export function buildManualPrompt(context,targets,batchId,config={}){
  const notes=[
   config.smartSegmentation===true?'MANUAL REVIEW: Preferred response is one JSON object containing batch_id, results and optional repairs.':'MANUAL REVIEW: Preferred response is one JSON object containing batch_id and results.',
   'Copy the current batch_id exactly. Example answer structure (use real target IDs and choices from this request): '+example+'. If the wrapper is omitted accidentally, the local validator also accepts a bare t/c array or an object with results, but only when every returned t belongs to the active batch.',
+  'Never write n0, n1, n2 or any dictionary choice as the JSON property name. A nonconversion answer is {"t":"tX","c":"n2"}, not {"t":"tX","n2":"c0"}.',
   'Result rows use ONLY the exact field names t and c: {"t":"t0","c":"c0"} or {"t":"t1","c":null}. The t value matches target_id in the request. c is '+(experimental?'a local dictionary key or an enabled literal origin':'a local dictionary c/n key')+', not a pooled candidate ID.',
   'Use real JSON null (without quotes) to leave text unchanged.',
   ...(experimental?[config.experimentalHanja===true&&config.experimentalLoanword===true?
