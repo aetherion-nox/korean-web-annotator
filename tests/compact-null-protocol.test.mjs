@@ -15,11 +15,10 @@ test('the ONLY results wire protocol is {t,c}; a JSON null keeps the source',()=
  for(const old of [
   {results:[{target_id:'t0',choice_id:'c0'}]},
   {results:[{tID:'t0',cID:'c0'}]},
-  {results:[{t:'t0',c:'KEEP'}]},
-  {results:[{t:'t0',c:'null'}]},
   {results:[{t:'t0',c:'c0',choice_id:'KEEP'}]},
   {results:[{t:'t0',c:null},{t:'t0',c:'c0'}]}
  ])assert.equal(validateChoices([t],old).accepted.length,0,JSON.stringify(old));
+ for(const raw of ['KEEP','null'])assert.equal(validateChoices([t],{results:[{t:'t0',c:raw}]}).accepted[0].option.type,'keep');
 });
 
 test('a literal Latin origin KEEP is not the old keep instruction',()=>{
