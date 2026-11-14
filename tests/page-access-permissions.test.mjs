@@ -7,7 +7,7 @@ const popup=source('popup.js'),worker=source('service-worker.js'),content=source
 const options=source('options.js'),pkg=JSON.parse(source('package.json'));
 
 test('website host permissions cover HTTP/HTTPS top frames and cross-origin iframes',()=>{
- assert.equal(manifest.version,'1.1.56.19');
+ assert.equal(manifest.version,'1.1.56.20');
  assert.equal(pkg.version,manifest.version);
  assert.ok(manifest.host_permissions?.includes('https://*/*'));
  assert.ok(manifest.host_permissions?.includes('http://*/*'));
