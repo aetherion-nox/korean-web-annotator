@@ -1532,6 +1532,10 @@
       const row=rows[0],binding=bindings.get(id);
       let choice=row.c===null?binding.choices.find(o=>o.choice_id==='KEEP'):
         binding.choices.find(o=>o.choice_id!=='KEEP'&&o.choice_id===row.c);
+      // Use the same nonexistent numbered-key fallback as background review;
+      // never apply an unrelated dictionary entry or skip a valid repair.
+      if(!choice&&typeof row.c==='string'&&/^[cn]\d+$/u.test(row.c))
+        choice=binding.choices.find(o=>o.choice_id==='KEEP');
       const sentence=sourceSentences.get(binding.sentenceId)||entries.get(binding.sentenceId);
       if(!choice&&sentence)
         try{choice=await manualLiteralChoice(binding,row.c,sentence,task,row);}
