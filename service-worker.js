@@ -662,7 +662,15 @@ async function runModern(message,post,signal,manualSession){
    config.experimentalLoanword===true&&message.modes?.loanword===true);
   const status=(signal,progress)=>engineStatus(signal,progress,{allowNoDictionary});
   const analyze=(text,modes,signal,progress)=>analyzeLocal(text,{...modes,allowNoDictionary},signal,progress);
-  return runSentencePipeline({...message,nameProtection:config.nameProtection,filterDictionaryPeople:config.filterDictionaryPeople,experimentalLoanwordAudit:config.enableModelReview===true&&config.experimentalLoanword===true,experimentalHanjaAudit:config.enableModelReview===true&&config.experimentalHanja===true,smartSegmentation:config.smartSegmentation,reviewAllCandidates:config.reviewAllCandidates,reviewLocalConversions:config.enableModelReview&&config.reviewLocalConversions},post,{signal,enabled:config.enableModelReview,modelConfig,status,analyze,cache,persist:async map=>chrome.storage.local.set({[CACHE_KEY]:Array.from(map)})});
+  return runSentencePipeline({...message,nameProtection:config.nameProtection,filterDictionaryPeople:config.filterDictionaryPeople,experimentalLoanwordAudit:config.enableModelReview===true&&config.experimentalLoanword===true,experimentalHanjaAudit:config.enableModelReview===true&&config.experimentalHanja===true,smartSegmentation:config.smartSegmentation,reviewAllCandidates:config.reviewAllCandidates,reviewLocalConversions:config.enableModelReview&&config.reviewLocalConversions},post,{signal,enabled:config.enableModelReview,modelConfig,status,analyze,cache,persist:async map=>{
+   // Keep one paragraph string in the cache key; never persist that same
+   // full text in every target as well. Target.context is rehydrated after
+   // validateAnalysis() on a subsequent cache hit.
+   const compact=Array.from(map,([key,value])=>[key,
+    value&&Array.isArray(value.targets)?{...value,
+      targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
+   return chrome.storage.local.set({[CACHE_KEY]:compact});
+  }});
 }
 function legacyPlan(message){
  const candidates=Array.isArray(message.candidates)?message.candidates:(message.batches||[]).flat();
