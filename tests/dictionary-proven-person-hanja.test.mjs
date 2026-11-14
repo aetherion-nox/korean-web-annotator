@@ -64,7 +64,7 @@ test('verified-person evidence reaches both pooled and direct review payloads',(
  assert.equal(payload.targets[0].dictionary_person_name,true);
  assert.equal(payload.targets[0].options.c0,'p0');
  const prompt=buildManualPrompt(full,converted,'batch',{experimentalHanja:true});
- assert.match(prompt,/For a personal-name Hanja use ONLY a dictionary c key/);
+ assert.match(prompt,/A personal name may use ONLY a matching dictionary c key/);
  assert.match(prompt,/verified_person_hanja/);
 });
 
