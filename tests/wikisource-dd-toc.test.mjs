@@ -12,12 +12,12 @@ function scanner(html,recognizeCollapsedContent=true){
  const dom=new JSDOM(html,{url:'https://ko.wikisource.org/wiki/대한민국헌법_(제10호)'});
  const context={document:dom.window.document,NodeFilter:dom.window.NodeFilter,
   OWN_RUBY:'ruby[kra-annotated="true"]',uiSettings:{recognizeCollapsedContent},
-  lastScanStats:null,recoveryBlocks:new Set(),recoveryPage:null,
+  lastScanStats:null,recoveryBlocks:new Set(),recoveryByElement:new WeakMap(),recoveryPage:null,
   seenSources:new Set(),analyzedNodeVersions:new WeakMap()};
  vm.createContext(context);
  vm.runInContext(content.slice(content.indexOf('  function sourceOf'),content.indexOf('  function pageIdentity')),context);
  vm.runInContext(content.slice(content.indexOf('  function selectedIntervals'),content.indexOf('  function applySettings')),context);
- vm.runInContext(content.slice(content.indexOf('  function openTextRoots'),content.indexOf('  function isKnownRecoverySource')),context);
+ vm.runInContext(content.slice(content.indexOf('  function openTextRoots'),content.indexOf('  function loanwordDisplay')),context);
  return {dom,context,entries:()=>context.collectTextNodes(),
   plan:entries=>createParagraphPlan(entries,context.sourceOf,BLOCK_TAGS)};
 }
@@ -172,6 +172,21 @@ test('ARIA-controls on a non-collapsed or non-article region cannot bypass hidde
  assert.ok(texts.includes('공개 한국어 본문'));
  assert.ok(!texts.includes('비공개 변경사항'));
  assert.ok(!texts.includes('비공개 광고'));
+ x.dom.window.close();
+});
+test('automatic recovery lookup uses indexed paragraph identity, not linear records search',()=>{
+ const x=scanner('<main><p>대한민국은 민주공화국이다.</p></main>');
+ const entry=[...x.entries().values()][0],element=entry.node.parentElement;
+ const block={element,text:x.context.sourceOf(element).text,
+  annotations:new Map([['0:4',{surface:'대한민국'}]])};
+ x.context.recoveryBlocks.add(block);
+ x.context.recoveryByElement.set(element,block);
+ x.context.recoveryPage='page-test';
+ x.context.pageIdentity=()=> 'page-test';
+ x.context.recoveryBlocks[Symbol.iterator]=()=>{throw Error('O(N) recovery scan must not run');};
+ assert.equal(x.context.isKnownRecoverySource(entry.node),true);
+ block.annotations.clear();
+ assert.equal(x.context.isKnownRecoverySource(entry.node),false);
  x.dom.window.close();
 });
 test('real downloaded Wikisource HTML has no article-wide dd grouping',()=>{
