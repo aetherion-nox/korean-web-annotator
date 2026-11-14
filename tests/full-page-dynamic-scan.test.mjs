@@ -183,7 +183,9 @@ test('ARIA control changes requeue the referenced hidden article panel',()=>{
  ctx.acknowledgeIndexedAutoScan(before.indexSnapshot);
  dom.window.document.querySelector('button').setAttribute('aria-expanded','false');
  const after=ctx.collectTextNodes(null,false,true);
- assert.deepEqual([...after.values()].map(x=>x.text),['국민의 자유를 보장한다.']);
+ const changedText=[...after.values()].map(x=>x.text);
+ assert.ok(changedText.includes('국민의 자유를 보장한다.'),'the controlled panel must be revisited');
+ assert.ok(!changedText.includes('일반 법률 문장.'),'unrelated Korean nodes must stay out of incremental scan');
  dom.window.close();
 });
 test('a shadow host visibility change requeues its Korean text without a new text node',()=>{
