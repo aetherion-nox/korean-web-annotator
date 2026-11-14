@@ -17,7 +17,7 @@ import {
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.56.12-adaptive-frame-collection';
+const CONTENT_SCRIPT_VERSION='1.1.56.13-targeted-offline-validation-errors';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -702,7 +702,11 @@ async function recoverMergedManualBatch(tabId,message){
    }catch(error){
     throw Error('第 '+frame.frameId+' 个框架已离开或无法连接：'+String(error.message||error));
    }
-   if(!answer?.ok)throw Error('第 '+frame.frameId+' 个框架'+(phase==='validate'?'校验':'写入')+'失败：'+(answer?.error||'原页面已变化'));
+   if(!answer?.ok){
+    const location=frame.frameId===0?'主页面（框架 0）':'子框架 '+frame.frameId;
+    throw Error(location+(phase==='validate'?'校验':'写入')+'失败：'+
+      (answer?.error||'原页面已变化'));
+   }
   }
  }
  return {ok:true,appliedFrames:frames.length};
