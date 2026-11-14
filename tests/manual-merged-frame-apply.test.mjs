@@ -90,7 +90,7 @@ test('same-spelling loanword literals survive cross-frame offline validation and
   assert.equal(entry.annotations.length,0,'dry-run may not modify the page');
   const committed=await c.applyMergedOfflineFrame({groupId:'frame-group-7',phase:'commit',frame});
   assert.equal(committed.ok,true,committed.error||'commit failed');
-  assert.deepEqual(entry.annotations.map(x=>[x.start,x.end,x.surface,x.replacement]),
+  assert.deepEqual(Array.from(entry.annotations,x=>[x.start,x.end,x.surface,x.replacement]),
    [[start,start+surface.length,surface,raw]]);
   assert.equal(entry.annotations[0].origin_source,'model-unverified',
    'same spelling must not silently inherit dictionary-backed provenance');
