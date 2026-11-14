@@ -54,7 +54,8 @@ export function buildReviewPayload(context,targets,config={}){
   if(!sentenceIds.has(sentenceKey)){const sentence_id=`s${sentences.length}`;sentenceIds.set(sentenceKey,sentence_id);sentences.push({sentence_id,text,...(adjacent_context?{adjacent_context}:{}),...(config.smartSegmentation===true?{
    // Shared once per sentence, compact tuples rather than repeating field names.
    kiwi_tokens:(target.repair_context?.kiwi_tokens||[]).map(t=>[t.form,t.tag,t.start,t.end]),
-   protected_ranges:target.repair_context?.protected_ranges||[]
+   protected_ranges:target.repair_context?.protected_ranges||[],
+   person_ranges:target.repair_context?.person_ranges||[]
   }: {})});}
   const options=Object.fromEntries(target.options.map(option=>{
    if(option.type==='keep')return null;
