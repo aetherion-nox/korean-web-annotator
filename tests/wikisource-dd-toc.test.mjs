@@ -109,6 +109,36 @@ test('ordinary hidden content is never made eligible by a folded TOC setting',()
  assert.ok(!texts.includes('숨겨진 서식'));
  x.dom.window.close();
 });
+test('Minerva mobile folded article section is scanned ON without expanding, OFF skips it',()=>{
+ const html='<body class="skin-minerva mf-collapsible-sections">'+
+  '<main><div class="mw-parser-output">'+
+  '<section id="mf-section-2" class="mf-section-2 collapsible-block" style="display:none">'+
+  '<div class="mw-heading section-heading"><h2 id="조문">조문</h2></div>'+
+  '<h3>제1장 총강</h3><dl><dd>제1조 ① 대한민국은 민주공화국이다.</dd></dl>'+
+  '<p style="display:none">비공개 광고입니다.</p>'+
+  '</section></div><p>다른 공개 본문.</p></main>'+
+  '<aside style="display:none">숨겨진 광고입니다.</aside></body>';
+ const x=scanner(html,true),section=x.dom.window.document.querySelector('#mf-section-2');
+ const inSection=()=>[...x.entries().values()].filter(e=>e.node.parentElement.closest('#mf-section-2')).map(e=>e.text);
+ assert.equal(x.dom.window.getComputedStyle(section).display,'none');
+ assert.ok(inSection().some(text=>text.includes('대한민국은 민주공화국이다')));
+ assert.ok(!inSection().some(text=>text.includes('비공개 광고')));
+ assert.equal(section.classList.contains('open-block'),false,'scanning must not expand mobile sections');
+ x.context.uiSettings.recognizeCollapsedContent=false;
+ assert.equal(inSection().length,0,'default visibility must skip folded mobile article when OFF');
+ section.style.display='block';
+ assert.ok(inSection().some(text=>text.includes('민주공화국')),'visible mobile content stays eligible when OFF');
+ x.dom.window.close();
+});
+test('collapsed switch does not bypass ordinary hidden sections on unrelated skins',()=>{
+ const html='<body class="skin-vector"><div class="mw-parser-output">'+
+  '<section id="mf-section-2" class="collapsible-block" style="display:none">'+
+  '<p>비공개 본문</p></section></div><p>공개된 본문</p></body>';
+ const x=scanner(html,true),texts=[...x.entries().values()].map(e=>e.text);
+ assert.ok(texts.includes('공개된 본문'));
+ assert.ok(!texts.some(t=>t.includes('비공개 본문')));
+ x.dom.window.close();
+});
 test('real downloaded Wikisource HTML has no article-wide dd grouping',()=>{
  const file=process.env.KRA_REAL_WIKISOURCE_HTML;
  if(!file)return;
