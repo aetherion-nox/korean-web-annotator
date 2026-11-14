@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.12-adaptive-frame-collection';
+const CONTENT_SCRIPT_VERSION = '1.1.56.13-targeted-offline-validation-errors';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
