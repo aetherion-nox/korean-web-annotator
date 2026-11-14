@@ -69,7 +69,7 @@ test('missing batch_id is rejected before experimental-origin eligibility checks
 test('disconnected recovery accepts model-supplied Latin origin only with experimental permission',async()=>{
  const {context,task,entry}=environment();
  task.modes.loanword=true;
- task.manualBackup.bindings[0].literalOrigin={eligible:true,hanja:false,loanword:true,known:[]};
+ task.manualBackup.bindings[0].literalOrigin={eligibleHanja:false,eligibleLoanword:true,hanja:false,loanword:true,known:[]};
  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]}));
  assert.equal(task.manualRequest,'batch2');
  assert.equal(entry.annotations.length,1);
@@ -81,7 +81,7 @@ test('disconnected recovery accepts model-supplied Latin origin only with experi
 test('disconnected recovery rejects known dictionary spellings masquerading as new origins',async()=>{
  const {context,task,entry}=environment();
  task.modes.loanword=true;
- task.manualBackup.bindings[0].literalOrigin={eligible:true,hanja:false,loanword:true,known:[{type:'loanword',replacement:'game'}]};
+ task.manualBackup.bindings[0].literalOrigin={eligibleHanja:false,eligibleLoanword:true,hanja:false,loanword:true,known:[{type:'loanword',replacement:'game'}]};
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]})),/无效 c|不完整/);
  assert.equal(entry.annotations.length,0);
  assert.equal(task.manualRequest,'batch1');
@@ -89,10 +89,10 @@ test('disconnected recovery rejects known dictionary spellings masquerading as n
 
 test('disconnected recovery fails closed for prohibited names and malformed Hanzi spans',async()=>{
  const {context,task,entry}=environment();
- const meta={eligible:false,hanja:true,loanword:true,known:[]};
+ const meta={eligibleHanja:false,eligibleLoanword:false,hanja:true,loanword:true,known:[]};
  task.manualBackup.bindings[0].literalOrigin=meta;task.modes.loanword=true;
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game'}]})),/无效 c|不完整/);
- meta.eligible=true;
+ meta.eligibleLoanword=true;
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'韓字'}]})),/无效 c|不完整/);
  await assert.rejects(context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game',extra:true}]})),/无效 c|不完整/);
  assert.equal(entry.annotations.length,0);assert.equal(task.manualRequest,'batch1');
@@ -103,7 +103,7 @@ test('disconnected Latin origin preserves the existing alphanumeric suffix',asyn
  entry.text='가나42';
  task.manualBackup.bindings[0].surface='가나42';
  task.manualBackup.bindings[0].start=0;task.manualBackup.bindings[0].end=4;
- task.manualBackup.bindings[0].literalOrigin={eligible:true,hanja:false,loanword:true,known:[]};
+ task.manualBackup.bindings[0].literalOrigin={eligibleHanja:false,eligibleLoanword:true,hanja:false,loanword:true,known:[]};
  task.modes.loanword=true;entry.selected=[{start:0,end:4}];
  await context.applyManualRecovery(task,JSON.stringify({batch_id:'batch1',results:[{t:'t0',c:'game42'}]}));
  assert.equal(entry.annotations.length,1);
