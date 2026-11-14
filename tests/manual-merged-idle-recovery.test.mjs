@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {partitionMergedManualRecovery} from '../manual-merged-recovery.js';
+import {normalizeManualAnswer} from '../manual-answer-format.js';
 
 const routing=[
  {sentenceId:'f0_s0',frameId:0,operationId:'op-main',localId:'p0'},
@@ -30,6 +31,21 @@ test('manual backup survives worker death and targets each ORIGINAL frame source
  assert.deepEqual(JSON.parse(parts[0].answer).results,[{t:'t0',c:'c0'}]);
  assert.deepEqual(JSON.parse(parts[1].answer).results,[{t:'t1',c:null}]);
  assert.equal(backup.bindings[0].sentenceId,'f0_s0','do not mutate the original replay snapshot');
+});
+
+test('merged offline coordinator accepts bare arrays and missing batch ID when IDs match',()=>{
+ for(const response of [originalResponse.results,{results:originalResponse.results}]){
+  const parts=partitionMergedManualRecovery(routing,backup,response);
+  assert.equal(parts.length,2);
+  assert.equal(JSON.parse(parts[0].answer).batch_id,backup.requestId);
+ }
+});
+
+test('merged offline coordinator rejects batchless answers containing foreign target IDs',()=>{
+ for(const invalid of [
+  [{t:'t0',c:null},{t:'t99',c:'c0'}],
+  {results:[{t:'t0',c:'c0'},{t:'wrong',c:null}]}
+ ])assert.throws(()=>partitionMergedManualRecovery(routing,backup,invalid),/缺少 batch_id/);
 });
 
 test('never route ambiguous, duplicated, spoofed or stale ID rows',()=>{
@@ -86,6 +102,7 @@ function idleFixture(mergedHost=true){
  panel.querySelector('.kra-manual-response').value='important late answer';
  let disconnects=0;
  const task={operationId:'op-main',mergedGroup:true,mergedHost,
+  manualAnswerNormalizer:Promise.resolve(normalizeManualAnswer),
   mergeGroupId:'frame-group-live',manualFrameRouting:routing,
   manualBackup:mergedHost?backup:undefined,
   manualRequest:mergedHost?backup.requestId:undefined,
@@ -126,4 +143,17 @@ test('do not offer a phantom offline apply if frame routing was never recorded',
  assert.equal(c.recoverManualConnection(task,'lost'),false);
  assert.equal(task.manualLocalOnly,undefined);
  assert.equal(panel.querySelector('.kra-manual-response').value,'important late answer');
+});
+
+test('merged host normalizes missing-ID response before routing it to original frames',async()=>{
+ const {c,task}=idleFixture(true);
+ let submitted;
+ c.chrome.runtime.sendMessage=async data=>{submitted=data;return {ok:true};};
+ c.handleManualEvent=()=>{};
+ task.entries=new Map();
+ task.manualPlan=[{requestId:backup.requestId},{requestId:'next-batch'}];
+ await c.recoverMergedManual(task,JSON.stringify([{t:'t0',c:'c0'},{t:'t1',c:null}]));
+ assert.equal(submitted?.type,'KRA_MANUAL_OFFLINE_APPLY');
+ assert.equal(submitted?.response?.batch_id,backup.requestId);
+ assert.equal(submitted?.response?.results.length,2);
 });
