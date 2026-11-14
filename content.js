@@ -1383,6 +1383,8 @@
       import(chrome.runtime.getURL('repair-validation-core.js')).then(m=>m.validateSegmentationRepairsCore));
     return validator(targets,{repairs:rows},{
       smartSegmentation:true,payload,repairScopes,
+      experimentalHanja:backup.experimentalHanja===true,
+      experimentalLoanword:backup.experimentalLoanword===true,
       verifyOrigin:({start,end,surface,choice_id,sentence})=>
         verified.get(JSON.stringify([sentence.sentence_id,start,end,surface,choice_id]))||null
     });
