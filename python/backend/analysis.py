@@ -126,7 +126,7 @@ class Engine:
         tokens=await self.tokens(text)
         segments,_=await converter.convert(text,conversion_lookup,tokens=tokens)
         dictionary_names,homograph_evidence,known_person_hanja=await dictionary_name_evidence(
-            text,tokens,self.lookup_fn,include_person_hanja=not filter_dictionary_people)
+            text,tokens,self.lookup_fn,include_person_hanja=True)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
         name_protection=modes.get('nameProtection',True) is not False
         homograph_evidence=homograph_evidence if name_protection else []
