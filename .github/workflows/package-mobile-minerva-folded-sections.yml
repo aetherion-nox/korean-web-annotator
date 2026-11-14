@@ -1,0 +1,168 @@
+name: Validate and Package v1.1.56.33 Mobile Minerva Folded Article Fix
+on:
+  push:
+    branches:
+      - fix/v1.1.56.33-mobile-minerva-folded-sections
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v1.1.56.33-mobile-minerva-folded-sections
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify version
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.33'
+          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.33'
+          PY
+      - name: Restore frozen Kiwi and Python runtime
+        run: |
+          python3 restore_distribution.py
+          git restore runtime/python-sources.json
+      - name: Run complete tests
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          PYTHONPATH=python/browser-support npm test
+      - name: Validate actual Wikisource legal page HTML (not a synthetic example)
+        run: |
+          python3 - <<'PY'
+          import urllib.request
+          url='https://ko.wikisource.org/wiki/%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)'
+          headers={'User-Agent':'KoreanWebAnnotator/1.1.56.33 (test real DOM of public law; github.com/aetherion-nox/korean-web-annotator)'}
+          with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=30) as result:html=result.read()
+          assert len(html)>100000
+          open('/tmp/kra-wikisource-constitution.html','wb').write(html)
+          print('Downloaded authentic Wikisource HTML bytes:',len(html))
+          PY
+          KRA_REAL_WIKISOURCE_HTML=/tmp/kra-wikisource-constitution.html node --test tests/wikisource-dd-toc.test.mjs
+      - name: Verify real mobile Minerva folded 조문 (HTML, CSS, Chrome, scan and DOM paint)
+        run: |
+          python3 -m pip install --quiet beautifulsoup4
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,pathlib
+          from bs4 import BeautifulSoup
+          title='%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)'
+          url='https://ko.m.wikisource.org/wiki/'+title
+          ua='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'
+          req=urllib.request.Request(url,headers={'User-Agent':ua})
+          with urllib.request.urlopen(req,timeout=30) as response:html=response.read().decode('utf-8')
+          assert 'mf-section-2' in html and 'skin-minerva' in html
+          pathlib.Path('mobile_mobile_host.html').write_text(html)
+          css_parts=[]
+          for link in BeautifulSoup(html,'html.parser').select('link[rel=stylesheet]'):
+            href=link.get('href')
+            if not href:continue
+            try:
+              target=urllib.parse.urljoin(url,href)
+              with urllib.request.urlopen(urllib.request.Request(target,headers={'User-Agent':ua}),timeout=30) as response:css=response.read().decode('utf-8')
+              css_parts.append(css)
+            except Exception as error:print('CSS_WARNING',str(error)[:150])
+          assert any('collapsible-block' in css for css in css_parts)
+          pathlib.Path('mobile-styles.css').write_text('\n'.join(css_parts))
+          print('MOBILE_PAGE_BYTES',len(html),'CSS_PARTS',len(css_parts))
+          PY
+          npm install --no-save --ignore-scripts --no-audit --no-fund playwright-core
+          node scripts/diagnose_mobile_closed_jomun.mjs
+      - name: Verify current compact model response schema in prompts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          files=['review-payload.js','experimental-options.js','smart-segmentation-prompt.js']
+          for f in files:
+              text=Path(f).read_text()
+              for fragment in ['results[].choice_id','{"target_id":"t0","choice_id":"c0"}','Return KEEP','choose KEEP','shared-pools-v3','{target_id,choice_id}']:
+                  assert fragment not in text, (f,fragment)
+          print('Only compact t/c response instructions.')
+          PY
+      - name: Build and verify complete ZIP
+        run: |
+          python3 - <<'PY'
+          import subprocess,zipfile,json,hashlib
+          from pathlib import Path
+          root=Path.cwd()
+          tracked=[Path(p) for p in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if p]
+          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests','scripts'}
+                 and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          dest=root/'Korean-Web-Annotator-v1.1.56.33-mobile-minerva-folded-sections.zip'
+          with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
+              for p in sorted(files):
+                  mode=zipfile.ZIP_DEFLATED
+                  z.write(root/p,'Korean-Web-Annotator/'+p.as_posix(),
+                          compress_type=mode,compresslevel=9 if p.suffix.lower()=='.mdl' else 6)
+          with zipfile.ZipFile(dest) as z:
+              assert z.testzip() is None
+              needed=['manifest.json','content.js','service-worker.js','review-payload.js',
+                      'choice-review.js','model-stream.js','manual-review.js',
+                      'browser-worker.js','engine-page.js','runtime/models/cong.mdl']
+              assert all('Korean-Web-Annotator/'+p in z.namelist() for p in needed)
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.33'
+              model=z.getinfo('Korean-Web-Annotator/runtime/models/cong.mdl')
+              assert model.compress_type==zipfile.ZIP_DEFLATED, 'cong.mdl must be compressed in ZIP'
+              assert model.file_size==75854705, 'Unexpected Kiwi model size'
+              original_digest=hashlib.sha256((root/'runtime/models/cong.mdl').read_bytes()).hexdigest()
+              zip_digest=hashlib.sha256(z.read(model.filename)).hexdigest()
+              assert zip_digest==original_digest,'ZIP must preserve the bundled runtime model byte for byte'
+              print('cong.mdl SHA256 verified:',zip_digest)
+              print('cong.mdl:',model.file_size,'original bytes,',model.compress_size,
+                    'ZIP-compressed bytes, saved:',model.file_size-model.compress_size,
+                    'ratio:',round(model.compress_size/model.file_size*100,2),'%')
+          assert sum(i.file_size for i in zipfile.ZipFile(dest).infolist())>90_000_000,'Kiwi runtime missing'
+          print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-v1.1.56.33
+          path: Korean-Web-Annotator-v1.1.56.33-mobile-minerva-folded-sections.zip
+          compression-level: 0
+          if-no-files-found: error
+  windows-verify-publish:
+    runs-on: windows-latest
+    needs: package
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-v1.1.56.33
+          path: artifact
+      - name: Verify Windows Expand-Archive and 7-Zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
+          if(-not $zip){throw 'Missing archive'}
+          $dest=Join-Path $env:RUNNER_TEMP 'unpacked'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force -ErrorAction Stop
+          $manifest=Get-ChildItem $dest -Recurse -Filter manifest.json -File | Select-Object -First 1
+          $model=Get-ChildItem $dest -Recurse -Filter cong.mdl -File | Select-Object -First 1
+          if(-not $manifest -or -not $model){throw 'Missing runtime files'}
+          if($model.Length -ne 75854705){throw "Unexpected Kiwi runtime length: $($model.Length)"}
+          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.33'){throw 'Wrong manifest version'}
+          $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if(Test-Path $sevenZip){& $sevenZip t $zip;if($LASTEXITCODE -ne 0){throw '7-Zip validation failed'}}
+      - name: Publish distinct prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='v1.1.56.33-mobile-minerva-folded-sections.1'
+          $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
+          gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
+          if($LASTEXITCODE -eq 0){
+            gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
+          } else {
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.33 — mobile Minerva folded Korean article recognition' --prerelease --notes 'Based on v1.1.56.32. Fix default-on 识别折叠栏内的韩语 for authentic Minerva mobile pages: actual Korean Wikisource 조문 full body is section#mf-section-2.collapsible-block, CSS display:none when folded. Previous Vector desktop and .mw-collapsible-content rules did not include it. Only bypass visibility for a top-level Minerva article section directly in .mw-parser-output, never for arbitrary hidden advertisements, templates, or hidden descendants. Preserve ON/OFF behavior, source positions, full 20k paragraph limit, Kiwi, dictionary, review protocol and previously optimized scans. Tested using actual Minerva mobile HTML + ResourceLoader CSS in Chrome Pixel-sized emulation: closed 17,546-character 조문 source produces 477 eligible Hangul text nodes with ON and 0 with OFF; a real Ruby can be inserted while folded and remains after expanding. Includes full regression, ZIP integrity, Windows Expand-Archive and 7-Zip checks.'
+          }
+          if($LASTEXITCODE -ne 0){throw 'Release publishing failed'}
