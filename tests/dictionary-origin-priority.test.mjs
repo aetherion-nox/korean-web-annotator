@@ -54,7 +54,7 @@ test('dictionary option ID, KEEP and direct verified origin coexist without forc
  assert.equal(literal.accepted[0].option.choice_id,'原潛');
  assert.equal(literal.accepted[0].option.entry_id,'experimental:hanja');
  assert.equal(literal.experimentalAccepted,1);
- assert.equal(validateChoices([target],response('原潛')).accepted.length,0);
+ assert.equal(validateChoices([target],response('原潛')).accepted[0].option.type,'keep');
  assert.deepEqual(target.options.map(o=>o.choice_id),['KEEP','c0']);
 });
 test('segmentation experiment keeps optional repair instructions alongside open dictionary origin choices',()=>{
