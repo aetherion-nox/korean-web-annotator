@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.21-independent-origin-audits';
+const CONTENT_SCRIPT_VERSION = '1.1.56.22-flexible-manual-json';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
