@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.14-remove-15s-post-page-rescan';
+  const VERSION = '1.1.56.15-no-cross-space-targets';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
