@@ -60,8 +60,14 @@ export function buildReviewPayload(context,targets,config={}){
  const packedTargets=targets.map(target=>{
   const text=target.context;
   const adjacent_context=target.adjacent_context;
-  const sentenceKey=JSON.stringify([text,adjacent_context?.before||'',adjacent_context?.after||'',...(config.smartSegmentation===true?[target.repair_sentence_key||'']:[])]);
-  if(!sentenceIds.has(sentenceKey)){const sentence_id=`s${sentences.length}`;sentenceIds.set(sentenceKey,sentence_id);sentences.push({sentence_id,text,...(adjacent_context?{adjacent_context}:{}),...(config.smartSegmentation===true?{
+  // Hash/map the paragraph string once instead of JSON.stringify()-ing
+  // the whole paragraph again for every target in it.
+  let subkeys=sentenceIds.get(text);
+  if(!subkeys){subkeys=new Map();sentenceIds.set(text,subkeys);}
+  const contextKey=JSON.stringify([adjacent_context?.before||'',adjacent_context?.after||'',
+    ...(config.smartSegmentation===true?[target.repair_sentence_key||'']:[])]);
+  let sentence_id=subkeys.get(contextKey);
+  if(sentence_id===undefined){sentence_id=`s${sentences.length}`;subkeys.set(contextKey,sentence_id);sentences.push({sentence_id,text,...(adjacent_context?{adjacent_context}:{}),...(config.smartSegmentation===true?{
    // Shared once per sentence, compact tuples rather than repeating field names.
    kiwi_tokens:(target.repair_context?.kiwi_tokens||[]).map(t=>[t.form,t.tag,t.start,t.end]),
    protected_ranges:target.repair_context?.protected_ranges||[]
@@ -87,7 +93,7 @@ export function buildReviewPayload(context,targets,config={}){
     occurrence.morphology=target.morphology.map(({tag,...part})=>part);
    }
   }
-  return {...occurrence,sentence_id:sentenceIds.get(sentenceKey),options};
+  return {...occurrence,sentence_id,options};
  });
  const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
  const payload={format:'shared-pools-v4',...(experimental?{
@@ -96,7 +102,13 @@ export function buildReviewPayload(context,targets,config={}){
   ...(config.dictionaryFree===true?{null_is_fallback_only:true}:{dictionary_options_are_not_exhaustive:true})
  }:{}),...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
- const userBytes=bytes(payload),legacyUserBytes=bytes({context,targets});
+ const userBytes=bytes(payload);
+ // The legacy-size diagnostic is an estimate. Serializing the old,
+ // intentionally redundant target.context format just to measure it would
+ // itself recreate the O(paragraphLength * targetCount) bottleneck.
+ const encodedContextBytes=new Map(sentences.map(s=>[s.text,bytes(s.text)]));
+ const repeatedContextBytes=targets.reduce((total,t)=>total+(encodedContextBytes.get(t.context)||0)+11,0);
+ const legacyUserBytes=userBytes+repeatedContextBytes;
  const stats={posFilteredOptions:originalOptionCount-targets.reduce((n,t)=>n+t.options.length,0),posConflictTargets:targets.filter(t=>t.pos_conflict).length,format:payload.format,targets:targets.length,sentences:sentences.length,candidates:candidates.length,userBytes,legacyUserBytes,savedPercent:Math.round((1-userBytes/legacyUserBytes)*1000)/10};
  return {payload,stats};
 }
