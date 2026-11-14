@@ -38,9 +38,10 @@ test('valid n/c keys keep the exact original dictionary sense; unknown numeric k
   assert.equal(v.accepted[0].option.type,'keep',id);
   assert.equal(v.unresolved.length,0,id);
  }
- assert.equal(choose(target,'cNo').unresolved.length,1,'a malformed key still requires correction');
- assert.equal(choose(target,'x0').unresolved.length,1);
- assert.equal(choose(target,'c0 ').unresolved.length,1);
+ for(const raw of ['cNo','x0','c0 ']){
+  assert.equal(choose(target,raw).accepted[0].option.type,'keep',raw);
+  assert.equal(choose(target,raw).unresolved.length,0,raw);
+ }
 });
 
 test('nonexistent n/c options also mean null with experimental origins enabled',()=>{
@@ -57,12 +58,12 @@ test('nonexistent n/c options also mean null with experimental origins enabled',
  assert.equal(valid.accepted[0].option.replacement,'原潛');
  assert.equal(valid.accepted[0].option.origin_source,'model-unverified');
  assert.equal(valid.experimentalAccepted,1);
- assert.equal(experimental(hanja,'原子潛水艇',{experimentalHanja:true}).unresolved.length,1,
-  'invalid experimental alignment remains rejected, not normalized to keep');
+ assert.equal(experimental(hanja,'原子潛水艇',{experimentalHanja:true}).accepted[0].option.type,'keep',
+  'unsafe experimental alignment is rejected as a conversion and leaves source unchanged');
  const loan={target_id:'t2',context:'게임',surface:'게임',start:0,end:2,options:[
   {choice_id:'KEEP',type:'keep',replacement:'게임',entry_id:null,definitions:[]}]};
  assert.equal(experimental(loan,'game',{experimentalLoanword:true}).accepted[0].option.replacement,'game');
- assert.equal(experimental(loan,'wrong spelling with <',{experimentalLoanword:true}).unresolved.length,1);
+ assert.equal(experimental(loan,'wrong spelling with <',{experimentalLoanword:true}).accepted[0].option.type,'keep');
 });
 
 test('manual review automatically saves invalid numeric c/n answers as JSON null',async()=>{
