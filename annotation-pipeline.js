@@ -149,7 +149,8 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     choices:options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))})),
     ...((config.experimentalHanja===true||config.experimentalLoanword===true)?{literalOrigin:{
      hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true,
-     eligible:canProposeExperimentalOption(target),
+     eligibleHanja:canProposeExperimentalOption(target,'hanja'),
+     eligibleLoanword:canProposeExperimentalOption(target,'loanword'),
      known:options.filter(o=>o.type==='hanja'||o.type==='loanword').map(o=>({type:o.type,replacement:o.replacement})),
       morphology:target.morphology||[]
     }}:{})};
