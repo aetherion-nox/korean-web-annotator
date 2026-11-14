@@ -56,12 +56,15 @@ test('script, alignment and enabled-mode guards reject invented or malformed val
  }
 });
 
-test('never invent new origins for flagged proper names or incomplete source words',()=>{
- for(const flag of ['proper_noun','suspected_person_name','dictionary_person_name','dictionary_name_homograph','partial_word']){
+test('Hanja proper nouns are eligible except flagged personal names and partial words',()=>{
+ const proper={...hanja,proper_noun:true};
+ assert.equal(canProposeExperimentalOption(proper,'hanja'),true);
+ assert.equal(choose(proper,'原潛',{experimentalHanja:true}).accepted.length,1);
+ for(const flag of ['suspected_person_name','dictionary_person_name','dictionary_name_homograph','partial_word']){
   const t={...hanja,[flag]:true};
-  assert.equal(canProposeExperimentalOption(t),false);
+  assert.equal(canProposeExperimentalOption(t,'hanja'),false,flag);
   assert.equal(choose(t,'原潛',{experimentalHanja:true}).unresolved.length,1,flag);
-  assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys are independent of literal filter');
+  assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys remain available');
  }
 });
 
@@ -77,15 +80,12 @@ test('cross-batch, duplicate, extra fields and obsolete experimental arrays are 
  }
 });
 
-test('spaced Hanja phrase infers source-aligned segments while preserving the space',()=>{
+test('cross-space lexical targets cannot be created from dictionary alias spellings',()=>{
  const t={target_id:'t2',start:0,end:6,surface:'이산화 탄소',context:'이산화 탄소',options:[
   {choice_id:'KEEP',type:'keep',replacement:'이산화 탄소',entry_id:null,definitions:[]}]};
- const result=choose(t,'二酸化炭素',{experimentalHanja:true});
- assert.equal(result.accepted.length,1);
- assert.equal(result.accepted[0].option.replacement,'二酸化 炭素');
- assert.deepEqual(projectAnnotation(t.context,{...t,...result.accepted[0].option}).map(a=>[a.surface,a.replacement]),
-  [['이산화','二酸化'],['탄소','炭素']]);
+ assert.equal(choose(t,'二酸化炭素',{experimentalHanja:true}).accepted.length,0);
  assert.equal(literalOriginOption(t,'二酸化',{experimentalHanja:true}),null);
+ assert.equal(choose(t,'KEEP',{experimentalHanja:true}).accepted[0].option.type,'keep');
 });
 
 test('only the enabled experimental origin rule is included in each manual/API prompt',()=>{
