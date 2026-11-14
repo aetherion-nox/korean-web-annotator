@@ -56,16 +56,43 @@ test('script, alignment and enabled-mode guards reject invented or malformed val
  }
 });
 
-test('Hanja proper nouns are eligible except flagged personal names and partial words',()=>{
+test('Hanja proper nouns are eligible except flagged personal names',()=>{
  const proper={...hanja,proper_noun:true};
  assert.equal(canProposeExperimentalOption(proper,'hanja'),true);
  assert.equal(choose(proper,'原潛',{experimentalHanja:true}).accepted.length,1);
- for(const flag of ['suspected_person_name','dictionary_person_name','dictionary_name_homograph','partial_word']){
+ for(const flag of ['suspected_person_name','dictionary_person_name','dictionary_name_homograph']){
   const t={...hanja,[flag]:true};
   assert.equal(canProposeExperimentalOption(t,'hanja'),false,flag);
   assert.equal(choose(t,'原潛',{experimentalHanja:true}).unresolved.length,1,flag);
   assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys remain available');
  }
+});
+
+test('partial_word is an advisory hint for correctly aligned compound components',()=>{
+ const companyContext='L3해리스가 운영한다';
+ const company={target_id:'t383',start:2,end:5,surface:'해리스',context:companyContext,
+  proper_noun:true,dictionary_person_name:true,partial_word:true,experimental_loanword_audit:true,
+  options:[{choice_id:'KEEP',type:'keep',replacement:'해리스',entry_id:null,definitions:[]}]};
+ const companyResult=choose(company,'Harris',{experimentalLoanword:true});
+ assert.equal(canProposeExperimentalOption(company,'loanword'),true);
+ assert.equal(companyResult.accepted.length,1);
+ assert.deepEqual(projectAnnotation(companyContext,{...company,...companyResult.accepted[0].option})
+  .map(a=>[a.start,a.end,a.replacement]),[[2,5,'Harris']]);
+ assert.equal(companyContext.slice(0,company.start)+'Harris'+companyContext.slice(company.end),'L3Harris가 운영한다');
+
+ const compound={target_id:'t384',start:2,end:4,surface:'정책',context:'경제정책',
+  partial_word:true,options:[{choice_id:'KEEP',type:'keep',replacement:'정책',entry_id:null,definitions:[]}]};
+ const hanjaResult=choose(compound,'政策',{experimentalHanja:true});
+ assert.equal(canProposeExperimentalOption(compound,'hanja'),true);
+ assert.equal(hanjaResult.accepted.length,1);
+ assert.deepEqual(projectAnnotation(compound.context,{...compound,...hanjaResult.accepted[0].option})
+  .map(a=>[a.start,a.end,a.replacement]),[[2,4,'政策']]);
+ assert.equal(choose(compound,'經濟政策',{experimentalHanja:true}).unresolved.length,1,
+  'extra Hanja characters must not overwrite a partial source span');
+
+ const partialDictionary={...hanja,partial_word:true};
+ assert.equal(choose(partialDictionary,'c0',{experimentalHanja:true}).accepted.length,1,
+  'pre-existing dictionary choices remain valid');
 });
 
 test('cross-batch, duplicate, extra fields and obsolete experimental arrays are rejected',()=>{
