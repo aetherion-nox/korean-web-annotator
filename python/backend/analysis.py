@@ -267,7 +267,7 @@ class Engine:
                     else:
                         definitions=[]
                     options.append(dict(choice_id=f'c{n}',type='hanja',replacement=text[start:a]+replacement+text[b:end],entry_id=entry,definitions=definitions))
-                targets.append(dict(target_id=f't{number}',start=to_utf16(text,start),end=to_utf16(text,end),surface=text[start:end],options=options))
+                targets.append(dict(target_id=f't{number}',start=to_utf16(text,start),end=to_utf16(text,end),surface=text[start:end],context=text,options=options))
         skipped_mixed=0
         token_entries=None
         if modes.get('loanword',False):
@@ -283,7 +283,7 @@ class Engine:
             for annotation in loan['annotations']:
                 overlapping=any(annotation['start']<t['end'] and t['start']<annotation['end'] for t in targets)
                 if overlapping:
-                    loan['targets'].append(dict(start=annotation['start'],end=annotation['end'],surface=annotation['surface'],options=[dict(choice_id='KEEP',type='keep',replacement=annotation['surface'],entry_id=None,definitions=[]),dict(choice_id='c0',type='loanword',replacement=annotation['replacement'],entry_id=annotation['entry_id'],definitions=annotation['definitions'])]))
+                    loan['targets'].append(dict(start=annotation['start'],end=annotation['end'],surface=annotation['surface'],context=text,options=[dict(choice_id='KEEP',type='keep',replacement=annotation['surface'],entry_id=None,definitions=[]),dict(choice_id='c0',type='loanword',replacement=annotation['replacement'],entry_id=annotation['entry_id'],definitions=annotation['definitions'])]))
                 else:annotations.append({k:v for k,v in annotation.items() if k not in ('entry_id','definitions')})
             targets=merge_targets(text,targets+loan['targets'])
         targets=sorted(targets+mixed['targets']+homograph_targets+suspect_targets,key=lambda t:(t['start'],t['end']))
@@ -308,7 +308,7 @@ class Engine:
                 start=to_utf16(text,a);end=to_utf16(text,b)
                 if any(start<y and x<end for x,y in covered):continue
                 targets.append(dict(target_id='latin-audit',start=start,end=end,surface=word,
-                    experimental_loanword_audit=True,
+                    context=text,experimental_loanword_audit=True,
                     options=[dict(choice_id='KEEP',type='keep',replacement=word,
                                   entry_id=None,definitions=[])]))
                 covered.append((start,end))
@@ -356,7 +356,7 @@ class Engine:
                            [(t['start'],t['end']) for t in targets]):
                         continue
                     targets.append(dict(target_id='hanja-audit',start=start,end=end,surface=word,
-                        experimental_hanja_audit=True,
+                        context=text,experimental_hanja_audit=True,
                         options=[dict(choice_id='KEEP',type='keep',replacement=word,
                                       entry_id=None,definitions=[])]))
                 targets.sort(key=lambda t:(t['start'],t['end']))
@@ -372,7 +372,7 @@ class Engine:
                 if overlapping and any(t['start']!=start or t['end']!=end for t in overlapping):
                     continue
                 target=overlapping[0] if overlapping else dict(
-                    start=start,end=end,surface=text[a:b],
+                    start=start,end=end,surface=text[a:b],context=text,
                     options=[dict(choice_id='KEEP',type='keep',replacement=text[a:b],
                                   entry_id=None,definitions=[])])
                 if not overlapping:targets.append(target)
