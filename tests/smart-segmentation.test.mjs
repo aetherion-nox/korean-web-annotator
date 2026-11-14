@@ -56,8 +56,7 @@ test('source spaces remain untouched in a cross-space boundary repair',()=>{
  assert.deepEqual(r.accepted.flatMap(x=>x.annotations.map(a=>[a.start,a.end,a.replacement])),
   [[0,2,'韓國'],[3,5,'政府']]);
  const invalid=validate(f,[row(f.sid,'replace',['t0'],0,5,text,'韓國政府')]);
- assert.equal(invalid.accepted.length,1,'a complete phrase with source-preserving space is also possible');
- assert.deepEqual(invalid.accepted[0].annotations.map(a=>a.replacement),['韓國','政府']);
+ assert.equal(invalid.accepted.length,0,'cross-space replacement is disallowed; only per-word repairs may convert');
 });
 
 test('wrong POS does not prevent repair, but protected proper names are never invented',()=>{
