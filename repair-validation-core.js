@@ -112,10 +112,10 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
   const protectedRange=(scope.protected_ranges||[]).some(([a,b])=>start<b&&a<end)||
    knownPerson||old.some(t=>t.proper_noun===true);
   if(choice_id!=='KEEP'&&protectedRange){
-   const latinOrigin=/\\p{Script=Latin}/u.test(choice_id)&&
-     !/\\p{Script=Han}/u.test(choice_id);
-   const hanjaOrigin=/\\p{Script=Han}/u.test(choice_id)&&
-     !/\\p{Script=Latin}/u.test(choice_id);
+   const latinOrigin=/\p{Script=Latin}/u.test(choice_id)&&
+     !/\p{Script=Han}/u.test(choice_id);
+   const hanjaOrigin=/\p{Script=Han}/u.test(choice_id)&&
+     !/\p{Script=Latin}/u.test(choice_id);
    // An enabled Latin-origin audit may identify an authentic personal name;
    // a Hanja audit may repair an NNP only when not flagged as a person.
    // This changes only origin eligibility, not span/overlap validation.
