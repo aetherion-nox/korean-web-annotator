@@ -63,7 +63,7 @@ jobs:
               result.push({tag:e.tagName,id:e.id,cls:String(e.className).slice(0,180),display:c.display,visibility:c.visibility,contentVisibility:c.contentVisibility,ariaHidden:e.getAttribute('aria-hidden'),hidden:e.hidden});
               e=e.parentElement;
             }return result;};
-            return {url:location.href,allSubLists:els.length,subListText:sub?.innerText?.slice(0,100),htmlText:sub?.textContent?.slice(0,100),trail:sub?trail(sub):null,
+            return {url:location.href,allSubLists:els.length,subListText:sub?.innerText?.slice(0,100),htmlText:sub?.textContent?.slice(0,100),childText:sub?.querySelector('li')?.innerText?.slice(0,80),childTrail:sub?.querySelector('li')?trail(sub.querySelector('li')):null,trail:sub?trail(sub):null,
               firstList:els[0]?trail(els[0]):null,button:document.querySelector('#toc-조문 .vector-toc-toggle')?.outerHTML,
               dropdowns:document.querySelectorAll('[aria-expanded]').length};
           });
