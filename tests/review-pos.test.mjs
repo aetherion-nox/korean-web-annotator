@@ -93,7 +93,7 @@ test('NNB keeps only explicit dependent POS and unknown senses across API and ma
  assert.deepEqual(modelTargets([t])[0].options.map(o=>o.choice_id),['KEEP',...expected]);
  const manual=JSON.parse(buildManualPrompt(context,[t],'batch').split('\n').at(-1));
  assert.deepEqual(Object.keys(manual.targets[0].options),expected);assert.equal(manual.sentences[0].text,context);
- assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]}).accepted.length,0);
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]}).accepted[0].option.type,'keep');
  assert.deepEqual(modelTargets([t],{reviewPosFilter:false})[0].options.map(o=>o.choice_id),t.options.map(o=>o.choice_id));
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]},{reviewPosFilter:false}).accepted.length,1);
  const conflicted=packed(target('NNB',[option('c0','명사'),option('n0','名詞','nonconversion')]));
