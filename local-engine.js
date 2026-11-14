@@ -65,7 +65,7 @@ export function validateAnalysis(text,data){
  for(const t of data.targets){
   if(t.proper_noun!==undefined&&typeof t.proper_noun!=='boolean')throw Error('Invalid proper-noun hint');
   if(t.suspected_person_name!==undefined&&typeof t.suspected_person_name!=='boolean')throw Error('Invalid suspected-name hint');
-  if(typeof t.target_id!=='string'||ids.has(t.target_id)||!Number.isInteger(t.start)||!Number.isInteger(t.end)||t.start<0||t.end<=t.start||text.slice(t.start,t.end)!==t.surface||t.context!==text||!Array.isArray(t.options))throw Error('Invalid engine target');
+  if(typeof t.target_id!=='string'||ids.has(t.target_id)||!Number.isInteger(t.start)||!Number.isInteger(t.end)||t.start<0||t.end<=t.start||text.slice(t.start,t.end)!==t.surface||(t.context!==undefined&&t.context!==text)||!Array.isArray(t.options))throw Error('Invalid engine target');
   ids.add(t.target_id);const choices=new Set(),validOptions=[];
   for(const o of t.options){
    if(Object.keys(o).some(k=>!['choice_id','type','replacement','entry_id','definitions','segments','written_form','part_of_speech','subject_category','semantic_category'].includes(k)))throw Error('Invalid engine option fields');
@@ -91,7 +91,10 @@ export function validateAnalysis(text,data){
    // Dictionary-free inputs have KEEP only; the model can propose allowed
    // Hanja/Latin origins which are independently validated before application.
    if(!convertible&&!nameOnlyReview&&!dictionaryFree&&t.experimental_loanword_audit!==true){rejectedTargets++;continue;}
-  targets.push({...t,options:validOptions});ranges.push([t.start,t.end]);
+  // Browser engine transmits the source text once per analyzed paragraph.
+  // Restore the original Target.context contract for all existing model,
+  // manual, and experimental checks, while preserving strict text agreement.
+  targets.push({...t,context:text,options:validOptions});ranges.push([t.start,t.end]);
  }
  ranges.sort((a,b)=>a[0]-b[0]);if(ranges.some((r,i)=>i&&r[0]<ranges[i-1][1]))throw Error('Overlapping engine spans');
  return {...data,annotations,targets,diagnostics,stats:{...data.stats,local_determined:Math.max(0,Number(data.stats.local_determined||0)-rejectedAnnotations),pending:Math.max(0,Number(data.stats.pending||0)-rejectedTargets),structural_rejections:Number(data.stats.structural_rejections||0)+rejectedAnnotations+rejectedTargets,rejected_options:Number(data.stats.rejected_options||0)+rejectedOptions}};
