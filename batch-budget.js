@@ -24,7 +24,7 @@ export function describeBatchBudget(context,targets,{tier='32k',manual=false,wir
  const config={reviewPosFilter,experimentalHanja,experimentalLoanword,dictionaryFree,smartSegmentation};
  const input=manual?buildManualPrompt(context,wire,batchId,config):buildReviewInstructions(config)+'\n'+JSON.stringify(buildReviewPayload(context||'',wire,config).payload);
  // Estimate the compact {t,c} response, with a true JSON null for unchanged text.
- const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),results:wire.map(t=>{
+ const reply=JSON.stringify({...(manual?{batch_id:batchId}:{}),results:wire.filter(t=>!(smartSegmentation===true&&t.scan_only===true)).map(t=>{
   const longest=t.options.filter(o=>o.type!=='keep').reduce((answer,o)=>JSON.stringify(o.choice_id).length>JSON.stringify(answer).length?o.choice_id:answer,'');
   const proposed=((experimentalHanja===true&&canProposeExperimentalOption(t,'hanja'))||(experimentalLoanword===true&&canProposeExperimentalOption(t,'loanword')))?'漢'.repeat(Math.min(24,Math.max(8,[...t.surface].length*2))):'';
   return {t:t.target_id,c:JSON.stringify(proposed).length>JSON.stringify(longest).length?proposed:(longest||null)};
