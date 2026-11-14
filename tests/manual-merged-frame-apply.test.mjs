@@ -51,9 +51,9 @@ test('stale frame operation identity and mismatching DOM spans are rejected',asy
  assert.equal(r.ok,false);
  assert.deepEqual(entry.annotations,[]);
 });
-test('invalid choice and missing rows stay recoverable without partial commit',async()=>{
+test('malformed c value and missing rows stay recoverable without partial commit',async()=>{
  const {c,entry,frame}=fixture();
- frame.answer=JSON.stringify({batch_id:'late-batch',results:[{t:'t0',c:'unknown'}]});
+ frame.answer=JSON.stringify({batch_id:'late-batch',results:[{t:'t0',c:17}]});
  const r=await c.applyMergedOfflineFrame({groupId:'frame-group-7',phase:'validate',frame});
  assert.equal(r.ok,false);
  assert.equal(entry.annotations.length,0);
