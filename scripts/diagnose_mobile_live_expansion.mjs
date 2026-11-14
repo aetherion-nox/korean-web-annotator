@@ -86,6 +86,8 @@ try{
       css:section?{display:getComputedStyle(section).display,contentVisibility:getComputedStyle(section).contentVisibility}:null};
   });
   console.log('LIVE_AFTER_EXPANSION',JSON.stringify(after));
+  assert.ok(after.rubies>=1,'a ruby inserted into closed Minerva article must survive real JS expansion');
+  assert.equal(after.hidden,null,'real click must expand the section without losing its ruby');
 
  }catch(error){if(loaded)throw error;console.log('LIVE_FETCH_UNAVAILABLE',String(error).slice(0,450));}
  await context.close();
