@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.27-lazy-conditional-review-prompts';
+const CONTENT_SCRIPT_VERSION = '1.1.56.28-respect-filter-dictionary-people';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
