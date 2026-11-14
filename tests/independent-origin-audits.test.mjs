@@ -24,7 +24,7 @@ test('Hanja dictionary-gap audit is an independent target, not a segmentation re
  assert.equal(accepted.accepted.length,1);
  assert.equal(accepted.accepted[0].option.replacement,'原潛');
  assert.equal(validateExperimentalChoices([unknown],{results:[{t:'audit',c:'原潛'}]},
-  {}).accepted.length,0);
+  {}).accepted[0].option.type,'keep');
  assert.equal(validateExperimentalChoices([unknown],{results:[{t:'audit',c:null}]},
   {experimentalHanja:true}).accepted[0].option.type,'keep');
 });
