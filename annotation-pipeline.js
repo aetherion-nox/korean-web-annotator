@@ -150,6 +150,8 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     ...((config.experimentalHanja===true||config.experimentalLoanword===true)?{literalOrigin:{
      hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true,
      eligible:(config.experimentalHanja===true&&canProposeExperimentalOption(target,'hanja'))||(config.experimentalLoanword===true&&canProposeExperimentalOption(target,'loanword')),
+     hanjaEligible:config.experimentalHanja===true&&canProposeExperimentalOption(target,'hanja'),
+     loanwordEligible:config.experimentalLoanword===true&&canProposeExperimentalOption(target,'loanword'),
      known:options.filter(o=>o.type==='hanja'||o.type==='loanword').map(o=>({type:o.type,replacement:o.replacement})),
       morphology:target.morphology||[]
     }}:{})};
