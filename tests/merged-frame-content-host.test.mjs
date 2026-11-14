@@ -47,8 +47,10 @@ test('ordinary single-frame empty page keeps no-work fast exit without opening s
  assert.equal(result.ok,true);assert.equal(result.started,false);
  assert.equal(e.starts.length,0);
 });
-test('merged whole-page task permits only a bounded post-completion hydration grace',()=>{
- assert.ok(source.includes('if(!ranges)startHydrationGrace(task);'));
- assert.ok(source.includes('if(!task.wholePage||task.startedAutomatically||task.manualPanelShown||'));
- assert.ok(source.includes('hydrationGraceDeadline=setTimeout(stopHydrationGrace,15000);'));
+test('completed manual and API whole-page tasks never schedule the retired 15-second rescan',()=>{
+ assert.ok(!source.includes('startHydrationGrace('));
+ assert.ok(!source.includes('hydrationGraceDeadline'));
+ assert.ok(source.includes('if(!ranges)pageCompleted=true;configureAutomaticAnnotation();'));
+ assert.ok(source.includes('if(!pageCompleted||uiSettings.stopAutoAfterPageComplete!==false||!document.body)return;'),
+  'continuous monitoring still obeys the existing user setting');
 });
