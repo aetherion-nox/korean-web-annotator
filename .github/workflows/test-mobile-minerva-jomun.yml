@@ -1,0 +1,93 @@
+name: Verify actual Minerva folded Korean article annotation
+on:
+  push:
+    branches:
+      - fix/v1.1.56.33-mobile-minerva-folded-sections
+  workflow_dispatch:
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch mobile skin, mobile host, and normal web page
+        run: |
+          python3 -m pip install --quiet beautifulsoup4
+          python3 - <<'PY'
+          from bs4 import BeautifulSoup
+          import urllib.request,urllib.parse,collections,re,json,pathlib
+          title='%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)'
+          pages={
+            'mobile_host':'https://ko.m.wikisource.org/wiki/'+title,
+            'minerva_skin':'https://ko.wikisource.org/wiki/'+title+'?useskin=minerva',
+            'mobile_ua':'https://ko.wikisource.org/wiki/'+title,
+          }
+          mobile_ua='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'
+          for name,url in pages.items():
+            print('FETCH_BEGIN',name,url,flush=True)
+            try:
+              req=urllib.request.Request(url,headers={'User-Agent':mobile_ua,'Accept-Language':'ko-KR,ko;q=0.9','Accept':'text/html'})
+              with urllib.request.urlopen(req,timeout=30) as response:
+                data=response.read()
+                print('FETCH_STATUS',name,response.status,'URL',response.url,'BYTES',len(data),flush=True)
+              html=data.decode('utf-8')
+              pathlib.Path('mobile_'+name+'.html').write_text(html)
+              soup=BeautifulSoup(html,'html.parser')
+              print('DOCUMENT',name,'html_class',soup.html.get('class') if soup.html else None,'body_class',soup.body.get('class') if soup.body else None,flush=True)
+              print('META_VIEWPORT',name,repr(soup.select_one('meta[name=viewport]')),flush=True)
+              content=soup.select_one('.mw-parser-output') or soup.select_one('#mw-content-text')
+              print('ARTICLE',name,'characters',len(content.get_text(' ',strip=True)) if content else None,flush=True)
+              selectors=['#toc','.toc','#vector-toc','.vector-toc-list','.mw-collapsible','.mw-collapsible-content','details','summary','section','#section_0','.section-heading','.collapsible-heading','.mw-heading','.mw-parser-output','[aria-expanded]','[hidden]','.mw-ui-icon','h2','button','.mw-collapsible-toggle','.mw-collapsible-content','.collapsible-block']
+              for sel in selectors:
+                nodes=soup.select(sel)
+                if nodes:
+                  print('SELECTOR',name,sel,len(nodes),'FIRST',[(e.name,str(e.attrs)[:220],e.get_text(' ',strip=True)[:85]) for e in nodes[:3]],flush=True)
+              hits=[x for x in soup.find_all(string=re.compile('조문')) if getattr(x,'parent',None)]
+              print('JOMUN_OCCURRENCES',name,len(hits),flush=True)
+              for text in hits[:8]:
+                p=text.parent;anc=[]
+                for _ in range(7):
+                  if not p:break
+                  anc.append({'tag':p.name,'id':p.get('id'),'class':p.get('class'),'style':p.get('style'),'role':p.get('role'),'aria-expanded':p.get('aria-expanded'),'text':p.get_text(' ',strip=True)[:75]})
+                  p=p.parent
+                print('JOMUN_TRAIL',name,json.dumps(anc,ensure_ascii=False),flush=True)
+              print('CSS_LINKS',name,[x.get('href')[:200] for x in soup.select('link[rel=stylesheet]')[:5] if x.get('href')],flush=True)
+            except Exception as error:
+              print('FETCH_ERROR',name,type(error).__name__,str(error)[:260],flush=True)
+          PY
+      - name: Download Minerva mobile CSS and inspect collapsed section selectors
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,pathlib,re
+          from bs4 import BeautifulSoup
+          html=pathlib.Path('mobile_mobile_host.html').read_text()
+          soup=BeautifulSoup(html,'html.parser')
+          url='https://ko.wikisource.org/wiki/대한민국헌법_(제10호)'
+          user_agent='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'
+          cssfiles=[]
+          for link in soup.select('link[rel=stylesheet]'):
+            href=link.get('href')
+            if not href:continue
+            target=urllib.parse.urljoin(url,href)
+            try:
+              req=urllib.request.Request(target,headers={'User-Agent':user_agent})
+              with urllib.request.urlopen(req,timeout=30) as response:css=response.read().decode('utf-8')
+              print('MOBILE_CSS_FILE',len(css),target[:210],flush=True)
+              cssfiles.append(css)
+              for marker in ['.collapsible-block','.open-block','mf-collapsible-sections','.section-heading']:
+                index=css.find(marker)
+                if index>=0:print('MOBILE_CSS_SNIPPET',marker,css[max(0,index-140):index+250],flush=True)
+            except Exception as ex:print('MOBILE_CSS_ERROR',type(ex).__name__,str(ex)[:200],flush=True)
+          pathlib.Path('mobile-styles.css').write_text('\n'.join(cssfiles))
+          assert cssfiles, 'No Minerva CSS fetched'
+          PY
+      - name: Install headless Chrome driver
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund playwright-core
+      - name: Test mobile closed 조문 with original extension scanner and DOM writer
+        run: node scripts/diagnose_mobile_closed_jomun.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-korean-wikisource-html
+          path: mobile_*.html
+          if-no-files-found: ignore
