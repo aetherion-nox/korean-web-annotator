@@ -112,6 +112,8 @@ jobs:
         run: node scripts/diagnose_mobile_full_pipeline.mjs
       - name: Run actual content-script START/RESULTS/DONE flow on closed mobile article
         run: node scripts/diagnose_mobile_runtime_command.mjs
+      - name: Inspect real live Minerva expand interaction (non-gating)
+        run: node scripts/diagnose_mobile_live_expansion.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
