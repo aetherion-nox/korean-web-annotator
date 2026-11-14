@@ -7,7 +7,8 @@ sys.path[:0]=[str(ROOT/'python'),str(ROOT/'python/backend/upstream')]
 bootstrap=types.ModuleType('backend.bootstrap');bootstrap.ensure_environment=lambda:None;sys.modules['backend.bootstrap']=bootstrap
 from app.services.tokenizer import TokenizerService
 from backend.analysis import Engine
-from backend.offsets import to_utf16
+from backend.offsets import to_utf16, _supplementary_positions
+from backend.mixed_origins import collect_mixed
 class Tests(unittest.IsolatedAsyncioTestCase):
  async def analyze(self):
   self.text='😀 '+' '.join(['학교']*30);self.calls=0
@@ -27,4 +28,42 @@ class Tests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([t['start'] for t in result['targets']],list(range(3,93,3)))
   self.assertEqual([t['surface'] for t in result['targets']],['학교']*30)
   self.assertTrue(all(len(t['options'])==3 for t in result['targets']))
+ async def test_utf16_long_document_matches_original_encoding_and_caches_source(self):
+  # A 17K+ source with supplementary glyphs and a lone surrogate exercises
+  # the exact UTF-16 positions without repeatedly encoding long prefixes.
+  text='😀 '+'대한민국헌법'*2500+'💯'+'가'*2300+'\\ud800'
+  _supplementary_positions.cache_clear()
+  for i in list(range(0,len(text)+1,137))+[0,1,2,len(text)-1,len(text)]:
+   with self.subTest(i=i):
+    self.assertEqual(to_utf16(text,i),
+      len(text[:i].encode('utf-16-le',errors='surrogatepass'))//2)
+  info=_supplementary_positions.cache_info()
+  self.assertEqual(info.misses,1)
+  self.assertGreater(info.hits,30)
+  with self.assertRaises(ValueError):to_utf16(text,-1)
+  with self.assertRaises(ValueError):to_utf16(text,len(text)+1)
+
+ async def test_long_mixed_candidate_scanning_is_local_not_global(self):
+  # A large run of independent legal-document terms creates many spans.
+  # Each span should inspect only its nearby Kiwi tokens, not all tokens.
+  counter=[0]
+  class Token:
+   tag='NNG'
+   length=2
+   form='학교'
+   def __init__(self,start):self._start=start
+   @property
+   def start(self):counter[0]+=1;return self._start
+  n=1400
+  tokens=[Token(i*3) for i in range(n)]
+  text='학교 '*n
+  class Engine:
+   async def lookup_entries(self,forms,*,filter_people=False):
+    return {form:[] for form in forms}
+  result=await collect_mixed(Engine(),text,tokens,{},blocked_ranges=(),review_ranges=())
+  self.assertEqual(result['annotations'],[])
+  self.assertEqual(result['targets'],[])
+  self.assertLess(counter[0],n*35,
+                  'candidate token lookup should not be quadratic')
+
 if __name__=='__main__':unittest.main(verbosity=2)
