@@ -1,0 +1,45 @@
+name: Test folded 조문 actual browser scanner and DOM insertion
+on:
+  push:
+    branches:
+      - diagnose/v1.1.56.32-real-closed-jo-mun-end-to-end
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download authentic Korean Wikisource HTML and site CSS
+        run: |
+          python3 -m pip install beautifulsoup4 --quiet
+          python3 - <<'PY'
+          import urllib.request
+          from bs4 import BeautifulSoup
+          from urllib.parse import urljoin
+          url='https://ko.wikisource.org/wiki/%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)'
+          headers={'User-Agent':'KoreanWebAnnotatorDiagnostic/1.0 (+https://github.com/aetherion-nox/korean-web-annotator)'}
+          with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=25) as response:content=response.read().decode('utf-8')
+          assert 'toc-조문-sublist' in content
+          open('toc-page.html','w').write(content)
+          soup=BeautifulSoup(content,'html.parser')
+          for link in soup.select('link[rel=stylesheet]')[:8]:
+            href=link.get('href')
+            if not href:continue
+            try:
+              with urllib.request.urlopen(urllib.request.Request(urljoin(url,href),headers=headers),timeout=25) as response:css=response.read().decode('utf-8')
+              if 'vector-toc-list' in css:
+                open('toc-styles.css','w').write(css)
+                print('VECTOR_CSS',len(css))
+                break
+            except Exception as ex:print('CSS_FETCH_ERROR',str(ex)[:180])
+          assert __import__('os').path.exists('toc-styles.css')
+          print('REAL_HTML',len(content),'TOC_CLOSED_INITIAL','unknown')
+          PY
+      - name: Install Chrome automation library
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund playwright-core
+      - name: Test folded 조문 with original scanning and insertion functions
+        run: node scripts/diagnose_closed_jomun.mjs
