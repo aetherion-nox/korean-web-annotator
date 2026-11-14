@@ -1947,7 +1947,9 @@
     const oldReopen=document.querySelector('.kra-manual-reopen');if(oldReopen)oldReopen.hidden=true;
     if(!message.automatic){toolbarDismissed=false;diagnostics.length=0;}
     const ranges=message.ranges||null;
+    const domScanStarted=Date.now();
     const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
+    const domScanMs=Date.now()-domScanStarted;
     const scan={...(lastScanStats||{}),collected:entries.size};
     if(entries.size||message.mergeHost===true)pageHasHangul=true;
     if(!message.automatic||entries.size||scan.skippedHidden||scan.skippedProcessed){
@@ -1960,11 +1962,18 @@
       return {ok:true,started:false};
     }
     let paragraphPlan;
+    const paragraphPlanStarted=Date.now();
     try{
       paragraphPlan=entries.size?
         createParagraphPlan(entries,sourceOf,BLOCK_TAGS):
         {sentences:[],context:'',projectBinding:()=>[],idByNode:new WeakMap()};
     }catch(error){return {ok:false,error:error.message};}
+    const paragraphPlanMs=Date.now()-paragraphPlanStarted;
+    addDiagnostic({stage:'performance',level:'info',
+      message:`网页准备耗时：DOM 扫描 ${domScanMs}ms，段落构建 ${paragraphPlanMs}ms；${entries.size} 个文本节点 → ${paragraphPlan.sentences.length} 段。`,
+      detail:JSON.stringify({domScanMs,paragraphPlanMs,domNodes:entries.size,
+        paragraphs:paragraphPlan.sentences.length,
+        largestParagraphChars:Math.max(0,...paragraphPlan.sentences.map(s=>s.text.length))})});
     const operationId = `page-${Date.now().toString(36)}-${++sequence}`;
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
