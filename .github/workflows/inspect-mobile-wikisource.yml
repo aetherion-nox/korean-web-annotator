@@ -55,6 +55,36 @@ jobs:
             except Exception as error:
               print('FETCH_ERROR',name,type(error).__name__,str(error)[:260],flush=True)
           PY
+      - name: Download Minerva mobile CSS and inspect collapsed section selectors
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,pathlib,re
+          from bs4 import BeautifulSoup
+          html=pathlib.Path('mobile_mobile_host.html').read_text()
+          soup=BeautifulSoup(html,'html.parser')
+          url='https://ko.wikisource.org/wiki/대한민국헌법_(제10호)'
+          user_agent='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'
+          cssfiles=[]
+          for link in soup.select('link[rel=stylesheet]'):
+            href=link.get('href')
+            if not href:continue
+            target=urllib.parse.urljoin(url,href)
+            try:
+              req=urllib.request.Request(target,headers={'User-Agent':user_agent})
+              with urllib.request.urlopen(req,timeout=30) as response:css=response.read().decode('utf-8')
+              print('MOBILE_CSS_FILE',len(css),target[:210],flush=True)
+              cssfiles.append(css)
+              for marker in ['.collapsible-block','.open-block','mf-collapsible-sections','.section-heading']:
+                index=css.find(marker)
+                if index>=0:print('MOBILE_CSS_SNIPPET',marker,css[max(0,index-140):index+250],flush=True)
+            except Exception as ex:print('MOBILE_CSS_ERROR',type(ex).__name__,str(ex)[:200],flush=True)
+          pathlib.Path('mobile-styles.css').write_text('\n'.join(cssfiles))
+          assert cssfiles, 'No Minerva CSS fetched'
+          PY
+      - name: Install headless Chrome driver
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund playwright-core
+      - name: Test mobile closed 조문 with original extension scanner and DOM writer
+        run: node scripts/diagnose_mobile_closed_jomun.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
