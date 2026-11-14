@@ -34,7 +34,9 @@ export function validateChoices(targets,response,config={}){
   return {accepted:[],unresolved:targets};
  for(const target of targets){
   const matches=rows.filter(row=>row.t===target.target_id);
-  const option=matches.length===1?matchedWireOption(target,matches[0].c,config):null;
+  // A uniquely identified result with an unusable choice is safe to leave
+  // untouched. Structural problems (unknown/duplicate/missing t) are not.
+  const option=matches.length===1?matchedWireOption(target,matches[0].c,config)||target.options.find(o=>o.type==='keep'):null;
   if(option)accepted.push({target,option});else unresolved.push(target);
  }
  return {accepted,unresolved};
@@ -55,7 +57,12 @@ export function validateExperimentalChoices(targets,response,config={}){
   if(option){accepted.push({target,option});continue;}
   const generated=literalOriginOption(target,id,config);
   if(generated){accepted.push({target,option:generated});experimentalAccepted++;}
-  else{unresolved.push(target);experimentalRejected++;
+  else{
+   // Reject the proposed origin, not the whole target. The original Korean
+   // remains unchanged when an experimental spelling is unsafe/unavailable.
+   const keep=target.options.find(o=>o.type==='keep');
+   if(keep)accepted.push({target,option:keep});else unresolved.push(target);
+   experimentalRejected++;
    const reason=explainLiteralOriginRejection(target,id,config);
    rejectionCounts[reason]=(rejectionCounts[reason]||0)+1;
    if(rejectionSamples.length<16)rejectionSamples.push({target_id:target.target_id,surface:target.surface,c:id,reason});
