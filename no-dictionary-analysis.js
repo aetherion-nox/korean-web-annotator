@@ -52,7 +52,7 @@ export function analyzeWithoutDictionary(text,tokens,modes={}){
    // Reject markup, obvious broken word boundaries and tokens that contain
    // only one of the tokenizer's nonlexical spans.
    if(/[<>\r\n]/u.test(surface))continue;
-   targets.push({target_id:'nodict'+targets.length,start,end,surface,context:text,
+   targets.push({target_id:'nodict'+targets.length,start,end,surface,
      options:[{choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]}],
      morphology:group.map(t=>({form:t.form,tag:t.tag,start:t.start,end:t.end}))});
    selected.push({start,end});
