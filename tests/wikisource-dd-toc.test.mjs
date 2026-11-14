@@ -41,7 +41,7 @@ test('195 Wikisource definition-list clauses become independent source paragraph
  assert.ok(plan.sentences.length>=390);
  x.dom.window.close();
 });
-test('real Vector TOC folded sublists are scanned when enabled without opening them',()=>{
+test('real Vector TOC folded sublists are always recognized without opening them',()=>{
  const html='<nav id="mw-panel-toc"><div id="vector-toc">'+
   '<ul class="vector-toc-contents"><li class="vector-toc-list-item vector-toc-level-1">'+
   '<a class="vector-toc-link" href="#조문">2 조문</a>'+
@@ -56,7 +56,7 @@ test('real Vector TOC folded sublists are scanned when enabled without opening t
  assert.equal(x.dom.window.document.body.innerHTML,original,'do not click open or rewrite the page');
  x.context.uiSettings.recognizeCollapsedContent=false;
  entries=x.entries();
- assert.equal([...entries.values()].some(e=>e.node.parentElement.closest('#toc-조문-sublist')),false);
+ assert.equal([...entries.values()].some(e=>e.node.parentElement.closest('#toc-조문-sublist')),true,'previously saved false must be ignored');
  assert.ok([...entries.values()].some(e=>e.text.includes('대한민국의 헌법')));
  x.dom.window.close();
 });
@@ -71,12 +71,12 @@ test('Vector expansion class, not only display:none, controls folded recognition
  const foldedText=()=>[...x.entries().values()].filter(e=>e.node.parentElement.closest('#toc-조문-sublist')).map(e=>e.text);
  assert.equal(foldedText().length,2);
  x.context.uiSettings.recognizeCollapsedContent=false;
- assert.equal(foldedText().length,0,'collapsed by Vector class must be skipped even without CSS display:none');
+ assert.equal(foldedText().length,2,'obsolete false must not hide Vector content');
  x.dom.window.document.querySelector('#toc-조문').classList.add('vector-toc-list-item-expanded');
- assert.equal(foldedText().length,2,'expanded lists must remain eligible with the toggle OFF');
+ assert.equal(foldedText().length,2,'expanded lists remain eligible');
  x.dom.window.close();
 });
-test('authentic Vector CSS hides folded child li elements, which ON scans without opening',()=>{
+test('authentic Vector CSS hidden child li elements are recognized without opening',()=>{
  const html='<html class="client-js"><head><style>'+
   '#vector-toc .vector-toc-list-item:not(.vector-toc-list-item-expanded) > .vector-toc-list > .vector-toc-list-item { display:none; }'+
   '</style></head><body><nav id="vector-toc"><ul class="vector-toc-contents">'+
@@ -92,12 +92,12 @@ test('authentic Vector CSS hides folded child li elements, which ON scans withou
  assert.equal(matched().length,2,'enabled scan must bypass folded child li display:none');
  assert.equal(x.entries().size,2,'ordinary hidden ad must not enter the scan');
  x.context.uiSettings.recognizeCollapsedContent=false;
- assert.equal(matched().length,0,'toggle OFF must skip both folded child items');
+ assert.equal(matched().length,2,'obsolete false must not hide folded child items');
  child.parentElement.parentElement.classList.add('vector-toc-list-item-expanded');
- assert.equal(matched().length,2,'expanded Vector subsection must remain visible with OFF');
+ assert.equal(matched().length,2,'expanded Vector subsection remains visible');
  x.dom.window.close();
 });
-test('ordinary hidden content is never made eligible by a folded TOC setting',()=>{
+test('ordinary hidden content is never made eligible by default folded recognition',()=>{
  const x=scanner('<nav id="vector-toc"><ul class="vector-toc-list" style="display:none">'+
   '<li>숨겨진 목차</li></ul></nav>'+
   '<div style="display:none"><p>숨겨진 광고</p></div>'+
@@ -109,7 +109,7 @@ test('ordinary hidden content is never made eligible by a folded TOC setting',()
  assert.ok(!texts.includes('숨겨진 서식'));
  x.dom.window.close();
 });
-test('Minerva mobile folded article section is scanned ON without expanding, OFF skips it',()=>{
+test('Minerva mobile folded article section is always recognized without expanding',()=>{
  const html='<body class="skin-minerva mf-collapsible-sections">'+
   '<main><div class="mw-parser-output">'+
   '<section id="mf-section-2" class="mf-section-2 collapsible-block" style="display:none">'+
@@ -125,12 +125,12 @@ test('Minerva mobile folded article section is scanned ON without expanding, OFF
  assert.ok(!inSection().some(text=>text.includes('비공개 광고')));
  assert.equal(section.classList.contains('open-block'),false,'scanning must not expand mobile sections');
  x.context.uiSettings.recognizeCollapsedContent=false;
- assert.equal(inSection().length,0,'default visibility must skip folded mobile article when OFF');
+ assert.ok(inSection().some(text=>text.includes('대한민국은 민주공화국이다')),'obsolete false must not hide Minerva article');
  section.style.display='block';
- assert.ok(inSection().some(text=>text.includes('민주공화국')),'visible mobile content stays eligible when OFF');
+ assert.ok(inSection().some(text=>text.includes('민주공화국')),'visible mobile content stays eligible');
  x.dom.window.close();
 });
-test('collapsed switch does not bypass ordinary hidden sections on unrelated skins',()=>{
+test('default folded recognition does not bypass unrelated hidden content',()=>{
  const html='<body class="skin-vector"><div class="mw-parser-output">'+
   '<section id="mf-section-2" class="collapsible-block" style="display:none">'+
   '<p>비공개 본문</p></section></div><p>공개된 본문</p></body>';
@@ -156,10 +156,10 @@ test('ARIA-controls folded article body scans without a click; nested hidden tem
  assert.ok(!targets().some(t=>t.includes('광고용 한글')));
  assert.equal(doc.body.innerHTML,original,'scan must not open or mutate the folded article');
  x.context.uiSettings.recognizeCollapsedContent=false;
- assert.ok(!targets().some(t=>t.includes('국민의 자유를 보장')));
+ assert.ok(targets().some(t=>t.includes('국민의 자유를 보장')),'obsolete false must not hide controlled article');
  const panel=doc.getElementById('law-clauses');
  panel.hidden=false;panel.removeAttribute('aria-hidden');panel.style.display='block';
- assert.ok(targets().some(t=>t.includes('국민의 자유를 보장')),'visible article is scanned when toggle is OFF');
+ assert.ok(targets().some(t=>t.includes('국민의 자유를 보장')),'visible article remains scanned');
  x.dom.window.close();
 });
 test('ARIA-controls on a non-collapsed or non-article region cannot bypass hidden content',()=>{
@@ -205,8 +205,7 @@ test('real downloaded Wikisource HTML has no article-wide dd grouping',()=>{
   const foldedText=()=>[...x.entries().values()].some(e=>e.node.parentElement.closest('#toc-조문-sublist'));
   assert.equal(foldedText(),true,'real folded Wikisource Vector TOC must be included by default');
   x.context.uiSettings.recognizeCollapsedContent=false;
-  assert.equal(foldedText(),false,'real folded Wikisource Vector TOC must be excluded when disabled');
-  x.context.uiSettings.recognizeCollapsedContent=true;
+  assert.equal(foldedText(),true,'legacy disabled value is ignored');
  }
  const first=x.dom.window.document.querySelector('.mw-parser-output dd').textContent.trim();
  const matching=plan.sentences.filter(s=>s.text.includes(first));

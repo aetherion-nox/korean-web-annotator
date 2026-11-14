@@ -19,13 +19,12 @@ function setup(fragment,recognizeCollapsedContent=true){
  vm.runInContext(code.slice(code.indexOf('  function probeKoreanFrame'),code.indexOf('  function contextState')),c);
  return {dom,c,all:()=>[...c.collectTextNodes().values()].map(e=>e.text)};
 }
-test('main popup exposes a default-on collapsed content setting outside engine options',()=>{
- assert.match(html,/<input id="recognizeCollapsedContent" type="checkbox" checked/);
- const popup=fs.readFileSync(new URL('../popup.js',import.meta.url),'utf8');
- const sw=fs.readFileSync(new URL('../service-worker.js',import.meta.url),'utf8');
- assert.match(popup,/recognizeCollapsedContent\.checked=uiSettings\.recognizeCollapsedContent !== false/);
- assert.match(popup,/recognizeCollapsedContent:recognizeCollapsedContent\.checked/);
- assert.match(sw,/recognizeCollapsedContent:source\.recognizeCollapsedContent !== false/);
+test('always-on folded Korean has no popup switch or active persisted flag',()=>{
+ assert.doesNotMatch(html,/recognizeCollapsedContent/);
+ for(const filename of ['popup.js','service-worker.js','content.js']){
+  const source=fs.readFileSync(new URL('../'+filename,import.meta.url),'utf8');
+  assert.doesNotMatch(source,/recognizeCollapsedContent/,filename+' must not read legacy flag');
+ }
 });
 test('collapsed MediaWiki section is analyzed without expanding or rewriting its HTML',()=>{
  const {dom,c,all}=setup('<div class="mw-collapsible mw-collapsed">'+
@@ -38,24 +37,24 @@ test('collapsed MediaWiki section is analyzed without expanding or rewriting its
  assert.equal(c.probeKoreanFrame().eligible,true);
  dom.window.close();
 });
-test('toggle OFF excludes folded body but still includes visible Korean',()=>{
+test('obsolete false setting cannot disable folded article Korean',()=>{
  const {dom,c,all}=setup('<div class="mw-collapsible mw-collapsed">'+
   '<div class="mw-collapsible-content" style="display:none"><p>숨겨진 법률.</p></div></div>'+
   '<p>보이는 본문.</p>',false);
- assert.deepEqual(all(),['보이는 본문.']);
+ assert.deepEqual(all(),['숨겨진 법률.','보이는 본문.']);
  assert.equal(c.probeKoreanFrame().eligible,true);
  dom.window.close();
 });
-test('closed native details follows toggle and never requires opening the panel',()=>{
+test('closed native details are always included even with obsolete false flag',()=>{
  for(const recognize of [true,false]){
   const {dom,all}=setup('<details><summary>항목 보기</summary>'+
    '<p>대통령은 헌법을 준수한다.</p></details>',recognize);
-  assert.equal(all().includes('대통령은 헌법을 준수한다.'),recognize);
+  assert.equal(all().includes('대통령은 헌법을 준수한다.'),true);
   assert.equal(dom.window.document.querySelector('details').open,false);
   dom.window.close();
  }
 });
-test('ordinary hidden elements and script/style remain excluded even with toggle ON',()=>{
+test('ordinary hidden elements and script/style remain excluded',()=>{
  const {dom,all}=setup('<div style="display:none">비공개 광고</div>'+
   '<div aria-hidden="true">비공개 템플릿</div>'+
   '<script>const s="비공개 스크립트";</script><p>공개된 본문.</p>');
