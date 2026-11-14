@@ -177,7 +177,7 @@ test('only the enabled experimental origin rule is included in each manual/API p
   assert.equal(payload.batch_id,'BATCH');
   assert.equal(payload.experimental_modes,undefined);
   assert.ok(prompt.startsWith(buildReviewInstructions(config)));
-  assert.ok(prompt.includes('Copy batch_id'));
+  assert.ok(prompt.includes('Copy the current batch_id exactly'));
   assert.ok(prompt.includes('"results"'));
   assert.ok(!prompt.includes('"experimental_options":['));
  }
