@@ -76,8 +76,13 @@ test('Latin spelling is validated as loanword without trusting an invented pool 
  const result=choose(loan,'game',{experimentalLoanword:true});
  assert.equal(result.accepted.length,1);assert.equal(result.accepted[0].option.type,'loanword');
  assert.deepEqual(projectAnnotation(loan.context,{...result.accepted[0].target,...result.accepted[0].option}).map(a=>a.replacement),['game']);
- for(const id of ['x0','c99','n999','p0','KEEP '])
+ for(const id of ['x0','p0','KEEP '])
   assert.equal(choose(loan,id,{experimentalLoanword:true}).unresolved.length,1,id);
+ for(const id of ['c99','n999']){
+  const accepted=choose(loan,id,{experimentalLoanword:true});
+  assert.equal(accepted.accepted[0].option.type,'keep',id);
+  assert.equal(accepted.experimentalAccepted,0,id);
+ }
 });
 
 test('script, alignment and enabled-mode guards reject invented or malformed values',()=>{
