@@ -54,4 +54,30 @@ class DictionaryNames(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(bool(r['targets']),not enabled,(word,enabled,r))
     if not enabled:self.assertTrue(r['targets'][0]['dictionary_person_name'])
 
+ async def test_experimental_latin_audits_full_proper_nouns_without_automatic_name_conversion(self):
+  from backend.analysis import Engine
+  for word in ('트럼프','트위터','엔비디아'):
+   t=tokenizer()
+   t._kiwi=types.SimpleNamespace(tokenize=lambda _,w=word:[
+    types.SimpleNamespace(form=w,tag='NNP',start=0,len=len(w)),
+    types.SimpleNamespace(form='는',tag='JX',start=len(w),len=1)])
+   source=word+'는'
+   modes=dict(hanja=True,loanword=True,nameProtection=True,filterDictionaryPeople=True)
+   ordinary=await Engine(self.path,tokenizer=t).analyze(source,modes)
+   self.assertFalse(any(x.get('experimental_loanword_audit') for x in ordinary['targets']))
+   audit=await Engine(self.path,tokenizer=t).analyze(source,{**modes,'experimentalLoanwordAudit':True})
+   targets=[x for x in audit['targets'] if x.get('experimental_loanword_audit')]
+   self.assertEqual(len(targets),1,(word,audit))
+   self.assertEqual((targets[0]['start'],targets[0]['end'],targets[0]['surface']),
+                    (0,len(word),word))
+   self.assertEqual([o['type'] for o in targets[0]['options']],['keep'])
+   self.assertFalse(any(a['surface']==word for a in audit['annotations']))
+  # An explicit space remains a hard target boundary, including NNP spans.
+  t=tokenizer()
+  t._kiwi=types.SimpleNamespace(tokenize=lambda _:[
+   types.SimpleNamespace(form='젠슨 황',tag='NNP',start=0,len=4)])
+  result=await Engine(self.path,tokenizer=t).analyze('젠슨 황',{
+   'hanja':True,'loanword':True,'experimentalLoanwordAudit':True})
+  self.assertFalse(any(x.get('experimental_loanword_audit') for x in result['targets']))
+
 if __name__=='__main__':unittest.main(verbosity=2)
