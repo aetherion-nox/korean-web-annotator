@@ -47,49 +47,66 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(no_protection['annotations'],[])
         self.assertEqual(no_protection['targets'],[])
 
-    async def test_multiword_lexical_caret_maps_to_original_word_segments(self):
+    async def test_dictionary_queries_keep_spaced_variants_but_targets_never_cross_spaces(self):
         entry=self.add('이산화^탄소','二酸化炭素','명사','탄소의 산화물.')
         from app.services.dictionary import DictionaryService
+        from backend.mixed_origins import candidate_spans
         dictionary=DictionaryService(str(self.path))
         for query in ['이산화 탄소','이산화탄소','이산화^탄소']:
             candidates=(await dictionary.batch_lookup_candidates([query]))[query]
             self.assertTrue(any(r['entry_id']==entry and r['replacement']=='二酸化炭素'
                                 and r['is_reliable'] for r in candidates),(query,candidates))
-        from backend.mixed_origins import candidate_spans
-        source='이산화 탄소'
-        t=self.tokenizer_for([('이산화','NNG',0),('탄소','NNG',4)])
-        tokens=await t.tokenize_async(source)
-        self.assertIn((0,len(source),source),candidate_spans(source,tokens,include_spaced=True))
-        model=await Engine(self.path,tokenizer=t).analyze(source,
+        spaced='이산화 탄소'
+        separate=self.tokenizer_for([('이산화','NNG',0),('탄소','NNG',4)])
+        separate_tokens=await separate.tokenize_async(spaced)
+        self.assertFalse(any(' ' in word for _,_,word in candidate_spans(spaced,separate_tokens)))
+        model=await Engine(self.path,tokenizer=separate).analyze(spaced,
            dict(hanja=True,loanword=False,nameProtection=False,filterDictionaryPeople=True))
-        self.assertEqual([(a['surface'],a['replacement'],a['start'],a['end']) for a in model['annotations']],
-                         [('이산화','二酸化',0,3),('탄소','炭素',4,6)],model)
-        audited=await Engine(self.path,tokenizer=t).analyze(source,
-           dict(hanja=True,loanword=False,nameProtection=False,filterDictionaryPeople=True,reviewLocalConversions=True))
-        self.assertEqual(audited['annotations'],[])
-        candidate=next(o for target in audited['targets'] for o in target['options']
-                       if o['type']=='hanja' and o['replacement']=='二酸化 炭素')
-        self.assertEqual(len(candidate['segments']),2)
-        self.assertEqual([(p['surface'],p['replacement']) for p in candidate['segments']],
-                         [('이산화','二酸化'),('탄소','炭素')])
+        self.assertFalse(any(' ' in t['surface'] for t in model['targets']))
+        self.assertFalse(any(a['start']<3 and a['end']>3 for a in model['annotations']))
 
-    async def test_four_word_phrase_preserves_every_whitespace_boundary(self):
+        # An unspaced source can still resolve a dictionary headword stored
+        # with a literal gap or caret. The lookup alias is NOT removed.
+        contiguous='이산화탄소'
+        joined=self.tokenizer_for([('이산화','NNG',0),('탄소','NNG',3)])
+        joined_tokens=await joined.tokenize_async(contiguous)
+        self.assertIn((0,len(contiguous),contiguous),candidate_spans(contiguous,joined_tokens))
+        audited=await Engine(self.path,tokenizer=joined).analyze(contiguous,
+           dict(hanja=True,loanword=False,nameProtection=False,filterDictionaryPeople=True,
+                reviewLocalConversions=True))
+        options=[o for t in audited['targets'] for o in t['options']
+                 if o['type']=='hanja' and o['replacement']=='二酸化炭素']
+        self.assertTrue(options,audited)
+
+    async def test_four_word_dictionary_phrase_is_searchable_but_never_a_cross_space_target(self):
         entry=self.add('주^연료^차단^장치','主燃料遮斷裝置','명사','연료를 차단하는 장치.')
         source='주 연료 차단 장치'
         t=self.tokenizer_for([('주','NNG',0),('연료','NNG',2),('차단','NNG',5),('장치','NNG',8)])
         from app.services.dictionary import DictionaryService
+        from backend.mixed_origins import candidate_spans
         dictionary=DictionaryService(str(self.path))
         self.assertTrue(any(r['id']==entry for r in (await dictionary.batch_lookup_entries([source]))[source]))
+        tokens=await t.tokenize_async(source)
+        self.assertFalse(any(' ' in word for _,_,word in candidate_spans(source,tokens)))
         result=await Engine(self.path,tokenizer=t).analyze(source,
             dict(hanja=True,loanword=False,nameProtection=False,filterDictionaryPeople=True))
-        # The fixture already contains a second entry with identical phrase
-        # but missing POS; a competing entry correctly forces model review.
-        self.assertEqual(result['annotations'],[],result)
-        candidates=[o for t in result['targets'] for o in t['options']
-                    if o.get('entry_id')==entry and o.get('type')=='hanja']
-        self.assertEqual(len(candidates),1,result)
-        self.assertEqual([(p['surface'],p['replacement']) for p in candidates[0]['segments']],
-            [('주','主'),('연료','燃料'),('차단','遮斷'),('장치','裝置')],result)
+        self.assertFalse(any(' ' in target['surface'] for target in result['targets']))
+        # Only real individual source words may receive annotations.
+        self.assertFalse(any(' ' in a['surface'] for a in result['annotations']))
+
+    async def test_unrelated_cross_space_syllables_never_become_dictionary_targets(self):
+        from backend.mixed_origins import candidate_spans
+        for source,tokens in [
+            ('재무부 등의', [('재무','NNG',0),('부','NNG',2),('등','NNB',4)]),
+            ('황 전 CEO', [('황','NNP',0),('전','MM',2)]),
+            ('아이돌급 환호', [('아이돌','NNG',0),('급','XSN',3),('환','NNG',5),('호','NNB',6)])
+        ]:
+            t=self.tokenizer_for(tokens)
+            spans=candidate_spans(source,await t.tokenize_async(source))
+            self.assertFalse(any(' ' in word for _,_,word in spans),(source,spans))
+            self.assertNotIn('부 등',[word for _,_,word in spans])
+            self.assertNotIn('황 전',[word for _,_,word in spans])
+            self.assertNotIn('급 환',[word for _,_,word in spans])
 
     async def test_aliases_do_not_resurrect_a_translation_or_cross_punctuation(self):
         self.add('이산화^탄소','二酸化炭素','명사','chemical name')
