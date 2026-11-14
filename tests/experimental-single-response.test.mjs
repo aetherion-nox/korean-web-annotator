@@ -142,7 +142,11 @@ test('target flags no longer need a separate proposal reservation or field',()=>
  const experimental=describeBatchBudget(sentence,[target0,target1],{tier:'512k',manual:true,experimentalHanja:true});
  assert.ok(experimental.inputTokens>ordinary.inputTokens);
  assert.ok(experimental.outputTokens>ordinary.outputTokens);
- const forbidden=describeBatchBudget(sentence,[{...target0,proper_noun:true},{...target1,partial_word:true}],
+ const advisory=describeBatchBudget(sentence,[{...target0,proper_noun:true},{...target1,partial_word:true}],
+  {tier:'512k',manual:true,experimentalHanja:true});
+ assert.equal(advisory.outputTokens,experimental.outputTokens,
+  'proper noun and partial_word hints no longer suppress literal-origin output budget');
+ const forbidden=describeBatchBudget(sentence,[{...target0,dictionary_person_name:true},{...target1,scan_only:true}],
   {tier:'512k',manual:true,experimentalHanja:true});
  assert.ok(forbidden.outputTokens<experimental.outputTokens);
 });
