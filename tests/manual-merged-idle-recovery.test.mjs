@@ -41,6 +41,23 @@ test('merged offline coordinator accepts bare arrays and missing batch ID when I
  }
 });
 
+test('model n-key property slips become null without dropping other iframe answers',()=>{
+ const response={batch_id:backup.requestId,results:[
+  {t:'t0',n2:'c0'},{t:'t1',c:'c0'}]};
+ const normalized=normalizeManualAnswer(response,{
+  requestId:backup.requestId,knownTargetIds:new Set(['t0','t1'])
+ });
+ assert.deepEqual(normalized.results,[{t:'t0',c:null},{t:'t1',c:'c0'}]);
+ const frames=partitionMergedManualRecovery(routing,backup,response);
+ assert.deepEqual(JSON.parse(frames.find(x=>x.frameId===0).answer).results,[{t:'t0',c:null}]);
+ assert.deepEqual(JSON.parse(frames.find(x=>x.frameId===3).answer).results,[{t:'t1',c:'c0'}]);
+ assert.deepEqual(response.results[0],{t:'t0',n2:'c0'},'input response must not be mutated');
+});
+test('wrong batch ID still rejects even when the typo could be normalized',()=>{
+ assert.throws(()=>partitionMergedManualRecovery(routing,backup,{
+  batch_id:'other-batch',results:[{t:'t0',n2:'c0'}]
+ }),/batch_id/);
+});
 test('merged offline coordinator rejects batchless answers containing foreign target IDs',()=>{
  for(const invalid of [
   [{t:'t0',c:null},{t:'t99',c:'c0'}],
