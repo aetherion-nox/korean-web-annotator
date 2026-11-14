@@ -9,7 +9,7 @@ export const REVIEW_INSTRUCTIONS=[
  'For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c must be the matching local c/n key, actual JSON null to preserve the Korean original, or (when enabled) a genuinely known Hanja/Latin origin string.',
  'Return only {"results":[{"t":"t0","c":"c0"},{"t":"t1","c":null}]}, and for manual review also copy batch_id exactly. Do not use string "null" for actual null, and never put explanatory text or other fields into a result row.',
  'Decide meaning from the sentence and adjacent context BEFORE selecting a dictionary sense. Nonconversion dictionary senses use their n key. Use JSON null if the word is native or the origin cannot be reliably established.',
- 'Names require exact identity evidence; proper_noun and dictionary_name_homograph flags and Kiwi morphology are hints rather than proof. Check suspected names and homographs carefully; partial_word must match that precise source component. Do not invent a name Hanja.',
+ 'For proper nouns, establish the actual referent and origin: a known original Latin-script spelling of a foreign person, organization, brand or other proper noun is permitted when Latin origin audit is enabled; NEVER fabricate a romanization of a native Korean personal name. In Hanja origin audit, non-person proper nouns may be annotated but a personal name must never receive an invented open-ended Hanja spelling. Kiwi NNP and name flags are evidence, not identity proof; preserve exact lexical boundaries and do not annotate partial words.',
  'Do not invent or repeat t identifiers, and do not change source start/end positions. Preserve every source word boundary and native suffix.'
 ].join('\n');
 
