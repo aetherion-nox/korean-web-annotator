@@ -276,9 +276,14 @@ class Engine:
         if modes.get('smartSegmentation',False):
             guarded=proper_ranges+(protected_names if name_protection else [])+suspect_ranges+conflicting_ranges
             protected=sorted(set((to_utf16(text,a),to_utf16(text,b)) for a,b in guarded if 0<=a<b<=len(text)))
+            # A Kiwi NNP alone is not evidence of a person's identity:
+            # separate person evidence from generic proper-noun boundaries.
+            people=dictionary_names+protected_names+suspect_ranges+conflicting_ranges
+            person_ranges=sorted(set((to_utf16(text,a),to_utf16(text,b)) for a,b in people if 0<=a<b<=len(text)))
             repair_context={'repair_context':{
                 'kiwi_tokens':token_morphology,
-                'protected_ranges':[list(item) for item in protected]}}
+                'protected_ranges':[list(item) for item in protected],
+                'person_ranges':[list(item) for item in person_ranges]}}
         return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,**repair_context,stats=dict(local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
 
 _default_engine=None
