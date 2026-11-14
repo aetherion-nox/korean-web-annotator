@@ -84,7 +84,7 @@ export function partitionMergedManualRecovery(topology,backup,response,originalP
      ...s,sentence_id:from.get(s.sentence_id).localId
     }))
    };
-   const pools=new Set(framePayload.targets.flatMap(t=>Object.values(t.options||{})));
+   const pools=new Set(framePayload.targets.flatMap(t=>[...Object.values(t.options||{}),...(t.keep_senses||[])]));
    framePayload.candidates=(framePayload.candidates||[]).filter(c=>pools.has(c.candidate_id));
    prompt=originalPrompt.slice(0,original)+JSON.stringify(framePayload);
   }
