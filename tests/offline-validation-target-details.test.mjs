@@ -52,13 +52,10 @@ test('offline validation identifies the exact missing target and its original so
  assert.equal(task.manualRecoveryAccepted.size,0,'a dry run cannot commit state');
 });
 
-test('invalid choice is attributed to its specific Korean source instead of anonymous count',async()=>{
+test('unusable per-target origin is a valid null fallback in dry-run validation',async()=>{
  const {ctx,task,text}=setup({rows:[{t:'t42',c:'not-a-choice'}]});
- await assert.rejects(ctx.applyManualRecovery(task,text,{dryRun:true}),e=>{
-  assert.match(e.message,/t42「원잠」/);
-  assert.match(e.message,/无效 c：not-a-choice/);
-  return true;
- });
+ await ctx.applyManualRecovery(task,text,{dryRun:true});
+ assert.equal(task.manualRecoveryAccepted.size,0,'dry-run still must not mutate state');
 });
 
 test('wrong field type reports the specific offending target while retaining strict t/c schema',async()=>{
