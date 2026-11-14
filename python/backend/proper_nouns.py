@@ -99,15 +99,32 @@ def _complete_lexical_span(text,tokens,start,end):
         return part.tag=='MM' and part.form=='이' and (i+1==len(tokens) or tokens[i+1].start>q)
     return False
 
-async def dictionary_name_evidence(text,tokens,lookup):
+async def dictionary_name_evidence(text,tokens,lookup,*,include_person_hanja=False):
     from backend.mixed_origins import candidate_spans
     spans=candidate_spans(text,tokens)
     entries=await lookup(list(dict.fromkeys(word for _,_,word in spans))) if spans else {}
-    names=[];conflicts=[]
+    names=[];conflicts=[];verified_person_hanja={}
     for a,b,word in spans:
         records=entries.get(word,[])
-        if not any(is_dictionary_person(r) for r in records):continue
+        people=[r for r in records if is_dictionary_person(r)]
+        if not people:continue
         names.append((a,b))
+        # A dictionary name flag by itself does NOT authorize generated Hanja.
+        # Require the same exact source word AND a pure, aligned Hanja origin
+        # from a genuine person entry. This reuses the existing raw lookup.
+        if include_person_hanja and _complete_lexical_span(text,tokens,a,b):
+            known=[]
+            for record in people:
+                origin=record.get('origin_raw')
+                entry_id=record.get('entry_id',record.get('id'))
+                if (entry_id is not None and isinstance(origin,str) and
+                        len(origin)==len(word) and
+                        re.fullmatch(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+',origin)):
+                    definition=record.get('definition_preview')
+                    item=dict(entry_id=entry_id,replacement=origin,
+                              definitions=[definition] if isinstance(definition,str) and definition else [])
+                    if item not in known:known.append(item)
+            if known:verified_person_hanja[(a,b)]=known
         person_ids={r.get('entry_id',r.get('id')) for r in records if is_dictionary_person(r)}
         if (any(is_dictionary_ordinary(r) and r.get('entry_id',r.get('id')) not in person_ids for r in records)
                 and _complete_lexical_span(text,tokens,a,b)):
@@ -118,7 +135,8 @@ async def dictionary_name_evidence(text,tokens,lookup):
     chosen=[]
     for item in conflicts:
         if not any(item[0]<existing[1] and existing[0]<item[1] for existing in chosen):chosen.append(item)
-    return names,sorted(chosen,key=lambda x:(x[0],x[1]))
+    result=(names,sorted(chosen,key=lambda x:(x[0],x[1])))
+    return (*result,verified_person_hanja) if include_person_hanja else result
 
 async def dictionary_name_ranges(text,tokens,lookup):
     return (await dictionary_name_evidence(text,tokens,lookup))[0]
