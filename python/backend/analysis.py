@@ -74,6 +74,14 @@ class Engine:
         self.disambiguation=DisambiguationService()
         self._lock=asyncio.Lock()
         self._ready=False
+        # A single legal page can repeat the same dictionary headwords hundreds
+        # of times across independent <dd>/<li> clauses. Cache immutable
+        # dictionary results per Engine instance (reset when the DB reloads).
+        self._candidate_cache={}
+        self._entry_cache={}
+        self._definition_cache={}
+        self._metadata_cache={}
+
     async def initialize(self):
         async with self._lock:
             if self._ready:return
@@ -95,15 +103,59 @@ class Engine:
     async def tokens(self,text):
         await self.initialize()
         return await self.tokenizer.tokenize_async(text)
+    @staticmethod
+    def _put_cached(cache,requested,data,max_items=8192):
+        if len(cache)+len(requested)>max_items:cache.clear()
+        for key in requested:
+            cache[key]=data.get(key,None)
+
+    async def lookup_candidates_cached(self,forms):
+        await self.initialize()
+        if self.dictionary is None:return await self.lookup_fn(forms)
+        forms=list(dict.fromkeys(forms))
+        missing=[form for form in forms if form not in self._candidate_cache]
+        if missing:
+            result=await self.lookup_fn(missing)
+            self._put_cached(self._candidate_cache,missing,result)
+        # Return fresh dictionaries: converter/scoring code must never be able
+        # to modify cached raw records used by a different paragraph.
+        return {form:[dict(row) for row in (self._candidate_cache.get(form) or [])]
+                for form in forms}
+
     async def lookup_entries(self,forms,*,filter_people=False):
         await self.initialize()
-        if self.dictionary is None: return {f:[] for f in forms}
-        db=await self.dictionary.get_connection()
-        try:
-            entries=await self.dictionary.batch_lookup_entries(forms,db)
-            return {f:[r for r in records if not is_dictionary_person(r)] for f,records in entries.items()} if filter_people else entries
-        finally:
-            await db.close()
+        if self.dictionary is None:return {f:[] for f in forms}
+        forms=list(dict.fromkeys(forms))
+        missing=[f for f in forms if f not in self._entry_cache]
+        if missing:
+            db=await self.dictionary.get_connection()
+            try:records=await self.dictionary.batch_lookup_entries(missing,db)
+            finally:await db.close()
+            self._put_cached(self._entry_cache,missing,records)
+        entries={f:[dict(row) for row in (self._entry_cache.get(f) or [])]
+                 for f in forms}
+        return {f:[r for r in records if not is_dictionary_person(r)]
+                for f,records in entries.items()} if filter_people else entries
+
+    async def cached_definitions(self,entry_ids):
+        if self.dictionary is None:return {}
+        keys=list(dict.fromkeys(i for i in entry_ids if i is not None))
+        missing=[i for i in keys if i not in self._definition_cache]
+        if missing:
+            rows=await self.dictionary.get_definitions_for_entries(missing)
+            self._put_cached(self._definition_cache,missing,rows)
+        return {key:list(self._definition_cache[key])
+                for key in keys if self._definition_cache.get(key) is not None}
+
+    async def cached_metadata(self,entry_ids):
+        if self.dictionary is None:return {}
+        keys=list(dict.fromkeys(i for i in entry_ids if i is not None))
+        missing=[i for i in keys if i not in self._metadata_cache]
+        if missing:
+            rows=await self.dictionary.get_metadata_for_entries(missing)
+            self._put_cached(self._metadata_cache,missing,rows)
+        return {key:dict(self._metadata_cache[key])
+                for key in keys if self._metadata_cache.get(key) is not None}
     async def analyze(self,text,modes):
         if len(text)>20000:raise ValueError('Text exceeds 20,000 characters')
         await self.initialize()
@@ -115,7 +167,7 @@ class Engine:
         # Filter a working view, never mutate the imported dictionary or its
         # globally cached candidate lists. Raw lookups still power name protection.
         async def conversion_lookup(forms):
-            result=await self.lookup_fn(forms)
+            result=await self.lookup_candidates_cached(forms)
             if not filter_dictionary_people:return result
             return {form:[record for record in records if not is_dictionary_person(record)]
                     for form,records in result.items()}
@@ -132,13 +184,13 @@ class Engine:
         for token in tokens:
             token_by_span.setdefault((token.start,token.start+token.length),token)
         dictionary_names,homograph_evidence,known_person_hanja=await dictionary_name_evidence(
-            text,tokens,self.lookup_fn,include_person_hanja=True)
+            text,tokens,self.lookup_candidates_cached,include_person_hanja=True)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
         name_protection=modes.get('nameProtection',True) is not False
         homograph_evidence=homograph_evidence if name_protection else []
         conflicting_ranges=[(a,b) for a,b,_,_ in homograph_evidence]
         protected_dictionary_names=[(a,b) for a,b in dictionary_names if (a,b) not in conflicting_ranges]
-        inferred_names,surname_ambiguities=await surname_name_evidence(text,tokens,self.lookup_fn) if name_protection else ([],[])
+        inferred_names,surname_ambiguities=await surname_name_evidence(text,tokens,self.lookup_candidates_cached) if name_protection else ([],[])
         protected_names=sorted(set(inferred_names+protected_dictionary_names)) if name_protection else []
         homograph_evidence=[item for item in homograph_evidence if not any(a<=item[0] and item[1]<=b for a,b in protected_names)]
         surname_ambiguities=[item for item in surname_ambiguities if not any(a<item[1] and item[0]<b for a,b in protected_names+dictionary_names)]
@@ -170,7 +222,7 @@ class Engine:
             else:reviews.append((s.start,s.end,s.original,s.candidates))
         # Only review needs tokens to reproduce the original display builder.
         review_tokens=token_by_span if reviews else {}
-        definitions_by_entry=await self.dictionary.get_definitions_for_entries([c.get('entry_id') for _,_,_,candidates in reviews for c in candidates]) if self.dictionary is not None else {}
+        definitions_by_entry=await self.cached_definitions([c.get('entry_id') for _,_,_,candidates in reviews for c in candidates]) if self.dictionary is not None else {}
         choices=[]
         for start,end,surface,candidates in reviews:
             if not valid(start,end,surface):rejected+=1;continue
@@ -291,7 +343,7 @@ class Engine:
                 # mistakenly tagged the whole personal name as a common noun.
                 prefixes=list(dict.fromkeys(p for _,_,_,word,_,_ in unknown
                             for p in (word[:1],word[:2]) if len(p)<len(word)))
-                prefix_entries=await self.lookup_fn(prefixes) if prefixes else {}
+                prefix_entries=await self.lookup_candidates_cached(prefixes) if prefixes else {}
                 cap=max(12,min(80,len(text)//12))
                 # Prioritize ordinary nouns over uncertain proper nouns under
                 # the budget; preserve original source order for display.
@@ -337,8 +389,8 @@ class Engine:
                 target['dictionary_person_name']=True
             targets.sort(key=lambda t:(t['start'],t['end']))
         # Complete every candidate, including sibling origins owned by mixed words.
-        option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
-        option_metadata=await self.dictionary.get_metadata_for_entries(option_definitions) if self.dictionary is not None else {}
+        option_definitions=await self.cached_definitions([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
+        option_metadata=await self.cached_metadata(option_definitions) if self.dictionary is not None else {}
         filtered_person_only=set()
         for target in targets:
             native=[];conversions=[];seen=set()
