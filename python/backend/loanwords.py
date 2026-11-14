@@ -1,5 +1,6 @@
 """Dictionary-origin extension. Never infer origins from translated equivalents."""
 import re
+from bisect import bisect_left
 from backend.offsets import to_utf16
 from backend.proper_nouns import proper_noun_ranges, overlaps_proper_noun
 from app.services.disambiguation import DisambiguationService
@@ -48,7 +49,32 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
     Hanja homonyms) participates in certainty; non-conversion senses are explicit.
     """
     annotations=[];targets=[];skipped_mixed=0
-    occupied=list(occupied_ranges); seen=set();proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
+    # Original occupied spans are immutable while scanning tokens. Build a
+    # prefix-maximum interval index once rather than scanning all spans per
+    # token. Newly accepted loan spans are source ordered in normal Kiwi data.
+    source_occupied=sorted(occupied_ranges)
+    occupied_starts=[a for a,_ in source_occupied]
+    occupied_prefix=[];max_end=-1
+    for _,end in source_occupied:
+        max_end=max(max_end,end)
+        occupied_prefix.append(max_end)
+    occupied_added=[]
+    seen=set();proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
+    proper_ordered=sorted(proper_ranges);proper_starts=[a for a,_ in proper_ordered]
+    proper_prefix=[];max_end=-1
+    for _,end in proper_ordered:
+        max_end=max(max_end,end)
+        proper_prefix.append(max_end)
+    def indexed_overlap(starts,prefix,start,end):
+        idx=bisect_left(starts,end)-1
+        return idx>=0 and prefix[idx]>start
+    # Only lexical neighbors with a positive length can indicate a partially
+    # parsed compound. Their exact source edges are enough for the test.
+    neighbor_tags={'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'}
+    neighbor_ends=set();neighbor_starts=set()
+    for t in tokens:
+        if t.length>0 and t.tag.split('-')[0] in neighbor_tags:
+            neighbor_starts.add(t.start);neighbor_ends.add(t.start+t.length)
     for token in tokens:
         start=token.start;end=start+token.length;form=token.form
         if (start,end) in seen:continue
@@ -56,7 +82,13 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if getattr(token,'is_particle',False) or getattr(token,'is_punct',False):continue
         if getattr(token,'is_verb_stem',False):continue
         if not 0<=start<end<=len(text) or text[start:end]!=form:continue
-        if any(start<b and a<end for a,b in occupied):continue
+        if indexed_overlap(occupied_starts,occupied_prefix,start,end):continue
+        if occupied_added:
+            if start>=occupied_added[-1][0]:
+                if start<occupied_added[-1][1]:continue
+            elif any(start<b and a<end for a,b in occupied_added):
+                # Retain the original result for custom, unsorted tokenizers.
+                continue
         records=[r for r in entries.get(form,[]) if DisambiguationService()._pos_matches(token.tag,r.get('part_of_speech')) is not False]
         # Every mixed origin requires validated segmentation; never revive a
         # failed mixed spelling as one undifferentiated foreign replacement.
@@ -64,15 +96,15 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if not loans:continue
         origins={r['origin_raw'] for r in loans}
         span=dict(start=to_utf16(text,start),end=to_utf16(text,end),surface=form)
-        partial=any(t is not token and t.length>0 and (t.start+t.length==start or t.start==end) and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'} for t in tokens)
-        if not force_review and not partial and not overlaps_proper_noun(start,end,proper_ranges) and len(origins)==1 and len(loans)==len(records):
+        partial=start in neighbor_ends or end in neighbor_starts
+        if not force_review and not partial and not indexed_overlap(proper_starts,proper_prefix,start,end) and len(origins)==1 and len(loans)==len(records):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
             options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)
             for i,record in enumerate(loans):
                 options.append(dict(choice_id=f'c{i}',type='loanword',replacement=record['origin_raw'],entry_id=record.get('id'),definitions=[record['definition_preview']] if record.get('definition_preview') else []))
             targets.append(dict(span,target_id=f'loan{len(targets)}',context=text,options=options))
-        occupied.append((start,end))
+        occupied_added.append((start,end))
     return dict(annotations=annotations,targets=targets,skipped_mixed=skipped_mixed)
 
 def merge_targets(text,targets):
