@@ -18,7 +18,12 @@ function validWireRow(row,known){
 function matchedWireOption(target,value,config){
  const options=filterReviewTarget(target,config).options;
  if(value===null)return options.find(o=>o.type==='keep')||null;
- return options.find(o=>o.type!=='keep'&&o.choice_id===value)||null;
+ const selected=options.find(o=>o.type!=='keep'&&o.choice_id===value);
+ // A nonexistent numbered dictionary option means no conversion, in both
+ // ordinary and experimental modes. Authentic literal origins remain distinct.
+ if(selected)return selected;
+ return typeof value==='string'&&/^[cn]\d+$/u.test(value)?
+  options.find(o=>o.type==='keep')||null:null;
 }
 export function validateChoices(targets,response,config={}){
  const accepted=[],unresolved=[];
