@@ -9,7 +9,7 @@ Core principles:
 5. Never do global syllable-by-syllable replacement
 """
 
-from app.services.quantity import has_quantity_before
+from app.services.quantity import has_quantity_before, indexed_quantity_before
 import time
 import re
 from bisect import bisect_right
@@ -79,6 +79,9 @@ class ConverterService:
 
         # Step 2: Build word groups (whitespace-delimited units)
         groups = self.tokenizer.build_word_groups(text, tokens)
+        # Shared source-ordered predecessor evidence, built once for the
+        # entire paragraph rather than scanning all Kiwi tokens per word.
+        quantity_by_start=indexed_quantity_before(text,tokens)
 
         # Step 3: Collect forms to look up
         forms_to_lookup = set()
@@ -157,7 +160,7 @@ class ConverterService:
                 continue
 
             group_segments = self._process_word_group(
-                text, group, candidates_map, segment_id, context_by_start, tokens
+                text, group, candidates_map, segment_id, context_by_start, tokens, quantity_by_start
             )
             segments.extend(group_segments)
             segment_id += len(group_segments)
@@ -176,6 +179,7 @@ class ConverterService:
         start_id: int,
         context_by_start: Dict[int, List[str]],
         all_tokens=None,
+        quantity_by_start=None,
     ) -> List[ConversionSegment]:
         segments = []
         seg_id = start_id
@@ -340,7 +344,8 @@ class ConverterService:
                         token_tag=candidate_tag,
                         context_forms=context_forms,
                         is_verbal_context=is_verbal_context,
-                        quantity=has_quantity_before(text, all_tokens or group.tokens, token.start),
+                        quantity=(quantity_by_start.get(token.start,False) if quantity_by_start is not None
+                              else has_quantity_before(text, all_tokens or group.tokens, token.start)),
                     )
                     selected, status = self.disambiguation.select_best(scored)
 
