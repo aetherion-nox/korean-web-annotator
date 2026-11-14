@@ -1279,7 +1279,6 @@
       }
     }
     if(!annotations.length)return null;
-    if(meta.known?.some(o=>o.type===type&&o.replacement===replacement))return null;
     if(hanja&&task.manualBackup?.hanjaReadingCheck!==false){
       // Load the EXISTING pronunciation verifier only for an offline Hanja
       // proposal. Its data is local to the extension; no background is needed.
