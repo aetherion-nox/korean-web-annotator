@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import {createParagraphPlan} from '../paragraph-plan.js';
+import {normalizeManualAnswer} from '../manual-answer-format.js';
 const {JSDOM}=createRequire(import.meta.url)('jsdom');
 
 function environment(){
@@ -25,6 +26,7 @@ function environment(){
  const task={operationId:'op',entries,paragraphPlan:plan,manualRequest:'batch1',manualBackup:backup,
   manualOriginalPrompt:'original',manualPlan:[backup],manualLocalOnly:false,
   manualReadingCheck:Promise.resolve(()=>({status:'match'})),
+  manualAnswerNormalizer:Promise.resolve(normalizeManualAnswer),
   modes:{hanja:true,loanword:true},finished:false,operation:[],wholePage:false};
  const panel=document.querySelector('.kra-manual-review');
  panel.dataset.operationId='op';panel.dataset.requestId='batch1';
@@ -77,5 +79,33 @@ test('online partial acceptance event previews validated literal origins on the 
  assert.equal(panel.querySelector('.kra-manual-prompt').value,'only t2');
  assert.equal(panel.querySelector('.kra-manual-apply').disabled,false);
  assert.ok(errors.every(e=>e.level!=='warning'),JSON.stringify(errors));
+ dom.window.close();
+});
+
+test('disconnected page accepts a bare t/c array without losing source validation',async()=>{
+ const {dom,document,context,task}=environment();
+ const response=[...valid,{t:'t2',c:'文化'}];
+ await context.applyManualRecovery(task,JSON.stringify(response));
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,3);
+ assert.equal(task.finished,true);
+ dom.window.close();
+});
+
+test('disconnected page accepts an object with results and no batch ID',async()=>{
+ const {dom,document,context,task}=environment();
+ await context.applyManualRecovery(task,JSON.stringify({results:[...valid,{t:'t2',c:'文化'}]}));
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,3);
+ assert.equal(task.finished,true);
+ dom.window.close();
+});
+
+test('disconnected page refuses explicit incorrect batch ID and batchless foreign targets',async()=>{
+ const {dom,context,task}=environment();
+ for(const payload of [
+  {batch_id:'wrong',results:[...valid,{t:'t2',c:'文化'}]},
+  {results:[...valid,{t:'t99',c:'文化'}]},
+  [{t:'t0',c:'經濟'},{t:'t99',c:null}]
+ ])await assert.rejects(context.applyManualRecovery(task,JSON.stringify(payload)),/batch_id|缺少 batch_id/);
+ assert.equal(task.manualRecoveryAccepted?.size||0,0);
  dom.window.close();
 });
