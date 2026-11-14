@@ -1530,8 +1530,8 @@
         reasons.set(id,'重复 target_id（本次出现 '+rows.length+' 条）');continue;
       }
       const row=rows[0],binding=bindings.get(id);
-      let choice=row.c===null?binding.choices.find(o=>o.choice_id==='KEEP'):
-        binding.choices.find(o=>o.choice_id!=='KEEP'&&o.choice_id===row.c);
+      let choice=(row.c===null||(typeof row.c==='string'&&/^n\d+$/u.test(row.c)))?binding.choices.find(o=>o.choice_id==='KEEP'):
+        binding.choices.find(o=>o.choice_id!=='KEEP'&&o.type!=='nonconversion'&&o.choice_id===row.c);
       const sentence=sourceSentences.get(binding.sentenceId)||entries.get(binding.sentenceId);
       if(!choice&&sentence)
         try{choice=await manualLiteralChoice(binding,row.c,sentence,task,row);}
