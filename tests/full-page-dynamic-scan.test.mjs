@@ -135,6 +135,73 @@ test('manual forced reindex finds shadow content created without an outer childL
  dom.window.close();
 });
 
+test('automatic scans only revisit changed Korean nodes after successful acknowledgment',()=>{
+ const {dom,ctx}=setup('<main><p>첫 번째 문장.</p><p>두 번째 문장.</p></main>');
+ const initial=ctx.collectTextNodes(null,false,true);
+ assert.equal(initial.size,2);
+ assert.ok(initial.indexSnapshot instanceof Map || initial.indexSnapshot?.size===2);
+ ctx.acknowledgeIndexedAutoScan(initial.indexSnapshot);
+ assert.equal(ctx.collectTextNodes(null,false,true).size,0,'unchanged candidates are not rewalked');
+ const second=dom.window.document.querySelectorAll('p')[1].firstChild;
+ second.data='수정된 두 번째 문장.';
+ const changed=ctx.collectTextNodes(null,false,true);
+ assert.deepEqual([...changed.values()].map(row=>row.text),['수정된 두 번째 문장.']);
+ ctx.acknowledgeIndexedAutoScan(changed.indexSnapshot);
+ assert.equal(ctx.collectTextNodes(null,false,true).size,0);
+ assert.equal(ctx.collectTextNodes().size,2,'explicit scans still inspect the entire DOM');
+ dom.window.close();
+});
+test('visibility changes requeue only Korean nodes beneath the changed ancestor',()=>{
+ const {dom,ctx}=setup('<main><p>공개된 문장.</p>'+
+  '<section hidden><p>숨겨진 법률 조항.</p></section></main>');
+ const first=ctx.collectTextNodes(null,false,true);
+ assert.deepEqual([...first.values()].map(x=>x.text),['공개된 문장.']);
+ ctx.acknowledgeIndexedAutoScan(first.indexSnapshot);
+ const section=dom.window.document.querySelector('section');
+ section.hidden=false;
+ const newlyVisible=ctx.collectTextNodes(null,false,true);
+ assert.deepEqual([...newlyVisible.values()].map(x=>x.text),['숨겨진 법률 조항.']);
+ ctx.acknowledgeIndexedAutoScan(newlyVisible.indexSnapshot);
+ assert.equal(ctx.collectTextNodes(null,false,true).size,0);
+ dom.window.close();
+});
+test('a change during analysis remains pending after acknowledging the old node revision',()=>{
+ const {dom,ctx}=setup('<main><p>변경 전 텍스트.</p></main>');
+ const before=ctx.collectTextNodes(null,false,true);
+ dom.window.document.querySelector('p').firstChild.data='검토 중 변경된 텍스트.';
+ ctx.acknowledgeIndexedAutoScan(before.indexSnapshot);
+ assert.deepEqual([...ctx.collectTextNodes(null,false,true).values()].map(x=>x.text),
+  ['검토 중 변경된 텍스트.']);
+ dom.window.close();
+});
+test('ARIA control changes requeue the referenced hidden article panel',()=>{
+ const {dom,ctx}=setup('<main><article><button aria-expanded="true" aria-controls="article-body">열기</button>'+
+  '<div id="article-body" style="display:none"><p>국민의 자유를 보장한다.</p></div>'+
+  '<p>일반 법률 문장.</p></article></main>');
+ const before=ctx.collectTextNodes(null,false,true);
+ assert.ok(![...before.values()].some(x=>x.text.includes('국민의 자유')));
+ ctx.acknowledgeIndexedAutoScan(before.indexSnapshot);
+ dom.window.document.querySelector('button').setAttribute('aria-expanded','false');
+ const after=ctx.collectTextNodes(null,false,true);
+ assert.deepEqual([...after.values()].map(x=>x.text),['국민의 자유를 보장한다.']);
+ dom.window.close();
+});
+test('a shadow host visibility change requeues its Korean text without a new text node',()=>{
+ const {dom,ctx}=setup('<main><p>일반 기사.</p><div id="host"></div></main>');
+ const host=dom.window.document.querySelector('#host');
+ const shadow=host.attachShadow({mode:'open'});
+ shadow.innerHTML='<p>그림자 문장.</p>';
+ const first=ctx.collectTextNodes(null,false,true);
+ assert.equal(first.size,2);
+ ctx.acknowledgeIndexedAutoScan(first.indexSnapshot);
+ host.setAttribute('style','display:none');
+ ctx.collectTextNodes(null,false,true);
+ host.setAttribute('style','display:block');
+ const reappeared=ctx.collectTextNodes(null,false,true);
+ assert.deepEqual([...reappeared.values()].map(x=>x.text),['그림자 문장.']);
+ dom.window.close();
+});
+
 test('continued dynamic monitoring reacts to tab visibility toggles and nested shadow insertions',async()=>{
  const {dom,ctx}=setup('<p>기사 본문</p><section id="tab" hidden><p>많이 본 정보</p></section><div id="host"></div>');
  const root=dom.window.document.querySelector('#host').attachShadow({mode:'open'});
