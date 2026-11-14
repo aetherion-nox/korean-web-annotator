@@ -56,7 +56,7 @@ test('model instructions are origin-type specific and general, never a list of h
 });
 
 function repairFixture(surface,{person=false}={}){
- const t={...target(surface),scan_only:true,repair_sentence_key:'s',options:[
+ const t={...target(surface),context:surface,scan_only:true,repair_sentence_key:'s',options:[
   {choice_id:'KEEP',type:'keep',replacement:surface,definitions:[],entry_id:null}]};
  const config={context:surface,smartSegmentation:true,experimentalHanja:true,
   experimentalLoanword:true,hanjaReadingCheck:false,
