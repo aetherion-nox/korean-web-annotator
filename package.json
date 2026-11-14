@@ -1,13 +1,13 @@
 {
   "type": "module",
   "scripts": {
-    "test": "python3 tests/test_packed_python.py && python3 tests/test_headword_aliases.py && python3 tests/test_smart_segmentation_context.py && python3 tests/test_filter_dictionary_people.py && python3 tests/test_selective_review.py && python3 tests/test_quantity_bonus.py && python3 tests/test_dictionary_names.py && python3 tests/test_pos_coverage.py && python3 tests/test_analysis_performance.py && python3 tests/test_startup_stats.py && python3 tests/test_preload.py && node --test tests/*.test.mjs",
+    "test": "python3 tests/test_packed_python.py && python3 tests/test_headword_aliases.py && python3 tests/test_smart_segmentation_context.py && python3 tests/test_filter_dictionary_people.py && python3 tests/test_selective_review.py && python3 tests/test_quantity_bonus.py && python3 tests/test_dictionary_names.py && python3 tests/test_pos_coverage.py && python3 tests/test_analysis_performance.py && python3 tests/test_long_text_complexity.py && python3 tests/test_startup_stats.py && python3 tests/test_preload.py && node --test tests/*.test.mjs",
     "test:recovery": "node --test tests/recovery-dynamic.test.mjs",
     "test:paragraph": "node --test tests/paragraph-context.test.mjs",
     "test:pos": "python3 tests/test_pos_coverage.py",
     "test:manual-toolbar": "node --test tests/manual-toolbar*.test.mjs"
   },
-  "version": "1.1.56.31",
+  "version": "1.1.56.32",
   "devDependencies": {
     "jsdom": "26.1.0"
   }
