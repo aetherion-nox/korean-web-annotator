@@ -60,6 +60,22 @@ test('real Vector TOC folded sublists are scanned when enabled without opening t
  assert.ok([...entries.values()].some(e=>e.text.includes('대한민국의 헌법')));
  x.dom.window.close();
 });
+test('Vector expansion class, not only display:none, controls folded recognition',()=>{
+ const html='<nav id="vector-toc"><ul class="vector-toc-contents">'+
+   '<li id="toc-조문" class="vector-toc-list-item vector-toc-level-1">'+
+   '<ul id="toc-조문-sublist" class="vector-toc-list">'+
+   '<li class="vector-toc-list-item">제1장 총강</li>'+
+   '<li class="vector-toc-list-item">제2장 국민의 권리와 의무</li>'+
+   '</ul></li></ul></nav><p>본문의 법률은 유효하다.</p>';
+ const x=scanner(html,true);
+ const foldedText=()=>[...x.entries().values()].filter(e=>e.node.parentElement.closest('#toc-조문-sublist')).map(e=>e.text);
+ assert.equal(foldedText().length,2);
+ x.context.uiSettings.recognizeCollapsedContent=false;
+ assert.equal(foldedText().length,0,'collapsed by Vector class must be skipped even without CSS display:none');
+ x.dom.window.document.querySelector('#toc-조문').classList.add('vector-toc-list-item-expanded');
+ assert.equal(foldedText().length,2,'expanded lists must remain eligible with the toggle OFF');
+ x.dom.window.close();
+});
 test('ordinary hidden content is never made eligible by a folded TOC setting',()=>{
  const x=scanner('<nav id="vector-toc"><ul class="vector-toc-list" style="display:none">'+
   '<li>숨겨진 목차</li></ul></nav>'+
@@ -80,6 +96,15 @@ test('real downloaded Wikisource HTML has no article-wide dd grouping',()=>{
  const dd=[...entries.values()].filter(e=>e.node.parentElement.closest('dd'));
  assert.ok(dd.length>=170,'the real page should contain its dd-based legal clauses');
  const plan=x.plan(entries);
+ const folded=x.dom.window.document.querySelector('#toc-조문-sublist');
+ if(folded) {
+  folded.parentElement.classList.remove('vector-toc-list-item-expanded');
+  const foldedText=()=>[...x.entries().values()].some(e=>e.node.parentElement.closest('#toc-조문-sublist'));
+  assert.equal(foldedText(),true,'real folded Wikisource Vector TOC must be included by default');
+  x.context.uiSettings.recognizeCollapsedContent=false;
+  assert.equal(foldedText(),false,'real folded Wikisource Vector TOC must be excluded when disabled');
+  x.context.uiSettings.recognizeCollapsedContent=true;
+ }
  const first=x.dom.window.document.querySelector('.mw-parser-output dd').textContent.trim();
  const matching=plan.sentences.filter(s=>s.text.includes(first));
  assert.equal(matching.length,1);
