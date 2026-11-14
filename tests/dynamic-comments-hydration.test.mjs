@@ -44,8 +44,7 @@ function createMutationFixture(stopAuto=false){
   OWN_RUBY:'ruby[kra-annotated="true"]',ownDomChanges:new WeakSet(),
   uiSettings:{stopAutoAfterPageComplete:stopAuto,hanjaMode:true,loanwordMode:true},
   pageCompleted:true,sequence:0,currentTask:null,
-  automaticObserver:null,automaticTimer:null,hydrationGraceObserver:null,
-  hydrationGraceTimer:null,hydrationGraceDeadline:null,
+  automaticObserver:null,automaticTimer:null,
   openTextRoots:()=>[dom.window.document.body],
   isOwnMutation:()=>false,clearTimeout,setTimeout,
   collectTextNodes:()=>new Map(),addDiagnostic:x=>diagnostics.push(x),
@@ -54,7 +53,7 @@ function createMutationFixture(stopAuto=false){
  vm.createContext(ctx);
  vm.runInContext(SOURCE.slice(helperBegin,helperEnd),ctx);
  return {dom,ctx,calls,diagnostics,dispose(){
-  ctx.automaticObserver?.disconnect();ctx.stopHydrationGrace();clearTimeout(ctx.automaticTimer);
+  ctx.automaticObserver?.disconnect();clearTimeout(ctx.automaticTimer);
   dom.window.close();
  }};
 }
@@ -86,42 +85,32 @@ test('a container with only already-annotated ruby never triggers duplicate anal
  }finally{f.dispose();}
 });
 
-test('merged whole-page task gets one bounded late-comment rescan even with default stop setting',async()=>{
+test('default stop-after-page-completion ignores newly appearing comments without any 15s exception',async()=>{
  const f=createMutationFixture(true);
  try{
-  let unseen=false;
-  f.ctx.collectTextNodes=()=>unseen?new Map([['comment',{}]]):new Map();
-  f.ctx.sequence=7;
-  f.ctx.startHydrationGrace({
-   wholePage:true,startedAutomatically:false,manualPanelShown:false,
-   mergedGroup:true,mergeHost:true,startPageUrl:f.dom.window.location.href,
-   modes:{hanja:true,loanword:true}
-  });
-  await new Promise(r=>setTimeout(r,1300)); // Initial single pass finds nothing
-  assert.equal(f.calls.length,0);
-  unseen=true;
+  f.ctx.configureAutomaticAnnotation();
+  assert.equal(f.ctx.automaticObserver,null,'default setting must stop after completion');
   f.dom.window.document.querySelector('#div_comment').insertAdjacentHTML(
    'beforeend','<span class="comment-card__commentcontent">새로운 댓글</span>');
-  await new Promise(r=>setTimeout(r,650));
-  assert.equal(f.calls.length,1);
-  assert.equal(f.calls[0].automatic,true);
-  assert.equal(f.diagnostics.length,1);
-  assert.equal(f.diagnostics[0].detail.includes('hydration-grace'),true);
-  f.dom.window.document.querySelector('#div_comment').append('또 다른 댓글');
-  await new Promise(r=>setTimeout(r,100));
-  assert.equal(f.calls.length,1,'bounded settling pass must not trigger unlimited re-analysis');
+  await new Promise(r=>setTimeout(r,110));
+  assert.equal(f.calls.length,0,'neither API nor manual page completion may schedule a second task');
+  assert.equal(SOURCE.includes('startHydrationGrace('),false);
+  assert.equal(SOURCE.includes('hydrationGraceDeadline'),false);
  }finally{f.dispose();}
 });
 
-test('manual prompt and opt-in continuous scanning do not start a surprise one-time task',()=>{
+test('turning off stop-after-page-completion preserves original continuous comment scanning',async()=>{
  const f=createMutationFixture(true);
  try{
-  const base={wholePage:true,startedAutomatically:false,mergedGroup:true,
-   startPageUrl:f.dom.window.location.href,modes:{hanja:true,loanword:true}};
-  f.ctx.startHydrationGrace({...base,manualPanelShown:true});
-  assert.equal(f.ctx.hydrationGraceObserver,null);
+  f.ctx.configureAutomaticAnnotation();
+  assert.equal(f.ctx.automaticObserver,null);
   f.ctx.uiSettings.stopAutoAfterPageComplete=false;
-  f.ctx.startHydrationGrace({...base,manualPanelShown:false});
-  assert.equal(f.ctx.hydrationGraceObserver,null);
+  f.ctx.configureAutomaticAnnotation();
+  assert.ok(f.ctx.automaticObserver,'existing opt-in continuous observer must still work');
+  f.dom.window.document.querySelector('#div_comment').insertAdjacentHTML(
+   'beforeend','<span class="comment-card__commentcontent">새로운 댓글</span>');
+  await new Promise(r=>setTimeout(r,970));
+  assert.equal(f.calls.length,1);
+  assert.equal(f.calls[0].automatic,true);
  }finally{f.dispose();}
 });
