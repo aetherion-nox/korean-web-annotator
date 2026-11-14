@@ -126,7 +126,7 @@ class Engine:
         tokens=await self.tokens(text)
         segments,_=await converter.convert(text,conversion_lookup,tokens=tokens)
         dictionary_names,homograph_evidence,known_person_hanja=await dictionary_name_evidence(
-            text,tokens,self.lookup_fn,include_person_hanja=True)
+            text,tokens,self.lookup_fn,include_person_hanja=not filter_dictionary_people)
         proper_ranges=proper_noun_ranges(tokens)+dictionary_names
         name_protection=modes.get('nameProtection',True) is not False
         homograph_evidence=homograph_evidence if name_protection else []
@@ -302,11 +302,11 @@ class Engine:
                         options=[dict(choice_id='KEEP',type='keep',replacement=word,
                                       entry_id=None,definitions=[])]))
                 targets.sort(key=lambda t:(t['start'],t['end']))
-        # Exact dictionary-backed human names are an exception to the blanket
-        # person filter, NOT an exception to its anti-guessing purpose. Only a
-        # full name with a person entry containing its aligned Hanja may be
-        # reviewed. Unknown/surname-only names retain v1.1.56.25 null behavior.
-        if modes.get('hanja',True):
+        # Only when dictionary-person filtering is OFF, provide exact,
+        # dictionary-backed Hanja personal names as review candidates.
+        # Keep unfiltered dictionary name evidence for name protection, but
+        # never reintroduce a filtered person sense through this pathway.
+        if modes.get('hanja',True) and not filter_dictionary_people:
             for (a,b),records in known_person_hanja.items():
                 start=to_utf16(text,a);end=to_utf16(text,b)
                 if any(start<x['end'] and x['start']<end for x in annotations):continue
@@ -341,10 +341,7 @@ class Engine:
                 if option['type']=='keep':continue
                 option={**option,**option_metadata.get(option['entry_id'],{})}
                 definitions=option_definitions.get(option['entry_id'],option['definitions'])
-                dictionary_proven_person=(option['type']=='hanja' and
-                    option['replacement'] in target.get('verified_person_hanja',[]) and
-                    target.get('dictionary_person_name') is True)
-                if filter_dictionary_people and is_dictionary_person({**option,'definitions':definitions}) and not dictionary_proven_person:
+                if filter_dictionary_people and is_dictionary_person({**option,'definitions':definitions}):
                     removed_person_sense=True
                     continue
                 if option['type']=='nonconversion':
