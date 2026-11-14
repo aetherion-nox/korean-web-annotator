@@ -1,6 +1,7 @@
 """Protocol adapter around Arrow36 conversion with native-reading safeguards."""
 import asyncio
 import re
+from bisect import bisect_right
 from pathlib import Path
 from backend.bootstrap import ensure_environment
 from backend.offsets import to_utf16
@@ -361,12 +362,30 @@ class Engine:
         # Encode each token boundary once, not once per review target.
         # This retains the existing surrogate/astral offset conversion exactly.
         token_morphology=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens]
+        # Token ranges usually follow source order. Use binary search once
+        # per target instead of searching the entire long document repeatedly.
+        token_ends=[m['end'] for m in token_morphology]
+        monotonic_tokens=all(token_morphology[i-1]['start']<=token_morphology[i]['start']
+                             and token_ends[i-1]<=token_ends[i]
+                             for i in range(1,len(token_morphology)))
         proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
         dictionary_name_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in dictionary_names]
         for i,target in enumerate(targets):
             target['target_id']=f't{i}'
             a=target['start'];b=target['end']
-            target['morphology']=[dict(m) for m in token_morphology if m['start']<b and a<m['end']]
+            if monotonic_tokens:
+                first=bisect_right(token_ends,a)
+                matching=[]
+                while first<len(token_morphology):
+                    m=token_morphology[first]
+                    if m['start']>=b:break
+                    if a<m['end']:matching.append(dict(m))
+                    first+=1
+                target['morphology']=matching
+            else:
+                # Overlapping or out-of-order tokenizers keep original logic.
+                target['morphology']=[dict(m) for m in token_morphology
+                                      if m['start']<b and a<m['end']]
             if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
             if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
         # Expose Kiwi's actual proposal and conservative name/proper-noun
