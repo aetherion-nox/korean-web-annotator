@@ -75,6 +75,9 @@ try {
  assert.ok(result.targetInRequest,'folded source must reach the backend START message');
  assert.ok(result.ruby,'the actual real content-script DONE handler must display a folded-section ruby');
  assert.ok(result.display?.rendered_annotations>=1,'real DONE display metrics must report the inserted ruby');
- assert.deepEqual(jsErrors,[],'normal runtime must not throw JS exceptions');
+ // The saved HTML itself includes a site script that reads document.cookie.
+ // About:blank snapshots have an opaque origin, unlike the real HTTPS site.
+ const pluginErrors=jsErrors.filter(e=>!e.includes("Failed to read the 'cookie' property"));
+ assert.deepEqual(pluginErrors,[],'the extension pipeline must not throw JS exceptions');
  await ctx.close();
 }finally{await browser.close();}
