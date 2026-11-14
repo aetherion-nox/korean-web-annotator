@@ -25,8 +25,11 @@ export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null){
   }
   if(changed){const accepted=invalid?[]:rows.flatMap(row=>{
    const target=known.get(row.t);
-   const option=row.c===null?target?.options.find(o=>o.type==='keep'):
-     target?.options.find(o=>o.type!=='keep'&&o.choice_id===row.c)||resolveExtra(target,row.c);
+   const selected=row.c===null?null:target?.options.find(o=>o.type!=='keep'&&o.choice_id===row.c);
+   // Match final validation: unknown c/n indexes are null (keep Korean).
+   const keep=row.c===null||(!selected&&typeof row.c==='string'&&/^[cn]\d+$/u.test(row.c));
+   const option=keep?target?.options.find(o=>o.type==='keep'):
+     selected||resolveExtra(target,row.c);
    return option?[{target,option}]:[];
   });onPreview(accepted);}
  };
