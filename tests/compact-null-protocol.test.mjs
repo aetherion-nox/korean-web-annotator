@@ -43,13 +43,12 @@ test('the exported model prompt has no legacy result objects or fallback sentine
  assert.doesNotMatch(prompt,/results\[\]\.choice_id|{"target_id":"t0","choice_id":"c0"}|Use KEEP only|return KEEP/i);
 });
 
-test('manual answers require exact batch and no legacy wire keys',async()=>{
+test('manual answers accept active-batch missing ID but reject legacy t/c row field names',async()=>{
  const events=[],session=createManualReviewSession({operationId:'compact',post:e=>events.push(e)});
  const pending=session.request({context:'킵',experimentalLoanword:true},[target('킵')]);
  const request=events.find(e=>e.type==='MANUAL_REVIEW_REQUEST'),base={batch_id:request.requestId};
  const send=data=>session.submit({operationId:'compact',requestId:request.requestId,text:JSON.stringify(data)});
- assert.equal(send({results:[{t:'t0',c:null}]}),false);
  assert.equal(send({...base,results:[{target_id:'t0',choice_id:'c0'}]}),false);
- assert.equal(send({...base,results:[{t:'t0',c:null}]}),true);
+ assert.equal(send({results:[{t:'t0',c:null}]}),true);
  assert.deepEqual((await pending).results,[{t:'t0',c:null}]);
 });
