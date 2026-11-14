@@ -138,6 +138,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     allTargets:item.analysis.targets.filter(t=>!t.scan_only),
     localAnnotations:item.analysis.annotations,
     protected_ranges:item.analysis.repair_context?.protected_ranges||[],
+    person_ranges:item.analysis.repair_context?.person_ranges||[],
     selected:message.restrictToSelection===true?item.sentence.selected||[]:null,
     existingRepairs:item.repairs
    });
@@ -149,7 +150,8 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     choices:options.map(option=>({choice_id:option.choice_id,annotations:option.type==='keep'?[]:projectAnnotation(item.sentence.text,{...target,...option,start:target.start,end:target.end,surface:target.surface}).map(({start,end,surface,replacement,type})=>({start,end,surface,replacement,type}))})),
     ...((config.experimentalHanja===true||config.experimentalLoanword===true)?{literalOrigin:{
      hanja:config.experimentalHanja===true,loanword:config.experimentalLoanword===true,
-     eligible:canProposeExperimentalOption(target),
+     hanjaEligible:config.experimentalHanja===true&&canProposeExperimentalOption(target,'hanja'),
+     loanwordEligible:config.experimentalLoanword===true&&canProposeExperimentalOption(target,'loanword'),
      known:options.filter(o=>o.type==='hanja'||o.type==='loanword').map(o=>({type:o.type,replacement:o.replacement})),
       morphology:target.morphology||[]
     }}:{})};
