@@ -85,6 +85,56 @@ test('open Shadow DOM and nested open shadow roots are included in full-page dis
  dom.window.close();
 });
 
+test('shared discovery index reuses TreeWalker until the DOM changes',()=>{
+ const {dom,ctx}=setup('<main><p>기존 본문</p><p>다른 본문</p></main>');
+ const document=dom.window.document,original=document.createTreeWalker.bind(document);
+ let traversals=0;
+ document.createTreeWalker=(...args)=>{traversals++;return original(...args);};
+ try{
+  assert.equal(ctx.collectTextNodes().size,2);
+  const initial=traversals;
+  assert.ok(initial>0,'first scan constructs the index');
+  assert.equal(ctx.collectTextNodes().size,2);
+  assert.equal(traversals,initial,'second scan must use the indexed Korean nodes');
+  const first=document.createElement('p');first.textContent='새로운 첫 문장';
+  document.querySelector('main').prepend(first);
+  assert.deepEqual([...ctx.collectTextNodes().values()].map(e=>e.text),
+    ['새로운 첫 문장','기존 본문','다른 본문']);
+  document.querySelector('p:nth-of-type(2)').remove();
+  assert.deepEqual([...ctx.collectTextNodes().values()].map(e=>e.text),
+    ['새로운 첫 문장','다른 본문']);
+  first.firstChild.data='plain English';
+  assert.deepEqual([...ctx.collectTextNodes().values()].map(e=>e.text),['다른 본문']);
+ }finally{dom.window.close();}
+});
+
+test('index discovers a newly attached Shadow host and edits inside its root',()=>{
+ const {dom,ctx}=setup('<main><p>원래 기사</p></main>');
+ ctx.collectTextNodes();
+ const host=dom.window.document.createElement('div');
+ const root=host.attachShadow({mode:'open'});
+ root.innerHTML='<p>새로 로드한 내용</p>';
+ dom.window.document.querySelector('main').append(host);
+ assert.deepEqual([...ctx.collectTextNodes().values()].map(e=>e.text),
+  ['원래 기사','새로 로드한 내용']);
+ root.querySelector('p').firstChild.data='수정된 내용';
+ assert.ok([...ctx.collectTextNodes().values()].some(e=>e.text==='수정된 내용'));
+ host.remove();
+ assert.equal(ctx.collectTextNodes().size,1,'removed shadow content must leave index');
+ dom.window.close();
+});
+
+test('manual forced reindex finds shadow content created without an outer childList mutation',()=>{
+ const {dom,ctx}=setup('<main><p>기존 내용</p><div id="host"></div></main>');
+ ctx.collectTextNodes();
+ const host=dom.window.document.querySelector('#host');
+ host.attachShadow({mode:'open'}).innerHTML='<p>숨은 새 한국어</p>';
+ assert.equal(ctx.collectTextNodes().size,1,'an attachShadow call itself is not a DOM mutation');
+ ctx.ensureTextIndex(true);
+ assert.equal(ctx.collectTextNodes().size,2,'explicit full refresh must find late shadow roots');
+ dom.window.close();
+});
+
 test('continued dynamic monitoring reacts to tab visibility toggles and nested shadow insertions',async()=>{
  const {dom,ctx}=setup('<p>기사 본문</p><section id="tab" hidden><p>많이 본 정보</p></section><div id="host"></div>');
  const root=dom.window.document.querySelector('#host').attachShadow({mode:'open'});
