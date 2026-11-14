@@ -8,60 +8,6 @@ const HANGUL_SPAN=/^[가-힣]+$/u;
 const overlaps=(a,b)=>a.start<b.end&&b.start<a.end;
 const isInt=Number.isInteger;
 
-// A segmentation-only review may rearrange already verified dictionary
-// character evidence, but must never invent an origin that was not supplied.
-// The proof is tied to specific old target IDs and original UTF-16 offsets.
-export function dictionarySupportedRepairOrigin(repair,wireTargets,scope){
- const {start,end,surface,choice_id,old_target_ids}=repair||{};
- if(!scope||!Array.isArray(old_target_ids)||!old_target_ids.length||
-    typeof choice_id!=='string'||typeof surface!=='string'||
-    !Number.isInteger(start)||!Number.isInteger(end)||end<=start||
-    scope.text?.slice(start,end)!==surface)return false;
- const linked=old_target_ids.map(id=>wireTargets.find(t=>t.target_id===id));
- if(linked.some(t=>!t))return false;
- const originalIds=new Set(linked.map(t=>t.original_target_id||t.target_id));
- const sourceTargets=(scope.allTargets||[]).filter(t=>originalIds.has(t.target_id));
- if(!sourceTargets.length)return false;
- const HAN=/\p{Script=Han}/u;
- const src=[...surface],dst=[...choice_id];
- // Latin originals must match one complete, real dictionary candidate.
- if(/\p{Script=Latin}/u.test(choice_id)&&!HAN.test(choice_id))
-  return sourceTargets.some(t=>t.start===start&&t.end===end&&t.surface===surface&&
-   t.options?.some(o=>o.entry_id!=null&&o.type==='loanword'&&o.replacement===choice_id));
- // Sino-Korean compounds can combine aligned fragments from several known
- // dictionary entries. Every changed character must be supported by one
- // coherent option per source target, not a mixture of unrelated senses.
- if(!HAN.test(choice_id)||src.length!==dst.length)return false;
- let offset=start;
- const changed=[];
- for(let i=0;i<src.length;i++){
-  if(dst[i]!==src[i]){
-   if(!HAN.test(dst[i])||!/[가-힣]/u.test(src[i]))return false;
-   changed.push({offset,origin:dst[i]});
-  }
-  offset+=src[i].length;
- }
- if(!changed.length)return false;
- const covered=new Set();
- for(const t of sourceTargets){
-  if(t.start>=end||t.end<=start)continue;
-  const relevant=changed.filter(c=>c.offset>=t.start&&c.offset<t.end);
-  if(!relevant.length)continue;
-  const form=[...t.surface];
-  const known=(t.options||[]).some(o=>{
-   if(o.entry_id==null||!['hanja','mixed'].includes(o.type))return false;
-   const origin=[...o.replacement||''];
-   if(origin.length!==form.length)return false;
-   return relevant.every(c=>{
-    const i=[...scope.text.slice(t.start,c.offset)].length;
-    return form[i]===[...scope.text.slice(c.offset,c.offset+1)][0]&&origin[i]===c.origin;
-   });
-  });
-  if(known)for(const c of relevant)covered.add(c.offset);
- }
- return changed.every(c=>covered.has(c.offset));
-}
-
 export function validateSegmentationRepairsCore(targets,response,config={}){
  const accepted=[],rejected=[];
  if(!config.smartSegmentation)return {accepted,rejected};
@@ -171,7 +117,7 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
    // Caller validates the actual origin and returns exact source spans.
    // A missing verifier cannot authorize an annotation.
    try{
-    const verified=config.verifyOrigin?.({start,end,surface,choice_id,sentence,old_target_ids,config});
+    const verified=config.verifyOrigin?.({start,end,surface,choice_id,sentence,config});
     if(!Array.isArray(verified)||!verified.length){
      fail(index,'unreliable script, missing mode, pronunciation or alignment',row);continue;
     }
