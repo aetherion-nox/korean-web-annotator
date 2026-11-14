@@ -210,9 +210,11 @@ class Engine:
                     options.append(dict(choice_id=f'c{n}',type='hanja',replacement=text[start:a]+replacement+text[b:end],entry_id=entry,definitions=definitions))
                 targets.append(dict(target_id=f't{number}',start=to_utf16(text,start),end=to_utf16(text,end),surface=text[start:end],context=text,options=options))
         skipped_mixed=0
+        token_entries=None
         if modes.get('loanword',False):
             from backend.loanwords import collect, merge_targets
-            entries=await self.lookup_entries([t.form for t in tokens],filter_people=filter_dictionary_people)
+            token_entries=await self.lookup_entries([t.form for t in tokens],filter_people=filter_dictionary_people)
+            entries=token_entries
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
             loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
@@ -252,6 +254,53 @@ class Engine:
                                   entry_id=None,definitions=[])]))
                 covered.append((start,end))
             targets.sort(key=lambda t:(t['start'],t['end']))
+        # Experimental Hanja audit is independent of Kiwi segmentation repair.
+        # Only complete, dictionary-uncovered Kiwi nominal spans are reviewed;
+        # a known native word is NOT an extra target merely for being a noun.
+        # Keep proper-name protection and all existing local results intact.
+        if (self.dictionary is not None and modes.get('experimentalHanjaAudit',False)
+                and modes.get('hanja',False)):
+            candidates=[]
+            for token in tokens:
+                a=token.start;b=a+token.length
+                if token.tag.split('-')[0] not in {'NNG','NNP'}:continue
+                if not (0<=a<b<=len(text)):continue
+                word=text[a:b]
+                if not 2<=len(word)<=8 or not re.fullmatch(r'[가-힣]+',word) or token.form!=word:continue
+                if overlaps_proper_noun(a,b,protected_names+dictionary_names+suspect_ranges+conflicting_ranges):continue
+                start=to_utf16(text,a);end=to_utf16(text,b)
+                if any(start<y and x<end for x,y in
+                       [(t['start'],t['end']) for t in targets]+
+                       [(x['start'],x['end']) for x in annotations]):continue
+                candidates.append((token,a,b,word,start,end))
+            if candidates:
+                # One batched dictionary lookup. When the loanword pass already
+                # looked up raw entries, reuse its result without a second query.
+                words=list(dict.fromkeys(c[3] for c in candidates))
+                records=(token_entries if token_entries is not None and not filter_dictionary_people
+                         else await self.lookup_entries(words,filter_people=False))
+                unknown=[c for c in candidates if not records.get(c[3])]
+                # A surname prefix is strong person-name evidence even if Kiwi
+                # mistakenly tagged the whole personal name as a common noun.
+                prefixes=list(dict.fromkeys(p for _,_,_,word,_,_ in unknown
+                            for p in (word[:1],word[:2]) if len(p)<len(word)))
+                prefix_entries=await self.lookup_fn(prefixes) if prefixes else {}
+                cap=max(12,min(80,len(text)//12))
+                # Prioritize ordinary nouns over uncertain proper nouns under
+                # the budget; preserve original source order for display.
+                selected=sorted(unknown,key=lambda c:(c[0].tag.split('-')[0]=='NNP',c[1]))[:cap]
+                for token,a,b,word,start,end in sorted(selected,key=lambda c:c[1]):
+                    if any(r.get('surname_usage') is True for p in (word[:1],word[:2])
+                           if len(p)<len(word) for r in prefix_entries.get(p,[])):
+                        continue
+                    if any(start<y and x<end for x,y in
+                           [(t['start'],t['end']) for t in targets]):
+                        continue
+                    targets.append(dict(target_id='hanja-audit',start=start,end=end,surface=word,
+                        context=text,experimental_hanja_audit=True,
+                        options=[dict(choice_id='KEEP',type='keep',replacement=word,
+                                      entry_id=None,definitions=[])]))
+                targets.sort(key=lambda t:(t['start'],t['end']))
         # Complete every candidate, including sibling origins owned by mixed words.
         option_definitions=await self.dictionary.get_definitions_for_entries([o['entry_id'] for t in targets for o in t['options'] if o['type']!='keep']) if self.dictionary is not None else {}
         option_metadata=await self.dictionary.get_metadata_for_entries(option_definitions) if self.dictionary is not None else {}
