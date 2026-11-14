@@ -62,8 +62,8 @@ for(const [lang,labels] of Object.entries({
 });
 
 for(const [lang,labels] of Object.entries({
- 'zh-CN':['识别折叠栏中的韩语','分析已加载的折叠内容，无需手动展开；不会自动打开栏目，也不会扫描普通隐藏元素。'],
- 'zh-TW':['辨識摺疊欄中的韓語','分析已載入的摺疊內容，無須手動展開；不會自動開啟欄目，也不會掃描一般隱藏元素。'],
+ 'zh-CN':['识别折叠栏内的韩语','分析已加载的折叠内容，无需手动展开；不会自动打开栏目，也不会扫描普通隐藏元素。'],
+ 'zh-TW':['辨識摺疊欄內的韓語','分析已載入的摺疊內容，無須手動展開；不會自動開啟欄目，也不會掃描一般隱藏元素。'],
  ja:['折りたたまれた韓国語も解析','ページに読み込まれた折りたたみ内容を、展開せず解析します。通常の非表示要素は対象外です。'],
  ko:['접힌 영역의 한국어도 인식','페이지에 이미 로드된 접힌 내용을 펼치지 않고 분석합니다. 일반적으로 숨긴 요소는 제외합니다.'],
  en:['Recognize Korean in collapsed sections','Analyze already-loaded collapsed content without expanding it. Ordinary hidden elements are excluded.']
