@@ -1138,6 +1138,10 @@
     const fenced=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(json);
     if(fenced)json=fenced[1].trim();
     let response;try{response=JSON.parse(json);}catch{throw Error('JSON 格式无效。');}
+    if(Array.isArray(response)||!response||typeof response!=='object'||!Object.hasOwn(response,'batch_id')){
+      const normalize=await (task.manualAnswerNormalizer||import(chrome.runtime.getURL('manual-answer-format.js')).then(m=>m.normalizeManualAnswer));
+      response=normalize(response,{requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id))});
+    }
     if(response?.batch_id!==requestId||!Array.isArray(response?.results))
       throw Error('batch_id 不符或缺少 results 数组。');
     const result=await chrome.runtime.sendMessage({
@@ -1479,7 +1483,11 @@
     if(typeof text!=='string'||text.length>16*1024*1024)throw Error('请提供不超过 16 MiB 的完整 JSON 结果。');
     let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
     let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
-    // Require exact batch identity for the compact t/c wire protocol.
+    // A missing wrapper is unambiguous only if every t is in the active batch.
+    if(Array.isArray(response)||!response||typeof response!=='object'||!Object.hasOwn(response,'batch_id')){
+      const normalize=await (task.manualAnswerNormalizer||import(chrome.runtime.getURL('manual-answer-format.js')).then(m=>m.normalizeManualAnswer));
+      response=normalize(response,{requestId:backup.requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id))});
+    }
     if(response?.batch_id!==backup.requestId)
       throw Error('batch_id 与当前批次不一致，未应用任何答案。');
     if(!Array.isArray(response?.results))throw Error('结果缺少 results 数组。');
