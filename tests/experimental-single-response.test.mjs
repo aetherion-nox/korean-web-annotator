@@ -116,7 +116,7 @@ test('stream previews valid raw Hanja and dictionary choices from completed rows
  const message=JSON.stringify(answer([target0,target1]));
  parser(message.slice(0,10));assert.equal(events.length,0);
  for(let i=10;i<message.length;i+=8)parser(message.slice(i,i+8));
- assert.deepEqual(events.at(-1),['原潛','n0']);
+ assert.deepEqual(events.at(-1),['原潛','KEEP']);
  const badEvents=[],bad=experimentalChoicePreviewParser([target0],{experimentalHanja:true},rows=>badEvents.push(rows));
  bad(JSON.stringify({results:[{t:'local-0',c:'x0'}]}));
  assert.ok(badEvents.every(rows=>rows.length===0));
