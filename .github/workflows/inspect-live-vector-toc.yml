@@ -16,13 +16,43 @@ jobs:
       - name: Inspect live DOM with Chrome
         run: |
           command -v google-chrome || command -v chromium || true
+          python3 -m pip install beautifulsoup4 --quiet
+          python3 - <<'PY'
+          import urllib.request
+          from bs4 import BeautifulSoup
+          from urllib.parse import urljoin
+          url='https://ko.wikisource.org/wiki/%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)'
+          headers={'User-Agent':'KoreanWebAnnotatorInspect/1.1 (https://github.com/aetherion-nox/korean-web-annotator)'}
+          with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=25) as response:
+            content=response.read().decode('utf-8')
+          open('toc-page.html','w').write(content)
+          soup=BeautifulSoup(content,'html.parser')
+          print('STATIC_DOCUMENT_BYTES',len(content))
+          for link in soup.select('link[rel=stylesheet]')[:8]:
+            href=link.get('href')
+            if not href:continue
+            cssurl=urljoin(url,href)
+            try:
+              with urllib.request.urlopen(urllib.request.Request(cssurl,headers=headers),timeout=25) as response:css=response.read().decode('utf-8')
+              print('FETCHED_CSS',len(css),cssurl[:220])
+              if 'vector-toc-list' in css:
+                open('toc-styles.css','w').write(css)
+                for i in range(min(css.count('vector-toc-list'),6)):
+                  idx=css.find('vector-toc-list',0 if i==0 else idx+1)
+                  print('CSS_VECTOR_RULE',css[max(0,idx-100):idx+210][:310])
+                break
+            except Exception as ex: print('CSS_FETCH_ERROR',str(ex)[:180])
+          PY
           npm install --no-save --ignore-scripts --no-audit --no-fund playwright-core
           cat > /tmp/inspect-toc.mjs <<'SCRIPT'
           import { chromium } from 'playwright-core';
           const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
+          const fs=await import('node:fs');
           const page=await browser.newPage({viewport:{width:1440,height:900}});
-          await page.goto('https://ko.wikisource.org/wiki/%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD%ED%97%8C%EB%B2%95_(%EC%A0%9C10%ED%98%B8)',{waitUntil:'domcontentloaded',timeout:45000});
-          await page.waitForTimeout(1800);
+          await page.route('**/*',route=>route.abort());
+          await page.setContent(fs.readFileSync('toc-page.html','utf8'),{waitUntil:'domcontentloaded'});
+          if(fs.existsSync('toc-styles.css'))await page.addStyleTag({path:'toc-styles.css'});
+          console.log('PAGE_HTML_BODY',JSON.stringify({title:await page.title(),bodyLength:await page.locator('body').innerText().then(v=>v.length)}));
           const inspect=()=>page.evaluate(()=>{
             const sub=document.querySelector('#toc-조문-sublist');
             const els=[...document.querySelectorAll('.vector-toc-list')];
@@ -36,8 +66,12 @@ jobs:
               dropdowns:document.querySelectorAll('[aria-expanded]').length};
           });
           console.log('BEFORE',JSON.stringify(await inspect()));
-          await page.locator('#toc-조문 .vector-toc-toggle').first().click({timeout:8000}).catch(e=>console.log('CLICK_FAILED',e.message.slice(0,200)));
-          await page.waitForTimeout(300);
+          await page.evaluate(()=>{
+            const li=document.querySelector('#toc-조문');
+            li?.classList.remove('vector-toc-list-item-expanded');
+            document.querySelector('#toc-조문-sublist')?.setAttribute('aria-hidden','true');
+          });
+          console.log('FOLDED_SIMULATED',JSON.stringify(await inspect()));
           console.log('AFTER',JSON.stringify(await inspect()));
           await browser.close();
           SCRIPT
