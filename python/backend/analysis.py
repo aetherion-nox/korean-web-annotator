@@ -283,15 +283,12 @@ class Engine:
         # Encode each token boundary once, not once per review target.
         # This retains the existing surrogate/astral offset conversion exactly.
         token_morphology=[dict(form=t.form,tag=t.tag,start=to_utf16(text,t.start),end=to_utf16(text,t.start+t.length)) for t in tokens]
-        nominal_bounds=[m for t,m in zip(tokens,token_morphology) if t.length>0 and t.tag.split('-')[0] in {'NNG','NNP','NNB','NR','XR','XPN','XSN','MM'}]
-        nominal_starts={m['start'] for m in nominal_bounds};nominal_ends={m['end'] for m in nominal_bounds}
         proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
         dictionary_name_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in dictionary_names]
         for i,target in enumerate(targets):
             target['target_id']=f't{i}'
             a=target['start'];b=target['end']
             target['morphology']=[dict(m) for m in token_morphology if m['start']<b and a<m['end']]
-            target['partial_word']=a in nominal_ends or b in nominal_starts
             if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
             if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
         # Expose Kiwi's actual proposal and conservative name/proper-noun
