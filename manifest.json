@@ -61,7 +61,8 @@
         "text-chunks.js",
         "hanja-reading-check.js",
         "hanja-reading-data.js",
-        "repair-validation-core.js"
+        "repair-validation-core.js",
+        "manual-answer-format.js"
       ],
       "matches": [
         "<all_urls>"
