@@ -93,4 +93,41 @@ class Tests(unittest.IsolatedAsyncioTestCase):
   self.assertTrue(all(sorted(o['replacement'] for o in t['options'] if o['type']=='hanja')
                       == ['學敎','學校'] for t in result['targets']))
 
+ async def test_repeated_legal_terms_cache_dictionary_lookups_without_changing_options(self):
+  counters={'candidates':0,'entries':0,'definitions':0,'metadata':0,'connection':0}
+  async def lookup(forms):
+   counters['candidates']+=1
+   return {f:[dict(entry_id=42,written_form=f,origin_raw='法律',replacement='法律',
+                   part_of_speech='명사')] for f in forms}
+  class Conn:
+   async def close(self):pass
+  class Dictionary:
+   async def get_connection(self):
+    counters['connection']+=1
+    return Conn()
+   async def batch_lookup_entries(self,forms,connection):
+    counters['entries']+=1
+    return {f:[dict(id=42,written_form=f,part_of_speech='명사',
+                    origin_raw='法律',definition_preview='law')] for f in forms}
+   async def get_definitions_for_entries(self,ids):
+    counters['definitions']+=1
+    return {i:['law'] for i in ids}
+   async def get_metadata_for_entries(self,ids):
+    counters['metadata']+=1
+    return {i:dict(part_of_speech='명사') for i in ids}
+  tokenizer=types.SimpleNamespace(is_available=True)
+  engine=Engine(tokenizer=tokenizer,lookup_fn=lookup,fingerprint='test')
+  await engine.initialize()
+  engine.dictionary=Dictionary()
+  for i in range(20):
+   candidates=await engine.lookup_candidates_cached(['법률','국민','법률'])
+   self.assertEqual(candidates['법률'][0]['origin_raw'],'法律')
+   if i==0:candidates['법률'][0]['origin_raw']='mutated only this return copy'
+   entries=await engine.lookup_entries(['법률','국민'])
+   self.assertEqual(entries['법률'][0]['id'],42)
+   self.assertEqual((await engine.cached_definitions([42]))[42],['law'])
+   self.assertEqual((await engine.cached_metadata([42]))[42]['part_of_speech'],'명사')
+  self.assertEqual(counters,dict(candidates=1,entries=1,definitions=1,
+                                 metadata=1,connection=1))
+
 if __name__=='__main__':unittest.main(verbosity=2)
