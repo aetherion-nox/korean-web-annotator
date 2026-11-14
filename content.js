@@ -596,11 +596,18 @@
       else {
         const recognize=typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false;
         const details=element.closest('details:not([open])');
-        if(!recognize&&details&&element!==details&&!element.closest('summary'))
+        const vectorList=element.matches('.vector-toc-list')&&Boolean(element.closest('#vector-toc'));
+        // Vector's chapter navigation may remain CSS-visible in a headless
+        // or dynamic layout even when the parent item is semantically folded.
+        // Use the actual Vector expansion class, not CSS alone, to implement
+        // the OFF setting. All text nodes under this list inherit this guard.
+        const foldedVector=vectorList&&element.parentElement?.matches(
+          '.vector-toc-list-item:not(.vector-toc-list-item-expanded)');
+        if(!recognize&&(details&&element!==details&&!element.closest('summary')||foldedVector))
           reason='hidden';
         else {
           const mediaWikiPanel=recognize&&(element.matches('.mw-collapsible-content')||
-              (element.matches('.vector-toc-list')&&Boolean(element.closest('#vector-toc'))));
+              vectorList);
           if((element.hidden||element.hasAttribute('inert')||
               element.getAttribute('aria-hidden')==='true')&&
              (!mediaWikiPanel||element.hasAttribute('inert')))reason='hidden';
@@ -849,9 +856,11 @@
         seen.add(node);
         const recognize=typeof uiSettings==='undefined'||uiSettings.recognizeCollapsedContent!==false;
         const closed=node.closest('details:not([open])');
-        if(!recognize&&closed&&closed!==node&&!node.closest('summary'))return true;
-        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||
-              (node.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'))));
+        const vectorList=node.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'));
+        const foldedVector=vectorList&&node.parentElement?.matches(
+          '.vector-toc-list-item:not(.vector-toc-list-item-expanded)');
+        if(!recognize&&(closed&&closed!==node&&!node.closest('summary')||foldedVector))return true;
+        const mediaWikiPanel=recognize&&(node.matches('.mw-collapsible-content')||vectorList);
         if((node.hidden||node.hasAttribute?.('inert')||
             node.getAttribute?.('aria-hidden')==='true')&&
            (!mediaWikiPanel||node.hasAttribute?.('inert')))return true;
