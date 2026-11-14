@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.21-independent-origin-audits';
+  const VERSION = '1.1.56.22-flexible-manual-json';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
