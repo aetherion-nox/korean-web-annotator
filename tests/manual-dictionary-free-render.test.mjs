@@ -109,3 +109,29 @@ test('disconnected page refuses explicit incorrect batch ID and batchless foreig
  assert.equal(task.manualRecoveryAccepted?.size||0,0);
  dom.window.close();
 });
+
+test('offline recovery accepts nonexistent numbered c/n keys as KEEP without applying an origin',async()=>{
+ const {dom,document,context,task}=environment();
+ await context.applyManualRecovery(task,JSON.stringify({
+  batch_id:'batch1',results:[{t:'t0',c:'c99'},{t:'t1',c:'n0'},{t:'t2',c:'c999'}]
+ }));
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
+ assert.equal(task.manualRecoveryAccepted.size,3);
+ assert.equal(task.manualRecoveryAccepted.get('t0').choice.choice_id,'KEEP');
+ assert.equal(task.manualRecoveryAccepted.get('t1').choice.choice_id,'KEEP');
+ assert.equal(task.finished,true);
+ dom.window.close();
+});
+
+test('offline recovery preserves a real n sense when it is present',async()=>{
+ const {dom,document,context,task}=environment();
+ task.manualBackup.bindings[0].choices.push({choice_id:'n0',type:'nonconversion',annotations:[]});
+ await context.applyManualRecovery(task,JSON.stringify({
+  batch_id:'batch1',results:[{t:'t0',c:'n0'},{t:'t1',c:'n99'},{t:'t2',c:'c99'}]
+ }));
+ assert.equal(task.manualRecoveryAccepted.get('t0').choice.choice_id,'n0');
+ assert.equal(task.manualRecoveryAccepted.get('t1').choice.choice_id,'KEEP');
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
+ assert.equal(task.finished,true);
+ dom.window.close();
+});
