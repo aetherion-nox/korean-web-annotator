@@ -16,3 +16,30 @@ def has_quantity_before(text, tokens, start):
     return (previous.tag.split('-')[0] in {'SN', 'NR'}
             and not text[previous.start + previous.length:start].strip()
             and text[previous.start:previous.start + previous.length] == previous.form)
+
+
+def indexed_quantity_before(text, tokens):
+    """Precompute exact has_quantity_before() results for every token start.
+
+    Sorting by (end, -original index) preserves the legacy 'first token'
+    tie-break when several morphological tokens share an end position.
+    Unlike has_quantity_before, this does not rescan the token prefix for
+    each occurrence. Build: O(T log T); lookup: O(1).
+    """
+    from bisect import bisect_right
+    ended=sorted(((t.start+t.length,-i,t) for i,t in enumerate(tokens)
+                  if t.length>0),key=lambda row:(row[0],row[1]))
+    positions=[row[0] for row in ended]
+    answers={}
+    for token in tokens:
+        start=token.start
+        if start in answers:continue
+        before=bisect_right(positions,start)-1
+        if before<0:
+            answers[start]=False
+            continue
+        previous=ended[before][2]
+        answers[start]=(previous.tag.split('-')[0] in {'SN','NR'}
+                        and not text[previous.start+previous.length:start].strip()
+                        and text[previous.start:previous.start+previous.length]==previous.form)
+    return answers
