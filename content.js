@@ -1222,16 +1222,16 @@
     const loanword=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u.test(choiceId)&&
       /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&task.modes.loanword===true;
     if(!hanja&&!loanword)return null;
+    if(hanja&&meta.hanjaEligible!==true||loanword&&meta.loanwordEligible!==true)return null;
+    if(!/^[가-힣]+$/u.test(binding.surface))return null;
     if(entry.text.slice(binding.start,binding.end)!==binding.surface)return null;
     const surface=binding.surface,type=hanja?'hanja':'loanword',annotations=[];
     const base={type,entry_id:'experimental:'+type,origin_source:'model-unverified',confidence:1};
     let replacement=choiceId;
-    // Match experimental-options.js splitAlignedHanja for spaced Korean words.
-    const words=hanja&&/^[가-힣]+(?: [가-힣]+){1,3}$/u.test(surface)?surface.split(' '):null;
     // The model may write the genuine Sino-Korean stem without copying a
     // following native suffix. Accept only an explicit Kiwi XSN/XSM tail.
     let suffixStem=null;
-    if(hanja&&!words&&/^[가-힣]+$/u.test(surface)){
+    if(hanja&&/^[가-힣]+$/u.test(surface)){
       const n=[...choiceId].length,source=[...surface];
       if(n>0&&n<source.length){
         const stem=source.slice(0,n).join(''),tail=source.slice(n).join('');
@@ -1248,16 +1248,6 @@
       annotations.push({...base,start:binding.start,end:binding.start+suffixStem.stem.length,
         surface:suffixStem.stem,replacement:choiceId});
       replacement=choiceId+suffixStem.tail;
-    }else if(words){
-      const characters=[...choiceId];
-      if(characters.length!==words.join('').length)return null;
-      let start=binding.start,index=0;
-      for(const word of words){
-        const written=characters.slice(index,index+word.length).join('');
-        annotations.push({...base,start,end:start+word.length,surface:word,replacement:written});
-        start+=word.length+1;index+=word.length;
-      }
-      replacement=annotations.map(a=>a.replacement).join(' ');
     }else{
       // Mirror local-engine.js projectAnnotation: retain an unchanged prefix
       // or suffix rather than overwriting adjoining Latin/digit characters.
@@ -1308,7 +1298,7 @@
     const {start,end,surface,choice_id}=repair;
     if(!sentence||sentence.text.slice(start,end)!==surface)return null;
     const binding={start,end,surface,literalOrigin:{
-      eligible:true,hanja:task.modes.hanja===true,loanword:task.modes.loanword===true,
+      eligible:true,hanja:task.modes.hanja===true,loanword:task.modes.loanword===true,hanjaEligible:true,loanwordEligible:true,
       known:[],morphology:[]}};
     const row={t:'repair',c:choice_id};
     const direct=await manualLiteralChoice(binding,choice_id,sentence,task,row);
