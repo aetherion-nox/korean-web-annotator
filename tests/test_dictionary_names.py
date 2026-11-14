@@ -20,13 +20,48 @@ class DictionaryNames(unittest.IsolatedAsyncioTestCase):
  async def run_name(self,on=True,split=False,review=False):
   from backend.analysis import Engine
   return await Engine(self.path,tokenizer=self.tokenized('이수민 씨',split)).analyze('이수민 씨',dict(hanja=True,loanword=True,nameProtection=on,reviewAll=review))
- async def test_dictionary_person_is_preserved_even_if_nng_and_unique(self):
+ async def test_dictionary_proven_person_is_reviewed_even_if_nng_or_split(self):
   for split in [False,True]:
    for review in [False,True]:
     r=await self.run_name(split=split,review=review)
     self.assertEqual(r['annotations'],[])
-    self.assertEqual(r['targets'],[])
+    self.assertEqual(len(r['targets']),1,(split,review,r))
+    person=r['targets'][0]
+    self.assertEqual(person['surface'],'이수민')
+    self.assertEqual(person['verified_person_hanja'],['李壽民'])
+    self.assertTrue(person['dictionary_person_name'])
+    self.assertTrue(any(o['type']=='hanja' and o['entry_id']==self.person and
+                        o['replacement']=='李壽民' for o in person['options']))
     self.assertGreater(r['stats']['protected_names'],0)
+
+ async def test_filtered_dictionary_person_keeps_only_verified_hanja_candidate(self):
+  from backend.analysis import Engine
+  t=self.tokenized('이수민 씨')
+  r=await Engine(self.path,tokenizer=t).analyze('이수민 씨',dict(
+      hanja=True,loanword=True,nameProtection=True,filterDictionaryPeople=True,
+      experimentalHanjaAudit=True))
+  person=[x for x in r['targets'] if x['surface']=='이수민']
+  self.assertEqual(len(person),1)
+  self.assertEqual(person[0]['verified_person_hanja'],['李壽民'])
+  self.assertEqual([(o['entry_id'],o['replacement']) for o in person[0]['options']
+                    if o['type']=='hanja'],[(self.person,'李壽民')])
+
+ async def test_person_without_verified_hanja_remains_filtered_or_keep_only(self):
+  from backend.analysis import Engine
+  import sqlite3
+  record=self.add('한동훈',None,'명사','현직 정치인.')
+  with sqlite3.connect(self.path) as db:
+   db.execute("UPDATE entries SET subject_category='인명' WHERE id=?",(record,))
+  t=tokenizer();t._kiwi=types.SimpleNamespace(tokenize=lambda _:[
+      types.SimpleNamespace(form='한동훈',tag='NNP',start=0,len=3)])
+  r=await Engine(self.path,tokenizer=t).analyze('한동훈',dict(
+      hanja=True,loanword=True,nameProtection=True,filterDictionaryPeople=True,
+      experimentalLoanwordAudit=True))
+  matches=[x for x in r['targets'] if x['surface']=='한동훈']
+  self.assertEqual(len(matches),1)
+  self.assertTrue(matches[0]['dictionary_person_name'])
+  self.assertNotIn('verified_person_hanja',matches[0])
+  self.assertEqual([x['type'] for x in matches[0]['options']],['keep'])
  async def test_disabled_protection_forces_identity_review(self):
   r=await self.run_name(on=False,split=True)
   self.assertEqual(r['annotations'],[])
