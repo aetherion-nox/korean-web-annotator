@@ -139,6 +139,44 @@ test('default folded recognition does not bypass unrelated hidden content',()=>{
  assert.ok(!texts.some(t=>t.includes('비공개 본문')));
  x.dom.window.close();
 });
+test('live Minerva post-hydration renames the section and uses hidden=until-found',()=>{
+ const html='<body class="skin-minerva mf-collapsible-sections"><main>'+
+ '<div class="mw-parser-output">'+
+ '<section id="content-collapsible-block-1" class="mf-section-2 collapsible-block collapsible-block-js"'+
+ ' hidden="until-found" style="content-visibility:hidden">'+
+ '<h3>제1장 총강</h3><dl><dd>① 대한민국은 민주공화국이다.</dd></dl>'+
+ '<p style="display:none">숨겨진 광고용 한글 텍스트.</p>'+
+ '<div style="content-visibility:hidden"><p>숨겨진 별도 템플릿.</p></div>'+
+ '</section></div></main></body>';
+ const x=scanner(html),doc=x.dom.window.document;
+ const section=doc.querySelector('#content-collapsible-block-1');
+ assert.equal(section.getAttribute('hidden'),'until-found');
+ assert.equal(doc.defaultView.getComputedStyle(section).contentVisibility,'hidden');
+ const result=()=>[...x.entries().values()].map(e=>e.text);
+ assert.ok(result().includes('① 대한민국은 민주공화국이다.'),
+   'post-hydration hidden=until-found article must enter scan');
+ assert.ok(!result().some(t=>t.includes('광고용 한글')));
+ assert.ok(!result().some(t=>t.includes('별도 템플릿')));
+ x.context.uiSettings.recognizeCollapsedContent=false;
+ assert.ok(result().includes('① 대한민국은 민주공화국이다.'),
+   'obsolete false must not suppress folded Korean');
+ section.removeAttribute('hidden');
+ section.style.contentVisibility='visible';
+ assert.ok(result().includes('① 대한민국은 민주공화국이다.'),
+   'the same article stays eligible after expansion');
+ x.dom.window.close();
+});
+test('unrelated hidden=until-found templates are not automatically treated as articles',()=>{
+ const html='<body class="skin-minerva"><main><div class="mw-parser-output">'+
+ '<section hidden="until-found" style="content-visibility:hidden">'+
+ '<p>숨겨진 일반 템플릿.</p></section>'+
+ '<section class="mf-section-4 collapsible-block" id="other-widget" hidden="until-found"'+
+ ' style="content-visibility:hidden"><p>올바르지 않은 숨김 광고.</p></section>'+
+ '<p>보이는 기사 본문.</p></div></main></body>';
+ const x=scanner(html),texts=[...x.entries().values()].map(e=>e.text);
+ assert.deepEqual(texts,['보이는 기사 본문.']);
+ x.dom.window.close();
+});
 test('ARIA-controls folded article body scans without a click; nested hidden templates stay excluded',()=>{
  const html='<main><article><h1>법률 안내</h1>'+
   '<button type="button" aria-expanded="false" aria-controls="law-clauses">조문 접기</button>'+
