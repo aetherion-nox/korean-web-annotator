@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.56.31-wikisource-dd-toc-performance';
+const CONTENT_SCRIPT_VERSION = '1.1.56.32-real-bottlenecks-and-folded-toc';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
