@@ -135,3 +135,17 @@ test('offline recovery preserves a real n sense when it is present',async()=>{
  assert.equal(task.finished,true);
  dom.window.close();
 });
+
+test('offline page treats unsupported Hangul and protected-person Hanja as null',async()=>{
+ const {dom,document,context,task}=environment();
+ task.manualBackup.bindings[1].literalOrigin={eligible:false,hanja:true,loanword:true,known:[]};
+ await context.applyManualRecovery(task,JSON.stringify({
+  batch_id:'batch1',
+  results:[{t:'t0',c:'한동훈'},{t:'t1',c:'李承晩'},{t:'t2',c:'c404'}]
+ }));
+ assert.equal(task.finished,true);
+ assert.equal(task.manualRecoveryAccepted.size,3);
+ assert.deepEqual([...task.manualRecoveryAccepted.values()].map(x=>x.choice.choice_id),['KEEP','KEEP','KEEP']);
+ assert.equal(document.querySelectorAll('p ruby[kra-annotated="true"]').length,0);
+ dom.window.close();
+});
