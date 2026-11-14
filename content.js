@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.56.19-model-zip-compression';
+  const VERSION = '1.1.56.20-duplicate-literal-origins';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
