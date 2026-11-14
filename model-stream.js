@@ -28,8 +28,10 @@ export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null){
    const selected=row.c===null?null:target?.options.find(o=>o.type!=='keep'&&o.choice_id===row.c);
    // Match final validation: unknown c/n indexes are null (keep Korean).
    const keep=row.c===null||(!selected&&typeof row.c==='string'&&/^[cn]\d+$/u.test(row.c));
-   const option=keep?target?.options.find(o=>o.type==='keep'):
-     selected||resolveExtra(target,row.c);
+   const option=(keep?target?.options.find(o=>o.type==='keep'):null)||
+     selected||resolveExtra(target,row.c)||target?.options.find(o=>o.type==='keep');
+   // Preview and final application must agree; an invalid origin is a
+   // no-conversion result, never a speculative annotation.
    return option?[{target,option}]:[];
   });onPreview(accepted);}
  };
