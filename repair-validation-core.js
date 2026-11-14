@@ -115,8 +115,8 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
   const personRange=inRanges(scope.person_ranges||scope.protected_ranges||[])||
    old.some(t=>t.suspected_person_name===true||
      t.dictionary_person_name===true||t.dictionary_name_homograph===true);
-  const experimentalLatin=config.experimentalLoanword===true&&/\\p{Script=Latin}/u.test(choice_id);
-  const experimentalHanja=config.experimentalHanja===true&&/\\p{Script=Han}/u.test(choice_id);
+  const experimentalLatin=config.experimentalLoanword===true&&/\p{Script=Latin}/u.test(choice_id);
+  const experimentalHanja=config.experimentalHanja===true&&/\p{Script=Han}/u.test(choice_id);
   if(choice_id!=='KEEP'&&protectedRange&&
      !(experimentalLatin||(experimentalHanja&&!personRange))){
    fail(index,experimentalHanja&&personRange?'protected personal-name Hanja':'protected proper noun or name',row);continue;
