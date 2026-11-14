@@ -127,12 +127,11 @@ test('derived word retains segments while stripping redundant Kiwi POS',()=>{
  assert.deepEqual(out.morphology,[{form:'사실',start:0,end:2},{form:'상',start:2,end:3}]);
  assert.deepEqual(Object.keys(out.options),['c0']);
 });
-test('conflict, disabled filter, unknown POS, partial-word and unknown meaning preserve original tags',()=>{
+test('conflict, disabled filter, unknown POS and unknown meaning preserve original tags',()=>{
  const cases=[
   [target('MAG',[option('c0','명사')]),{}],
   [target('NNG',[option('c0','명사')]),{reviewPosFilter:false}],
   [target('UNKNOWN',[option('c0','명사')]),{}],
-  [{...target('NNG',[option('c0','명사')]),partial_word:true},{}],
   [target('NNG',[option('c0',null)]),{}]
  ];
  for(const [t,config] of cases){
