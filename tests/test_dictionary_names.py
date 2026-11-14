@@ -41,10 +41,12 @@ class DictionaryNames(unittest.IsolatedAsyncioTestCase):
       hanja=True,loanword=True,nameProtection=True,filterDictionaryPeople=True,
       experimentalHanjaAudit=True))
   person=[x for x in r['targets'] if x['surface']=='이수민']
-  self.assertEqual(len(person),1)
-  self.assertEqual(person[0]['verified_person_hanja'],['李壽民'])
-  self.assertEqual([(o['entry_id'],o['replacement']) for o in person[0]['options']
-                    if o['type']=='hanja'],[(self.person,'李壽民')])
+  self.assertEqual(person,[],r)
+  self.assertEqual(r['annotations'],[],r)
+  unfiltered=await Engine(self.path,tokenizer=t).analyze('이수민 씨',dict(
+      hanja=True,loanword=True,nameProtection=True,filterDictionaryPeople=False,
+      experimentalHanjaAudit=True))
+  self.assertEqual(unfiltered['targets'][0]['verified_person_hanja'],['李壽民'])
 
  async def test_person_without_verified_hanja_remains_filtered_or_keep_only(self):
   from backend.analysis import Engine
