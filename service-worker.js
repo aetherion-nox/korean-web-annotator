@@ -17,7 +17,7 @@ import {
 import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.56.13-targeted-offline-validation-errors';
+const CONTENT_SCRIPT_VERSION='1.1.56.14-remove-15s-post-page-rescan';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -444,7 +444,7 @@ async function startWholePageForTab(tabId,settings){
  // All initially visible child frames have finished probing/registration.
  // A stable single-frame article starts promptly; active iframes receive a
  // quiet period, capped by the original 4.8-second safety limit.
- // Post-completion comment hydration remains an independent 15-second watch.
+ // Post-completion monitoring remains controlled only by the existing continuous-monitoring setting.
  run.lastFrameReport=children;
  scheduleFrameCollectionFinalization(tabId,run,children);
  return {...main,frameSummary:children};
