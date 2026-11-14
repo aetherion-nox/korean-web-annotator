@@ -68,7 +68,7 @@ try {
  await page.evaluate(()=>window.__kraMobileDiagnostic.setEnabled(false));
  const initialOff=await page.evaluate(()=>window.__kraMobileDiagnostic.scan());
  console.log('MOBILE_SCAN_INITIAL_OFF',JSON.stringify(initialOff));
- assert.equal(initialOff.inSection,0,'OFF must skip the folded Minerva section');
+ assert.equal(initialOff.inSection,initialOn.inSection,'obsolete false must not suppress collapsed Korean');
  await page.evaluate(()=>{
    const sec=document.querySelector('#mf-section-2');
    sec?.classList.remove('open-block');
@@ -86,7 +86,7 @@ try {
  await page.evaluate(()=>window.__kraMobileDiagnostic.setEnabled(false));
  const closedOff=await page.evaluate(()=>window.__kraMobileDiagnostic.scan());
  console.log('MOBILE_SCAN_CLOSED_OFF',JSON.stringify(closedOff));
- assert.equal(closedOff.inSection,0);
+ assert.equal(closedOff.inSection,closedOn.inSection,'legacy disabled preference no longer affects scan');
  await page.evaluate(()=>window.__kraMobileDiagnostic.setEnabled(true));
  const paint=await page.evaluate(()=>window.__kraMobileDiagnostic.paint());
  console.log('MOBILE_PAINT_CLOSED',JSON.stringify(paint));
