@@ -5,7 +5,7 @@ consumes one source syllable; native anchors must match verbatim; Latin runs
 consume an unknown positive number of syllables. Accept only a unique full map.
 """
 import re
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from functools import lru_cache
 from backend.offsets import to_utf16
 from backend.loanwords import CJK, HANGUL as HANGUL_CHAR, classify_origin, nonconversion_options
@@ -113,6 +113,28 @@ def candidate_spans(text,tokens):
 async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=(),review_ranges=()):
     spans=candidate_spans(text,tokens)
     proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
+    # Long pages can have thousands of whole-word converter matches. Testing
+    # every span against every converter match used to be quadratic.
+    def interval_index(ranges):
+        ordered=sorted(ranges)
+        starts=[a for a,_ in ordered]
+        prefix=[];furthest=-1
+        for _,b in ordered:
+            furthest=max(furthest,b)
+            prefix.append(furthest)
+        return starts,prefix
+    whole_starts,whole_max=interval_index(whole_word_ranges)
+    blocked_starts,blocked_max=interval_index(blocked_ranges)
+    proper_starts,proper_max=interval_index(proper_ranges)
+    def overlaps(index,start,end):
+        starts,max_ends=index
+        pos=bisect_left(starts,end)-1
+        return pos>=0 and max_ends[pos]>start
+    def owned_by_longer(start,end):
+        earlier=bisect_left(whole_starts,start)-1
+        if earlier>=0 and whole_max[earlier]>=end:return True
+        same=bisect_right(whole_starts,start)-1
+        return same>=0 and whole_max[same]>end
     # Kiwi emits source-ordered tokens. Index their starts once so checking
     # each short candidate span does not scan ALL tokens of a long paragraph.
     token_starts=[t.start for t in tokens]
@@ -120,11 +142,13 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
     entries=await engine.lookup_entries([form for _,_,form in spans],filter_people=modes.get('filterDictionaryPeople',False) is True)
     annotations=[];targets=[];ranges=[];skipped=0
     for start,end,word in spans:
-        if overlaps_proper_noun(start,end,blocked_ranges):continue
+        if overlaps((blocked_starts,blocked_max),start,end):continue
         # Respect the original converter's longer whole-word match, including
         # native whole words. Equal spans are still unified here.
-        if any(a<=start and end<=b and (a<start or end<b) for a,b in whole_word_ranges):continue
-        if any(start<b and a<end for a,b in ranges):continue
+        if owned_by_longer(start,end):continue
+        # Accepted ranges are non-overlapping and candidate spans are sorted
+        # by source start. Only the last range can overlap a later span.
+        if ranges and start<ranges[-1][1] and ranges[-1][0]<end:continue
         all_records=entries.get(word,[])
         if ordered:
             lo=bisect_left(token_starts,start)
@@ -179,7 +203,7 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
         if not options:continue
         # Every whole-entry reading must support the same complete written origin.
         certain=len(signatures)==1 and mapped==len(records) and all(r.get('part_of_speech')=='명사' for r in records)
-        if certain and not modes.get('reviewAll',False) and not overlaps_proper_noun(start,end,proper_ranges):
+        if certain and not modes.get('reviewAll',False) and not overlaps((proper_starts,proper_max),start,end):
             for p in options[0]['segments']:
                 annotations.append({**p,'start':to_utf16(text,start)+p['start'],'end':to_utf16(text,start)+p['end']})
         else:
