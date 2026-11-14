@@ -1,13 +1,13 @@
-name: Validate and Package v1.1.56.15 No Cross-Space Targets
+name: Validate and Package v1.1.56.16 Script-Aware Proper Origins
 on:
   push:
     branches:
-      - fix/v1.1.56.15-no-cross-space-targets
+      - feat/v1.1.56.16-script-aware-proper-origin
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: v1.1.56.15-no-cross-space-targets
+  group: v1.1.56.16-script-aware-proper-origin
   cancel-in-progress: false
 jobs:
   package:
@@ -23,8 +23,8 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.15'
-          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.15'
+          assert json.loads(Path('manifest.json').read_text())['version']=='1.1.56.16'
+          assert json.loads(Path('package.json').read_text())['version']=='1.1.56.16'
           PY
       - name: Restore frozen Kiwi and Python runtime
         run: |
@@ -56,7 +56,7 @@ jobs:
                  and p.name!='restore_distribution.py' and (root/p).is_file()}
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
-          dest=root/'Korean-Web-Annotator-v1.1.56.15-no-cross-space-targets.zip'
+          dest=root/'Korean-Web-Annotator-v1.1.56.16-script-aware-proper-origin.zip'
           with zipfile.ZipFile(dest,'w',allowZip64=True) as z:
               for p in sorted(files):
                   mode=zipfile.ZIP_STORED if p.suffix.lower()=='.mdl' else zipfile.ZIP_DEFLATED
@@ -68,14 +68,14 @@ jobs:
                       'choice-review.js','model-stream.js','manual-review.js',
                       'browser-worker.js','engine-page.js','runtime/models/cong.mdl']
               assert all('Korean-Web-Annotator/'+p in z.namelist() for p in needed)
-              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.15'
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.56.16'
           assert dest.stat().st_size>90_000_000,'Kiwi runtime missing'
           print('ZIP:',dest,'size:',dest.stat().st_size,'SHA256:',hashlib.sha256(dest.read_bytes()).hexdigest())
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: extension-v1.1.56.15
-          path: Korean-Web-Annotator-v1.1.56.15-no-cross-space-targets.zip
+          name: extension-v1.1.56.16
+          path: Korean-Web-Annotator-v1.1.56.16-script-aware-proper-origin.zip
           compression-level: 0
           if-no-files-found: error
   windows-verify-publish:
@@ -84,7 +84,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: extension-v1.1.56.15
+          name: extension-v1.1.56.16
           path: artifact
       - name: Verify Windows Expand-Archive and 7-Zip
         shell: pwsh
@@ -98,7 +98,7 @@ jobs:
           $model=Get-ChildItem $dest -Recurse -Filter cong.mdl -File | Select-Object -First 1
           if(-not $manifest -or -not $model){throw 'Missing runtime files'}
           if($model.Length -ne 75854705){throw "Unexpected Kiwi runtime length: $($model.Length)"}
-          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.15'){throw 'Wrong manifest version'}
+          if((Get-Content $manifest.FullName -Raw | ConvertFrom-Json).version -ne '1.1.56.16'){throw 'Wrong manifest version'}
           $sevenZip=Join-Path $env:ProgramFiles '7-Zip\7z.exe'
           if(Test-Path $sevenZip){& $sevenZip t $zip;if($LASTEXITCODE -ne 0){throw '7-Zip validation failed'}}
       - name: Publish distinct prerelease
@@ -107,12 +107,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.1.56.15-no-cross-space-targets.1'
+          $tag='v1.1.56.16-script-aware-proper-origin.1'
           $zip=(Get-ChildItem artifact -Filter '*.zip' -File | Select-Object -First 1).FullName
           gh release view $tag --repo 'aetherion-nox/korean-web-annotator' 1>$null 2>$null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $zip --repo 'aetherion-nox/korean-web-annotator' --clobber
           } else {
-            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.15 — no cross-space review target construction' --prerelease --notes 'Based on v1.1.56.14. Stop constructing lexical review targets across source whitespace even when removing spaces matches another dictionary entry, avoiding phantom targets such as 부 등, 황 전 and 급 환. Preserve the existing indexed headword alias queries for unspaced forms such as 이산화탄소 against dictionary spellings containing ^, -, or spaces. Keep existing dictionary entries, tokenizer, person-name protections, manual/API review, iframe batch flow and all unrelated features. Includes regressions for whitespace boundaries and indexed headword aliases, complete tests and Windows ZIP verification.'
+            gh release create $tag $zip --repo 'aetherion-nox/korean-web-annotator' --target $env:GITHUB_SHA --title 'v1.1.56.16 — script-aware proper-noun origin audits' --prerelease --notes 'Based on v1.1.56.15. Experimental Latin origin audit now accepts known original spellings of proper nouns, brands, organizations and foreign personal names; when enabled it creates KEEP-only LLM review targets for otherwise protected standalone proper nouns, without changing local automatic name conversion. Experimental Hanja origin audit accepts non-person proper nouns, while dictionary/suspected personal names remain barred from open-ended Hanja guesses. Model prompt uses generic identity and script rules; offline manual recovery enforces the same script-specific permissions. Keep all source boundaries, whitespace rules, dictionary aliases, Kiwi, manual/API, cross-frame review and continuous monitoring unchanged. Includes Python and JS regression tests, bundle synchronization and Windows ZIP verification.'
           }
           if($LASTEXITCODE -ne 0){throw 'Release publishing failed'}
