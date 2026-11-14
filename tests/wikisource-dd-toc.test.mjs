@@ -139,6 +139,41 @@ test('collapsed switch does not bypass ordinary hidden sections on unrelated ski
  assert.ok(!texts.some(t=>t.includes('비공개 본문')));
  x.dom.window.close();
 });
+test('ARIA-controls folded article body scans without a click; nested hidden templates stay excluded',()=>{
+ const html='<main><article><h1>법률 안내</h1>'+
+  '<button type="button" aria-expanded="false" aria-controls="law-clauses">조문 접기</button>'+
+  '<div id="law-clauses" role="region" hidden aria-hidden="true" style="display:none">'+
+  '<section><p>제1조 국민의 자유를 보장한다.</p></section>'+
+  '<div style="display:none"><p>숨겨진 광고 및 템플릿</p></div>'+
+  '</div></article></main>'+
+  '<aside><button aria-expanded="false" aria-controls="ad-panel">광고</button>'+
+  '<div id="ad-panel" style="display:none"><p>광고용 한글</p></div></aside>';
+ const x=scanner(html,true),doc=x.dom.window.document;
+ const original=doc.body.innerHTML;
+ const targets=()=>[...x.entries().values()].map(e=>e.text.trim());
+ assert.ok(targets().some(t=>t.includes('국민의 자유를 보장')));
+ assert.ok(!targets().some(t=>t.includes('숨겨진 광고')));
+ assert.ok(!targets().some(t=>t.includes('광고용 한글')));
+ assert.equal(doc.body.innerHTML,original,'scan must not open or mutate the folded article');
+ x.context.uiSettings.recognizeCollapsedContent=false;
+ assert.ok(!targets().some(t=>t.includes('국민의 자유를 보장')));
+ const panel=doc.getElementById('law-clauses');
+ panel.hidden=false;panel.removeAttribute('aria-hidden');panel.style.display='block';
+ assert.ok(targets().some(t=>t.includes('국민의 자유를 보장')),'visible article is scanned when toggle is OFF');
+ x.dom.window.close();
+});
+test('ARIA-controls on a non-collapsed or non-article region cannot bypass hidden content',()=>{
+ const html='<main><button aria-expanded="true" aria-controls="already-open">열기</button>'+
+  '<section id="already-open" style="display:none"><p>비공개 변경사항</p></section></main>'+
+  '<aside><button aria-expanded="false" aria-controls="private-panel">열기</button>'+
+  '<div id="private-panel" style="display:none"><p>비공개 광고</p></div></aside>'+
+  '<main><p>공개 한국어 본문</p></main>';
+ const x=scanner(html,true),texts=[...x.entries().values()].map(e=>e.text);
+ assert.ok(texts.includes('공개 한국어 본문'));
+ assert.ok(!texts.includes('비공개 변경사항'));
+ assert.ok(!texts.includes('비공개 광고'));
+ x.dom.window.close();
+});
 test('real downloaded Wikisource HTML has no article-wide dd grouping',()=>{
  const file=process.env.KRA_REAL_WIKISOURCE_HTML;
  if(!file)return;
