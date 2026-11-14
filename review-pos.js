@@ -112,7 +112,7 @@ export function filterReviewTargets(targets,config={}){return targets.map(target
 
 // POS evidence is redundant only when all surviving senses were locally verified.
 export function canTrimReviewMorphology(target,config={}){
- if(config.reviewPosFilter===false||target.pos_conflict===true||target.partial_word===true||target.dictionary_name_homograph===true||target.suspected_person_name===true)return false;
+ if(config.reviewPosFilter===false||target.pos_conflict===true||target.dictionary_name_homograph===true||target.suspected_person_name===true)return false;
  const tags=occurrenceTags(target);
  if(!tags)return false;
  const choices=target.options.filter(option=>option.type!=='keep');
