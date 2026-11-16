@@ -1,0 +1,308 @@
+import {filterReviewTarget,filterReviewTargets} from './review-pos.js';
+import {readingCompatibleModelChoice} from './review-reading-safety.js';
+import {qwenRequestSettings} from './qwen-api.js';
+import {readModelContent,choicePreviewParser,experimentalChoicePreviewParser} from './model-stream.js';
+import {requestLogger} from './request-log.js';
+import './model-catalog.js';
+import {buildReviewPayload,buildReviewInstructions} from './review-payload.js';
+import {literalOriginOption,explainLiteralOriginRejection} from './experimental-options.js';
+import {validateSegmentationRepairs} from './segmentation-repairs.js';
+import {normalizeOutputTokenLimit,describeBatchBudget} from './batch-budget.js';
+import {requestTimeoutGuard} from './request-timeout.js';
+// Response rows have one wire format only: {t, c}. The special null
+// c means keep the source. A string "KEEP" is NOT a fallback marker.
+function validWireRow(row,known){
+ return row&&typeof row==='object'&&!Array.isArray(row)&&
+  Object.keys(row).sort().join(',')==='c,t'&&
+  typeof row.t==='string'&&known.has(row.t)&&
+  (row.c===null||(typeof row.c==='string'&&row.c.length>0));
+}
+function matchedWireOption(target,value,config){
+ const options=filterReviewTarget(target,config).options;
+ if(value===null)return options.find(o=>o.type==='keep')||null;
+ const selected=options.find(o=>o.type!=='keep'&&o.choice_id===value);
+ // A literal Hanja personal name is permitted ONLY when the local dictionary
+ // supplied that exact writing for this full occurrence. Treat it as the
+ // original dictionary sense, not as an unverified experimental guess.
+ if(!selected&&typeof value==='string'&&target.dictionary_person_name===true&&
+    target.verified_person_hanja?.includes(value)){
+  const matched=options.find(o=>o.type==='hanja'&&o.replacement===value&&o.entry_id!=null);
+  if(matched&&readingCompatibleModelChoice(target,matched,config))return matched;
+ }
+ // A nonexistent numbered dictionary option means no conversion, in both
+ // ordinary and experimental modes. Authentic literal origins remain distinct.
+ if(selected)return readingCompatibleModelChoice(target,selected,config)?selected:
+  options.find(o=>o.type==='keep')||null;
+ return typeof value==='string'&&/^[cn]\d+$/u.test(value)?
+  options.find(o=>o.type==='keep')||null:null;
+}
+export function validateChoices(targets,response,config={}){
+ const accepted=[],unresolved=[];
+ const rows=Array.isArray(response?.results)?response.results:[];
+ const known=new Set(targets.map(t=>t.target_id));
+ if(!response||!Array.isArray(response.results)||Object.hasOwn(response,'experimental_options')||
+    rows.some(row=>!validWireRow(row,known)))
+  return {accepted:[],unresolved:targets};
+ for(const target of targets){
+  const matches=rows.filter(row=>row.t===target.target_id);
+  // A uniquely identified result with an unusable choice is safe to leave
+  // untouched. Structural problems (unknown/duplicate/missing t) are not.
+  const option=matches.length===1?matchedWireOption(target,matches[0].c,config)||target.options.find(o=>o.type==='keep'):null;
+  if(option){
+   // Previous diagnostics counted invalid c/n keys as ordinary KEEP.
+   // Preserve the safe null fallback, but disclose its actual frequency.
+   const invalidChoiceFallback=matches[0].c!==null&&option.type==='keep';
+   accepted.push(invalidChoiceFallback?{target,option,invalidChoiceFallback:true}:{target,option});
+  }else unresolved.push(target);
+ }
+ return {accepted,unresolved};
+}
+export function validateExperimentalChoices(targets,response,config={}){
+ if(!response||!Array.isArray(response.results)||Object.hasOwn(response,'experimental_options'))
+  return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:0};
+ const rows=response.results,known=new Set(targets.map(t=>t.target_id));
+ if(rows.some(row=>!validWireRow(row,known)))
+  return {accepted:[],unresolved:targets,experimentalAccepted:0,experimentalProposed:0,experimentalRejected:rows.length};
+ const accepted=[],unresolved=[];let experimentalAccepted=0,experimentalRejected=0;
+ const rejectionCounts={},rejectionSamples=[];
+ for(const target of targets){
+  const matches=rows.filter(row=>row.t===target.target_id);
+  if(matches.length!==1){unresolved.push(target);continue;}
+  const id=matches[0].c;
+  const option=matchedWireOption(target,id,config);
+  if(option){accepted.push({target,option});continue;}
+  const generated=literalOriginOption(target,id,config);
+  if(generated){accepted.push({target,option:generated});experimentalAccepted++;}
+  else{
+   // Reject the proposed origin, not the whole target. The original Korean
+   // remains unchanged when an experimental spelling is unsafe/unavailable.
+   const keep=target.options.find(o=>o.type==='keep');
+   if(keep)accepted.push({target,option:keep});else unresolved.push(target);
+   experimentalRejected++;
+   const reason=explainLiteralOriginRejection(target,id,config);
+   rejectionCounts[reason]=(rejectionCounts[reason]||0)+1;
+   if(rejectionSamples.length<16)rejectionSamples.push({target_id:target.target_id,surface:target.surface,c:id,reason});
+  }
+ }
+ return {accepted,unresolved,experimentalAccepted,experimentalProposed:experimentalAccepted,experimentalRejected,rejectionCounts,rejectionSamples};
+}
+export function thinkingSettings(config){
+ const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
+ if(!capability)return {body:{},label:'模型默认思考设置（未收录能力）'};
+ const enabled=capability.thinking==='required'||config.disableThinking===false;
+ const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
+ const effort=capability.efforts.includes(config.reasoningEffort)?config.reasoningEffort:capability.efforts[0];
+ if(provider==='qwen'){
+  if(capability.thinking==='none')return {body:{},label:'此模型不使用思考参数'};
+  const body=capability.thinking==='toggle'?{enable_thinking:enabled}:{};
+  if(enabled&&capability.efforts.length)body.reasoning_effort=effort;
+  return {body,label:enabled?`Qwen 思考开启${capability.efforts.length?'（'+effort+'）':''}`:'Qwen 思考关闭'};
+ }
+ // Gemini and Meta Muse use OpenAI-style reasoning_effort rather than
+ // Xiaomi/GLM's vendor-specific "thinking" object. Muse cannot disable reasoning.
+ if(provider==='gemini'||provider==='muse'){
+  const level=enabled?effort:'none';
+  return {body:{reasoning_effort:level},label:enabled?`思考强度：${level}`:'关闭思考'};
+ }
+ // Tencent TokenHub supports the same explicit thinking switch for
+ // Hy4 Flash, Hy4, Hy4 Preview and Hy3. The accepted effort levels differ:
+ // Hy3: low/high/no_think; Hy4 family: high/no_think.
+ if(provider==='hunyuan'){
+  const body={thinking:{type:enabled?'enabled':'disabled'}};
+  if(capability.efforts.length)body.reasoning_effort=enabled?effort:'no_think';
+  return {body,label:enabled?(effort?`混元思考强度：${effort}`:'混元思考开启'):'混元关闭思考'};
+ }
+ if(provider==='openai')return {body:{reasoning_effort:enabled?effort:'none'},label:enabled?`思考强度：${effort}`:'关闭思考'};
+ if(provider==='anthropic')return {body:{thinking:{type:enabled?'adaptive':capability.offType||'disabled'},output_config:{effort:enabled?effort:'low'}},label:enabled?`自适应思考（${effort}）`:capability.offType==='between_tools'?'关闭前置思考':'关闭思考'};
+ const body={thinking:{type:enabled?'enabled':'disabled'}};
+ if(enabled&&capability.efforts.length)body.reasoning_effort=capability.efforts.includes(config.reasoningEffort)?config.reasoningEffort:capability.efforts[0];
+ return {body,label:enabled?`思考开启${body.reasoning_effort?`（${body.reasoning_effort}）`:''}`:'关闭思考'};
+}
+export function safeDetail(value,config={}){
+ let text=String(value||'');
+ for(const secret of [config.apiKey,config.engineToken])if(secret)text=text.split(secret).join('[REDACTED]');
+ return text.replace(/Bearer\s+[^\s"'<>]+/gi,'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,3000);
+}
+export function modelTargets(targets,config={}){
+ return filterReviewTargets(targets,config).map(t=>({target_id:t.target_id,start:t.start,end:t.end,surface:t.surface,context:t.context,...(t.adjacent_context?{adjacent_context:t.adjacent_context}:{}),...(t.morphology?{morphology:t.morphology}:{}),...(t.pos_conflict?{pos_conflict:true}:{}),...(t.proper_noun===true?{proper_noun:true}:{}),...(t.dictionary_person_name===true?{dictionary_person_name:true}:{}),...(Array.isArray(t.verified_person_hanja)&&t.verified_person_hanja.length?{verified_person_hanja:t.verified_person_hanja}:{}),...(t.dictionary_name_homograph===true?{dictionary_name_homograph:true}:{}),...(t.suspected_person_name===true?{suspected_person_name:true}:{}),...(t.experimental_hanja_audit===true?{experimental_hanja_audit:true}:{}),...(t.experimental_loanword_audit===true?{experimental_loanword_audit:true}:{}),...(config.smartSegmentation===true?{repair_context:t.repair_context,repair_sentence_key:t.repair_sentence_key,original_target_id:t.original_target_id,...(t.scan_only?{scan_only:true}:{})}:{}),options:t.options.map(o=>({choice_id:o.choice_id,type:o.type,replacement:o.replacement,entry_id:o.entry_id,definitions:o.definitions,...(o.written_form?{written_form:o.written_form}:{}),...(o.part_of_speech?{part_of_speech:o.part_of_speech}:{}),...(o.subject_category?{subject_category:o.subject_category}:{}),...(o.semantic_category?{semantic_category:o.semantic_category}:{}),...(Array.isArray(o.segments)?{segments:o.segments}:{})}))}));
+}
+export async function reviewTargets(config,targets,signal){
+ if(!config.enableModelReview || !targets.length)return {accepted:[],unresolved:targets,errors:[]};
+ let pending=targets,accepted=[],errors=[];
+ const notify=event=>config.onDiagnostic?.({...event,message:safeDetail(event.message,config),detail:safeDetail(event.detail,config)});
+ const thinking=thinkingSettings(config);
+ // Manual input has its own validation and retry UI. API requests adaptively
+ // reduce target count after an incomplete response, timeout, or network drop.
+ const manual=config.manualReview===true,smart=config.smartSegmentation===true;
+ const maxRequests=manual?2:smart?4:Math.min(16,Math.max(8,Math.ceil(targets.length/96)*3));
+ let windowSize=targets.length,failStreak=0;
+ for(let attempt=0;attempt<maxRequests && pending.length;attempt++){
+  signal?.throwIfAborted();
+  const current=manual||smart?pending:pending.slice(0,windowSize);
+  config.onPreview?.([]);
+  notify({stage:'request',level:'info',attempt:attempt+1,model:config.model,thinking:thinking.label,
+   message:`模型审核第 ${attempt+1}/${maxRequests} 次请求：本次 ${current.length} 个，尚余 ${pending.length} 个；${thinking.label}`});
+  try {
+   const wire=modelTargets(current,config);
+   const response=await (config.request || requestChoices)({...config,attempt:attempt+1},wire,signal);
+   const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
+   // In segmentation mode a successfully validated repair owns its old
+   // targets. Validate repairs BEFORE requiring ordinary results; an invalid
+   // repair never suppresses the original target or its dictionary choice.
+   const repair=config.smartSegmentation===true?
+     validateSegmentationRepairs(wire,response,config):{accepted:[],rejected:[]};
+   const retired=new Set(repair.accepted.flatMap(r=>r.old_target_ids));
+   const active=config.smartSegmentation===true?
+     current.filter(t=>!t.scan_only&&!retired.has(t.target_id)):current;
+   const known=new Set(current.map(t=>t.target_id));
+   const badId=config.smartSegmentation===true&&
+     (!Array.isArray(response?.results)||response.results.some(row=>
+       !row||typeof row.t!=='string'||!known.has(row.t)));
+   const choiceResponse=config.smartSegmentation===true&&!badId?
+     {...response,results:response.results.filter(row=>!retired.has(row.t)&&
+       !current.some(t=>t.scan_only&&t.target_id===row.t))}:response;
+   const result=badId?
+     {accepted:[],unresolved:active,experimentalAccepted:0,experimentalRejected:0}:
+     experimental?validateExperimentalChoices(active,choiceResponse,config):validateChoices(active,choiceResponse,config);
+   accepted.push(...result.accepted);
+   const incomplete=new Set(result.unresolved.map(t=>t.target_id));
+   const submitted=new Set(current.map(t=>t.target_id));
+   pending=pending.filter(t=>!submitted.has(t.target_id)||incomplete.has(t.target_id));
+   await config.onAccepted?.(result.accepted);
+   if(result.accepted.length||repair.accepted.length)failStreak=0;
+   else failStreak++;
+   if(!manual&&!smart&&incomplete.size)
+    windowSize=Math.max(1,Math.ceil(current.length/2));
+   if(config.smartSegmentation===true){
+    await config.onRepairs?.(repair.accepted);
+    config.onRepairRejected?.(repair.rejected.length);
+    const corrected=repair.accepted.filter(r=>r.offset_corrected===true).length;
+    config.onRepairOffsetCorrected?.(corrected);
+    if(repair.accepted.length||repair.rejected.length)
+     notify({stage:'segmentation',level:repair.rejected.length?'warning':'info',
+      message:`本批分词修复：采纳 ${repair.accepted.length} 项，安全拒绝 ${repair.rejected.length} 项；唯一匹配纠正偏移 ${corrected} 项。`,
+      detail:repair.rejected.length?JSON.stringify(repair.rejected.slice(0,30)):''});
+   }
+   config.onPreview?.([]);
+   if(experimental)notify({stage:'experimental',level:result.experimentalRejected?'warning':'info',message:`单次回复：直接词源标注 ${result.experimentalAccepted} 项、拒绝无效直接词源 ${result.experimentalRejected} 项。`,detail:result.experimentalRejected?JSON.stringify({reasons:result.rejectionCounts,samples:result.rejectionSamples}):''});
+   notify({stage:'response',level:pending.length?'warning':'info',message:`模型返回：采纳 ${result.accepted.length} 项，未解决 ${pending.length} 项`,detail:pending.length?JSON.stringify(response):''});
+  }catch(error){
+   // A stream can be interrupted after many COMPLETE, individually valid
+   // t/c objects. Keep those decisions and retry only the missing targets.
+   // Never accept an unfinished row, duplicate ID or an unchecked literal.
+   if(!signal?.aborted&&Array.isArray(error.partialAccepted)&&error.partialAccepted.length){
+    const stillPending=new Map(pending.map(t=>[t.target_id,t]));
+    const committed=[],seen=new Set();
+    for(const row of error.partialAccepted){
+     const id=row?.target?.target_id;
+     if(!stillPending.has(id)||seen.has(id)||!row?.option)continue;
+     seen.add(id);committed.push({target:stillPending.get(id),option:row.option});
+    }
+    if(committed.length){
+     accepted.push(...committed);
+     pending=pending.filter(t=>!seen.has(t.target_id));
+     await config.onAccepted?.(committed);
+     notify({stage:'partial',level:'warning',message:`API 流中断：已安全保留 ${committed.length} 条完整有效答案；其余 ${pending.length} 条仍待重试。`});
+    }
+   }
+   config.onPreview?.([]);
+   if(signal?.aborted)throw error;
+   const message=error.name==='TimeoutError'?'模型请求超时；已保留本地结果':error instanceof TypeError?'模型网络请求失败；请检查接口地址、API 域名权限与网络':error.message;
+   const diagnostic={stage:'error',level:'error',attempt:attempt+1,message:safeDetail(message,config),detail:safeDetail(error.detail,config),permanent:error.permanent===true};
+   errors.push(diagnostic);notify(diagnostic);
+   if(error.permanent)break;
+   failStreak++;
+   if(!manual&&!smart&&current.length>1){
+    windowSize=Math.max(1,Math.ceil(current.length/2));
+    notify({stage:'retry',level:'warning',attempt:attempt+1,
+     message:`请求失败，下一次缩小到最多 ${windowSize} 个目标，已完成答案不会重发。`});
+   }
+   if(failStreak>=5||current.length===1&&failStreak>=3)break;
+   const delay=config.request?0:Math.min(6000,750*2**Math.min(failStreak,3));
+   if(delay){await new Promise(resolve=>setTimeout(resolve,delay));signal?.throwIfAborted();}
+  }
+ }
+ if(pending.length)notify({stage:'incomplete',level:'warning',
+  message:`仍有 ${pending.length} 个审核目标未完成。已保留所有有效答案，不能将本轮视为完整成功。`});
+ return {accepted,unresolved:pending,errors};
+}
+async function requestChoices(config,targets,signal){
+ const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
+ const native=provider==='openai'||provider==='anthropic';
+ const guard=requestTimeoutGuard({signal,
+  hardMs:config.timeoutMs || 600000,
+  idleMs:config.stream===true?180000:(config.timeoutMs||600000)});
+ const requestSignal=guard.signal;
+ const {payload,stats:payloadStats}=buildReviewPayload(config.context,targets,config);
+ config.onDiagnostic?.({stage:'request',level:'info',message:`共享请求：${payloadStats.targets} 个词，${payloadStats.sentences} 份句子，${payloadStats.candidates} 个候选；用户输入 ${payloadStats.legacyUserBytes} → ${payloadStats.userBytes} 字节。`});
+ let body={model:config.model,messages:[
+  {role:'system',content:buildReviewInstructions(config)},
+  {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
+ if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
+ const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
+ const requestedCap=config.apiOutputTokenLimit??config.batchBudget?.outputLimit;
+ const requestBudget=describeBatchBudget(config.context||'',targets,{
+  tier:config.batchContextTier||'1m',wireIds:true,manual:false,
+  reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,
+  experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,
+  smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,
+  apiOutputTokenLimit:requestedCap,
+  matchManualOutputBudget:config.matchManualOutputBudget===true
+ });
+ const outputTokenLimit=normalizeOutputTokenLimit(requestBudget.requestedOutputTokens,false);
+ if(responses){
+  const {messages,reasoning_effort}=body;
+  body={model:config.model,input:messages,store:false,
+   text:{format:{type:'json_object'}},max_output_tokens:outputTokenLimit,
+   ...(reasoning_effort?{reasoning:{effort:reasoning_effort}}:{})};
+ }else if(provider==='anthropic'){
+  const {messages,thinking,output_config}=body;
+  body={model:config.model,system:messages[0].content,messages:messages.slice(1),
+   max_tokens:outputTokenLimit,...(thinking?{thinking,output_config}:{})};
+ }else if(provider==='openai'||provider==='muse'){
+  body.max_completion_tokens=outputTokenLimit;
+ }else{
+  body.max_tokens=outputTokenLimit;
+ }
+ if(config.stream===true){body.stream=true;if(['qwen','deepseek'].includes(provider))body.stream_options={include_usage:true};}
+ const auth=provider==='anthropic'?{'x-api-key':config.apiKey||'','anthropic-version':'2023-06-01'}:config.apiKey?(provider==='mimo'?{'api-key':config.apiKey}:{Authorization:`Bearer ${config.apiKey}`}):{};
+ const logger=config.logger||requestLogger;
+ const started=Date.now(),secrets=[config.apiKey,config.engineToken].filter(Boolean);
+ const headers={'Content-Type':'application/json',...auth};
+ const record={startedAt:new Date(started).toISOString(),endpoint:config.endpoint,provider,model:config.model,operationId:config.operationId,attempt:config.attempt||1,stream:body.stream===true,payloadStats,batchBudget:{...config.batchBudget,requestOutputTokens:outputTokenLimit},headers,body};
+ const logId=await logger.start(record,secrets);
+ let raw='',rawTruncated=false,status,firstByteMs,metadata={},responseHeaders={},latestPreview=[];
+ const onRaw=chunk=>{if(chunk)guard.activity();if(chunk&&firstByteMs===undefined)firstByteMs=Date.now()-started;
+   // Full wire response is retained only when the user enables request logging.
+   // A disabled logger still uses the old bounded diagnostic buffer.
+   if(logId){raw+=chunk;return;}
+   if(raw.length+chunk.length>1_500_000)rawTruncated=true;
+   raw+=chunk.slice(0,Math.max(0,1_500_000-raw.length));};
+ const onMetadata=data=>{if(data.id)metadata.id=data.id;if(data.usage)metadata.usage={...metadata.usage,...data.usage};if(data.stop_reason)metadata.finishReason=data.stop_reason;if(data.choices?.[0]?.finish_reason)metadata.finishReason=data.choices[0].finish_reason;};
+ try{
+  const response=await fetch(config.endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:requestSignal});
+  guard.activity();
+  status=response.status;responseHeaders=Object.fromEntries(['content-type','x-request-id','request-id','retry-after'].map(name=>[name,response.headers.get(name)]).filter(([,v])=>v));
+  if(!response.ok){const detail=await response.text();onRaw(detail);const error=Error(`模型 API HTTP ${response.status}`);error.detail=detail;error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
+  // Streamed literal origins are validated per complete result before preview.
+  const previewCallback=accepted=>{latestPreview=accepted;config.onPreview?.(accepted);};
+  const preview=(config.experimentalHanja||config.experimentalLoanword)?
+    experimentalChoicePreviewParser(targets,config,previewCallback):
+    choicePreviewParser(targets,previewCallback);
+  const content=await readModelContent(response,{protocol:responses?'responses':provider==='anthropic'?'anthropic':'chat',signal:requestSignal,maxContentChars:Math.min(16_000_000,Math.max(2_000_000,outputTokenLimit*8)),onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
+  let result;try{if(typeof content!=='string'||!content.trim())throw Error('empty');result=JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}
+  catch{const error=Error('模型最终回复为空、非 JSON 或不符合候选 ID 协议');error.detail=content||raw;throw error;}
+  const checked=(config.experimentalHanja||config.experimentalLoanword)?validateExperimentalChoices(targets,result,config):validateChoices(targets,result,config);
+  await logger.finish(logId,{status,responseHeaders,finishedAt:new Date().toISOString(),elapsedMs:Date.now()-started,firstByteMs,validation:{accepted:checked.accepted.length,unresolved:checked.unresolved.length},response:{raw,truncated:rawTruncated,parsed:result,...metadata}},secrets);
+  return result;
+ }catch(error){
+  // Only completed and validated stream rows can be salvaged. Request-level
+  // failure still remains visible in diagnostics and logs; this is not
+  // interpreted as a successful full model reply.
+  if(latestPreview.length)error.partialAccepted=latestPreview;
+  await logger.finish(logId,{status,responseHeaders,finishedAt:new Date().toISOString(),elapsedMs:Date.now()-started,firstByteMs,response:{raw,truncated:rawTruncated,...metadata},error:{name:error.name,message:error.message,detail:error.detail||''},partialRows:latestPreview.length},secrets);
+  throw error;
+ }finally{
+  guard.cleanup();
+ }
+}

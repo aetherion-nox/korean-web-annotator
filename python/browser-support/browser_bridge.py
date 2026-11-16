@@ -1,0 +1,218 @@
+"""Host adaptation only: unchanged Python rules and importer run inside Pyodide."""
+import asyncio
+import contextlib
+import io
+import json
+import os
+from pathlib import Path
+import runpy
+import sys
+import types
+
+ROOT = Path(__file__).resolve().parents[2]
+DB_PATH = '/dictionary/hanja_dict.db'
+_engine = None
+_stats_cache = {}
+_progress_callback = None
+
+def _report_progress(detail):
+    """Post only confirmed interpreter milestones to the worker host."""
+    if _progress_callback is None:return
+    try:_progress_callback(json.dumps(detail,ensure_ascii=False))
+    except Exception:pass  # UI telemetry must never change lexical analysis.
+
+async def _to_thread(func, /, *args, **kwargs):
+    return func(*args, **kwargs)
+
+def configure(tokenizer, project_root=None, database=DB_PATH, progress_callback=None):
+    """Install a synchronous JSON-producing Kiwi WASM callback in this worker."""
+    global _engine, ROOT, DB_PATH, _progress_callback
+    _progress_callback = progress_callback
+    if project_root is not None: ROOT = Path(project_root)
+    DB_PATH = database
+    if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
+    import kiwipiepy
+    kiwipiepy.configure(tokenizer)
+    asyncio.to_thread = _to_thread
+    upstream = str(ROOT / 'backend' / 'upstream')
+    if upstream not in sys.path:
+        sys.path.insert(0, upstream)
+    # The native bootstrap launches subprocesses. The browser only needs its
+    # source-path setup; the unchanged CLI is invoked below in this interpreter.
+    bootstrap = types.ModuleType('backend.bootstrap')
+    bootstrap.ensure_environment = lambda: None
+    sys.modules['backend.bootstrap'] = bootstrap
+    _engine = None
+    _stats_cache.clear()
+
+async def _get_engine(db_path=None):
+    global _engine
+    db_path = db_path or DB_PATH
+    from backend.analysis import Engine
+    if _engine is None or str(_engine.db_path) != str(Path(db_path)):
+        _engine = Engine(db_path)
+    await _engine.initialize()
+    return _engine
+
+async def analyze(text, modes, db_path=None, progress=None):
+    if isinstance(modes, str): modes = json.loads(modes)
+    return await (await _get_engine(db_path)).analyze(text, modes, progress=progress)
+
+async def status(db_path=None):
+    # Database state does not require a tokenizer or model initialization.
+    import sqlite3
+    from contextlib import closing
+    from app.database import validate_database
+    from app.services.dictionary import DictionaryService
+    from backend.analysis import ENGINE_VERSION
+    database = Path(db_path or DB_PATH).resolve()
+    validate_database(database)
+    with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True)) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute('SELECT sha256,source_filename,data_version,total_entries,total_senses FROM import_metadata LIMIT 1').fetchone()
+        if not row or not row['sha256']:
+            raise ValueError('Database lacks dictionary import metadata; use the original dictionary importer.')
+        metadata = {key:row[key] for key in row.keys() if key!='sha256'}
+        fingerprint = row['sha256']
+    def signature(path):
+        try:
+            info = path.stat()
+            return (info.st_size, info.st_mtime_ns, info.st_ctime_ns) if info.st_size else None
+        except FileNotFoundError:
+            return None
+    def snapshot():
+        return (str(database), fingerprint, signature(database), signature(Path(str(database)+'-wal')))
+    cache_key = snapshot()
+    if cache_key not in _stats_cache:
+        statistics = await DictionaryService(str(database)).get_stats()
+        _stats_cache.clear()
+        cache_key = snapshot()
+        _stats_cache[cache_key] = statistics
+    return {'ready':True,'engine_version':ENGINE_VERSION,'dictionary_fingerprint':fingerprint,
+            'dictionary_metadata':metadata,'dictionary':_stats_cache[cache_key],'runtime':'browser'}
+
+async def import_database(source, db_path=None):
+    """Validate a completed original-importer DB before atomically replacing it."""
+    global _engine
+    import sqlite3
+    from contextlib import closing
+    source = Path(source).resolve()
+    destination = Path(db_path or DB_PATH).resolve()
+    result = await status(source)
+    with closing(sqlite3.connect(source.as_uri()+'?mode=ro',uri=True)) as connection:
+        if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
+            raise ValueError('Dictionary database integrity check failed.')
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    os.replace(source,destination)
+    _engine = None
+    _stats_cache.clear()
+    return {'imported':True,**result}
+
+async def tokens(text, db_path=None):
+    from dataclasses import asdict
+    return [asdict(t) for t in await (await _get_engine(db_path)).tokens(text)]
+
+class _Capture(io.StringIO):
+    def reconfigure(self, **kwargs): pass
+
+def import_dictionary(zip_path, db_path=None):
+    """Run the pinned original importer; its staging preserves a prior DB on error."""
+    global _engine
+    db_path = db_path or DB_PATH
+    source = ROOT / 'backend' / 'upstream' / 'scripts' / 'import_dictionary.py'
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    old_argv = sys.argv[:]
+    old_environment = os.environ.get('HANJA_DB_PATH')
+    capture = _Capture()
+    try:
+        sys.argv = [str(source),str(zip_path)]
+        os.environ['HANJA_DB_PATH'] = str(Path(db_path).resolve())
+        with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture):
+            try: runpy.run_path(str(source),run_name='__main__')
+            except SystemExit as exc:
+                if exc.code not in (None,0):
+                    raise RuntimeError('Dictionary import failed:\n'+capture.getvalue()[-12000:]) from exc
+        _engine = None
+        _stats_cache.clear()
+        return {'imported':True, 'log':capture.getvalue()[-12000:]}
+    finally:
+        sys.argv = old_argv
+        if old_environment is None: os.environ.pop('HANJA_DB_PATH',None)
+        else: os.environ['HANJA_DB_PATH'] = old_environment
+
+def compact_analysis_wire(result):
+    """Remove repeated full-paragraph context only from the browser JSON wire."""
+    if not isinstance(result,dict) or not isinstance(result.get('targets'),list):
+        return result
+    return {**result,'targets':[
+        {key:value for key,value in target.items() if key!='context'}
+        for target in result['targets']]}
+
+async def analyze_json(text, modes, db_path=None): return json.dumps(await analyze(text,modes,db_path),ensure_ascii=False)
+async def status_json(db_path=None): return json.dumps(await status(db_path),ensure_ascii=False)
+def import_dictionary_json(zip_path, db_path=None): return json.dumps(import_dictionary(zip_path,db_path),ensure_ascii=False)
+
+async def request(raw):
+    message = json.loads(raw) if isinstance(raw,str) else raw
+    action = message.get('action')
+    database = message.get('db_path', DB_PATH)
+    if action == 'status' and not Path(database).is_file():
+        result = {'ready':False,'runtime':'browser','dictionary':None}
+    elif action in ('status','initialize'):
+        result = await status(database)
+    elif action == 'warmup':
+        await _get_engine(database)
+        result = {'ready':True,'preloaded':True}
+    elif action == 'warmup':
+        await _get_engine(database)
+        result = {'ready':True,'preloaded':True}
+    elif action == 'analyze':
+        text=message['text']
+        _report_progress({'stage':'analysis-paragraph','event':'start','batchIndex':1,'batchTotal':1,
+                          'sentenceCharacters':len(text)})
+        result = compact_analysis_wire(await analyze(
+            text,message.get('modes',{}),database,
+            progress=lambda detail:_report_progress({'batchIndex':1,'batchTotal':1,**detail})))
+        _report_progress({'stage':'analysis-paragraph','event':'done','batchIndex':1,'batchTotal':1,
+                          'sentenceCharacters':len(text)})
+    elif action == 'analyze-batch':
+        texts=message.get('texts')
+        if (not isinstance(texts,list) or not 1<=len(texts)<=12 or
+                any(not isinstance(text,str) or len(text)>20000 for text in texts) or
+                sum(len(text) for text in texts)>48000):
+            raise ValueError('Invalid bounded local paragraph batch')
+        engine=await _get_engine(database)
+        # Only one analysis request runs at a time in the browser worker.
+        # One SQLite connection across this batch avoids opening it on
+        # every definition, proper-name and candidate query.
+        async def run_batch():
+            results=[]
+            for index,text in enumerate(texts,1):
+                _report_progress({'stage':'analysis-paragraph','event':'start',
+                                  'batchIndex':index,'batchTotal':len(texts),
+                                  'sentenceCharacters':len(text)})
+                detail=lambda event,idx=index:_report_progress(
+                    {'batchIndex':idx,'batchTotal':len(texts),**event})
+                analyzed=await engine.analyze(text,message.get('modes',{}),progress=detail)
+                results.append(compact_analysis_wire(analyzed))
+                _report_progress({'stage':'analysis-paragraph','event':'done',
+                                  'batchIndex':index,'batchTotal':len(texts),
+                                  'sentenceCharacters':len(text),
+                                  'batchDoneUnique':index})
+            return results
+        if engine.dictionary is not None:
+            async with engine.dictionary.reuse_read_connection():
+                result=await run_batch()
+        else:
+            result=await run_batch()
+    elif action == 'import-db':
+        result = await import_database(message['path'],database)
+    elif action == 'import':
+        result = import_dictionary(message.get('zip_path',message.get('path')),database)
+        result.update(await status(database))
+    else:
+        raise ValueError('Unknown browser engine action: '+str(action))
+    return json.dumps(result,ensure_ascii=False)
+
+async def initialize(db_path=None):
+    return await status(db_path or DB_PATH)

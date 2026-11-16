@@ -1,0 +1,40 @@
+{
+  "engine": {
+    "package": "kiwi-nlp",
+    "version": "0.24.1",
+    "url": "https://registry.npmjs.org/kiwi-nlp/-/kiwi-nlp-0.24.1.tgz",
+    "integrity": "sha512-vQ8xmThxDoKOguKixaGR+pwP9cv0RpDbLGue+BPU5hLppJjr4t5PT9v07HRCDCiEQknWl1fIdZ/6wSAIbxfgUw=="
+  },
+  "model": {
+    "release": "v0.24.1",
+    "url": "https://github.com/bab2min/Kiwi/releases/download/v0.24.1/kiwi_model_v0.24.1_base.tgz",
+    "digest": "sha256:50d163e1af817444ef21f7ec5ea07ef69fb347282d57a6b49260f2039d4dc346"
+  },
+  "bundled_files": {
+    "runtime/kiwi/build/kiwi-wasm.d.ts": "5140ae5199c261211ec95aa7946670adac7845dba3805212f0e0070bb0db76b6",
+    "runtime/kiwi/build/kiwi-wasm.js": "a23768a18b24dcbfd6a70bb4475ecaff6ff239d7f30d849211ea7954eda5f988",
+    "runtime/kiwi/build-args.d.ts": "a269c529770262c85f4a2e9f8bd619335d6783c19b54903c7f84a836feff516a",
+    "runtime/kiwi/build-args.js": "49bfbc0d7089c32ec4cea2d67165ee31363737dabd72a6bfa3396bfd0b79e144",
+    "runtime/kiwi/index.d.ts": "bc6639f3788a6de35e40777079ec6bae0ea9de98bbfffd00ae2e7114a937d389",
+    "runtime/kiwi/index.js": "bc6639f3788a6de35e40777079ec6bae0ea9de98bbfffd00ae2e7114a937d389",
+    "runtime/kiwi/kiwi-api.d.ts": "060c5f651c822828ead52f12c2a3b21a27d890ca0b9b960984125d2fa689d07e",
+    "runtime/kiwi/kiwi-api.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+    "runtime/kiwi/kiwi-builder.d.ts": "d444ffb54d4d26b339883ad0042b7cb9168b2ed191e1804c41430c002076068b",
+    "runtime/kiwi/kiwi-builder.js": "9a4e5fbdfce29e7a7eb7ab5d2a366405d804da4ee49a826d9ccc924ff636cb74",
+    "runtime/kiwi/kiwi-wasm.wasm": "21acf80b3af81a17f975a1d3fcb0d2ab9b499acd72283f9cc6fd09b96110a425",
+    "runtime/kiwi/kiwi.d.ts": "53e6a1e18bc90843d72fa0b641f17c221dcbfa2f7ebb33c38dfcb72595de41c5",
+    "runtime/kiwi/kiwi.js": "e66c96d0cf120db2eff475484e1b93561e7b9fe64ebea67df0c7b92230c7118e",
+    "runtime/kiwi/package.json": "8f739ba23636a56022cec381bfeae9f0b6807912bdf373d1930c2ed8352ddf9e",
+    "runtime/kiwi/util.d.ts": "360869ad1da7009600cb0a601c27cd38a4807ceaa695897cb06869be55307d63",
+    "runtime/kiwi/util.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+    "runtime/models/combiningRule.txt": "4f78771daa3dd8a52aa0b5c8824396578ece8e8bbaa11cf3add82721b046bc15",
+    "runtime/models/cong.mdl": "5f64105e45f04e5313f41c0ff1db5fe629780c8076c4a6fd3b1b2cf78c2cc934",
+    "runtime/models/default.dict": "d4293e44b2588d0c3aabbce607a0f41ad3534abd31b34139847b127254e01549",
+    "runtime/models/dialect.dict": "bb6f0ab37dbfcc0fd33dc679121218d24725ae438f31bb362f9b24703e93cda2",
+    "runtime/models/extract.mdl": "a0c92ffc051e43ae497845cdb8d4c8b9e2f359893cb55c67279c76d1d531ee17",
+    "runtime/models/multi.dict": "e9eff7712d163b214c750333a5d388ab77b50ec386ae55b360babcd24c0c3195",
+    "runtime/models/nounchr.mdl": "4b687e36836dd60dcb7addcfcf369ac082b339bab76549574ac1ce2b7ccd6836",
+    "runtime/models/sj.morph": "d0af27b3863799cc2058f66c8058cb2bc0d16e8ae0daaf42c7739b4e375523d7",
+    "runtime/models/typo.dict": "aa15e48fcd32886441fc1ff9719a3109d3192e91d4b67efbd64260610d68322d"
+  }
+}

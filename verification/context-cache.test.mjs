@@ -1,0 +1,11 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const text='국제';const target={target_id:'t0',start:0,end:2,surface:text,options:[{choice_id:'keep',type:'keep'}]};
+const calls=[];
+globalThis.__cacheTest={analyzeLocal(){},engineStatus(){},projectAnnotation:()=>[],validateAnalysis:(_text,a)=>a,reviewTargets:async(config,targets)=>{calls.push(config.context);return {accepted:targets.map(target=>({target,option:{choice_id:'keep',type:'keep'}}))}},validateChoices:(targets,result)=>({accepted:result.results.map(r=>({target:targets.find(t=>t.target_id===r.target_id),option:{choice_id:r.choice_id,type:'keep'}})),unresolved:[]}),safeDetail:x=>x};
+let s=readFileSync(new URL('../source/annotation-pipeline.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
+s='const {analyzeLocal,engineStatus,projectAnnotation,validateAnalysis,reviewTargets,validateChoices,safeDetail}=globalThis.__cacheTest;\n'+s;
+const {runSentencePipeline}=await import('data:text/javascript;base64,'+Buffer.from(s).toString('base64'));
+const cache=new Map(),identity={engine_version:'test',dictionary_fingerprint:'dict'},opts={enabled:true,cache,status:async()=>identity,analyze:async()=>({...identity,annotations:[],targets:[target],stats:{}}),modelConfig:async()=>({endpoint:'test',model:'test'})};
+async function run(context,extra={}){await runSentencePipeline({operationId:'test',sentences:[{id:'s0',text}],modes:{hanja:true},context,...extra},()=>{},opts)}
+test('same sentence and context reuse model cache; changed surrounding context does not',async()=>{await run('段落甲');assert.equal(calls.length,1);await run('段落甲');assert.equal(calls.length,1);await run('段落乙');assert.equal(calls.length,2);assert.equal(calls[1],'段落乙');await run('段落乙',{forceRegenerate:true});assert.equal(calls.length,3)});
+test('oversized-context fallback is cached against the context actually sent',async()=>{cache.clear();calls.length=0;const huge='上下文'.repeat(120000);await run(huge);assert.equal(calls[0],text);await run(huge);assert.equal(calls.length,2,'full context must not match fallback-only cache');await run(text);assert.equal(calls.length,2,'identical effective context may reuse fallback result')});
