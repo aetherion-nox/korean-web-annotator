@@ -1,16 +1,24 @@
-name: Web Reviewed-Range Merge Regression v1.0.1
+name: Verify and Publish Web Annotator v1.0.1
 
 on:
   push:
     branches:
       - fix/web-v1.0.1-model-reviewed-keep-merge
+      - main
+    paths:
+      - content.js
+      - paragraph-plan.js
+      - manifest.json
+      - package.json
+      - tests/model-reviewed-local-merge.test.mjs
+      - .github/workflows/web-reviewed-merge-v1.0.1.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: web-keep-reviewed-v1.0.1
+  group: web-reviewed-keep-merge-v1.0.1-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,7 +37,7 @@ jobs:
           node --check content.js
           node --check paragraph-plan.js
           node --check tests/model-reviewed-local-merge.test.mjs
-      - name: Run focused web normal-results and preview rollback tests
+      - name: Verify reviewed-range source and preview rollback behavior
         run: |
           node --test tests/model-reviewed-local-merge.test.mjs
           node --test tests/paragraph-context.test.mjs tests/recovery-preview-commit.test.mjs
@@ -37,5 +45,72 @@ jobs:
         run: python3 -m pip install --user aiosqlite
       - name: Restore exact published Kiwi/Pyodide runtime
         run: python3 restore_distribution.py
-      - name: Full regression suite
+      - name: Full inherited regression suite
         run: npm test
+      - name: Build verified v1.0.1 Chrome extension ZIP from original v1.0.0 package
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import hashlib, json, io, zipfile
+          baseurl="https://github.com/aetherion-nox/korean-web-annotator/releases/download/v1.0.0/Korean-Web-Annotator-v1.0.0.zip"
+          expected="a5b01f812feb99d09b60ccf83b3cd3a58df62094488291503dd5065142a4526b"
+          old_bytes=urlopen(baseurl,timeout=180).read()
+          assert hashlib.sha256(old_bytes).hexdigest()==expected,"original release ZIP failed SHA256 check"
+          target=Path("Korean-Web-Annotator-v1.0.1.zip")
+          replacements={p:Path(p).read_bytes() for p in ("manifest.json","content.js","paragraph-plan.js")}
+          assert json.loads(replacements["manifest.json"])["version"]=="1.0.1"
+          with zipfile.ZipFile(io.BytesIO(old_bytes)) as src:
+              entries=src.infolist()
+              manifests=[i.filename for i in entries if i.filename=="manifest.json" or i.filename.endswith("/manifest.json")]
+              assert len(manifests)==1,manifests
+              prefix=manifests[0][:-len("manifest.json")]
+              assert json.loads(src.read(manifests[0]))["version"]=="1.0.0"
+              for p in replacements: assert prefix+p in src.namelist(),p
+              with zipfile.ZipFile(target,"w") as out:
+                  for info in entries:
+                      relative=info.filename.removeprefix(prefix)
+                      data=replacements.get(relative,src.read(info.filename)) if not info.is_dir() else b""
+                      out.writestr(info,data)
+          with zipfile.ZipFile(target) as check:
+              assert check.testzip() is None
+              names=set(check.namelist())
+              assert all(prefix+p in names and check.read(prefix+p)==replacements[p] for p in replacements)
+              assert json.loads(check.read(prefix+"manifest.json"))["version"]=="1.0.1"
+              assert any(x.startswith(prefix+"runtime/") for x in names)
+              assert any(x.startswith(prefix+"icons/") for x in names)
+              print("VERIFIED NEW WEB EXTENSION",target,target.stat().st_size,
+                    "SHA256",hashlib.sha256(target.read_bytes()).hexdigest())
+          PY
+      - name: Download unchanged dictionary ZIP from official v1.0.0 release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download v1.0.0 -R ${{ github.repository }} --pattern hanja_dict.zip --clobber
+      - name: Publish verified v1.0.1 on the official public repository
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view v1.0.1 -R "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "v1.0.1 release already exists; not overwriting artifacts."
+            exit 0
+          fi
+          cat > release-notes.txt <<'NOTES'
+          ## Korean Web Annotator v1.0.1 — Model-reviewed KEEP/null merge fix
+
+          Targeted maintenance update to the v1.0.0 official Chrome extension.
+
+          - When the model explicitly selects KEEP, JSON null, or a non-conversion sense, the already-reviewed source text now overrides conflicting local annotations, even without new Hanja/loanword markup.
+          - Verify original reviewed ranges against the source paragraph and selection before suppressing any local conversion.
+          - Keep unrelated local annotations outside the reviewed span unchanged.
+          - Preserve committed model review decisions while rolling back cancelled SSE previews, and promote validated previews safely after disconnections.
+          - Keep the original v1.0.0 dictionary engine, local models, UI, manual/API review and ZIP contents unchanged except for the corrected source files and version.
+          - Includes the unchanged hanja_dict.zip dictionary archive and the newly verified Chrome-extension ZIP.
+
+          Install by unzipping Korean-Web-Annotator-v1.0.1.zip and reloading the extension from chrome://extensions. Refresh open pages after extension upgrade.
+          NOTES
+          gh release create v1.0.1 Korean-Web-Annotator-v1.0.1.zip hanja_dict.zip \
+            -R "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" \
+            --title "Korean Web Annotator v1.0.1" --notes-file release-notes.txt --latest
