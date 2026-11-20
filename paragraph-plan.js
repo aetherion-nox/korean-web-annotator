@@ -45,7 +45,11 @@ export function createParagraphPlan(entries,readSource,blockSelector){
   context:[...groups.values()].map(g=>g.text).join('\n'),
   projectResult(item,{source='local',provisional=false}={}){
    const chunk=byId.get(item.id);if(!chunk)throw Error('未知段落结果。');const g=chunk.group;
-   const shifted={annotations:(item.annotations||[]).map(a=>({...a,start:a.start+chunk.start,end:a.end+chunk.start})),reviewed:(item.reviewed||[]).map(r=>({...r,start:r.start+chunk.start,end:r.end+chunk.start}))};
+   const validReviewed=r=>Number.isInteger(r.start)&&Number.isInteger(r.end)&&
+    r.start>=0&&r.end>r.start&&r.end<=chunk.end-chunk.start&&
+    (r.surface===undefined||r.surface===g.text.slice(chunk.start+r.start,chunk.start+r.end));
+   const shifted={annotations:(item.annotations||[]).map(a=>({...a,start:a.start+chunk.start,end:a.end+chunk.start})),
+    reviewed:(item.reviewed||[]).filter(validReviewed).map(r=>({...r,start:r.start+chunk.start,end:r.end+chunk.start}))};
    let results=g.results.get(source);if(!results){results=new Map();g.results.set(source,results);}
    const previous=results.get(item.id);results.set(item.id,{...shifted,start:chunk.start,end:chunk.end,provisional,committed:provisional?previous?.committed:shifted});
    const all=[...results.values()];
