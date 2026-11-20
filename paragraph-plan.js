@@ -51,7 +51,17 @@ export function createParagraphPlan(entries,readSource,blockSelector){
    const all=[...results.values()];
    return g.members.filter(m=>m.start<chunk.end&&m.end>chunk.start).map(m=>({id:m.entry.id,
     annotations:annotationsFor(g,m,all.flatMap(r=>r.annotations)),
-    ...(source==='model'?{committedAnnotations:annotationsFor(g,m,all.flatMap(r=>r.committed?.annotations||[])),hasPreview:all.some(r=>r.provisional&&m.start<r.end&&m.end>r.start),committedReviewed:all.some(r=>r.committed?.reviewed.some(a=>a.start<m.end&&a.end>m.start))}:{}),
+    ...(source==='model'?{
+     committedAnnotations:annotationsFor(g,m,all.flatMap(r=>r.committed?.annotations||[])),
+     // The committed source ranges must be separate from provisional SSE
+     // review spans so cancelling a preview cannot suppress local results.
+     committedReviewedRanges:all.flatMap(r=>r.committed?.reviewed||[]).flatMap(r=>{
+      const a=Math.max(r.start,m.start),b=Math.min(r.end,m.end);
+      return a<b?[{start:a-m.start,end:b-m.start,surface:g.text.slice(a,b)}]:[];
+     }),
+     hasPreview:all.some(r=>r.provisional&&m.start<r.end&&m.end>r.start),
+     committedReviewed:all.some(r=>r.committed?.reviewed.some(a=>a.start<m.end&&a.end>m.start))
+    }:{}),
     reviewed:all.flatMap(r=>r.reviewed).flatMap(r=>{const a=Math.max(r.start,m.start),b=Math.min(r.end,m.end);return a<b?[{start:a-m.start,end:b-m.start,surface:g.text.slice(a,b)}]:[];})}));
   },
   projectBinding(binding,choice){
