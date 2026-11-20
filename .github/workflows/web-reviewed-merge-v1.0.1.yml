@@ -33,6 +33,8 @@ jobs:
         run: |
           node --test tests/model-reviewed-local-merge.test.mjs
           node --test tests/paragraph-context.test.mjs tests/recovery-preview-commit.test.mjs
+      - name: Install Python test requirements
+        run: python3 -m pip install --user aiosqlite
       - name: Restore exact published Kiwi/Pyodide runtime
         run: python3 restore_distribution.py
       - name: Full regression suite
