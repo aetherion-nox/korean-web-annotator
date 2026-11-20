@@ -1,0 +1,39 @@
+name: Web Reviewed-Range Merge Regression v1.0.1
+
+on:
+  push:
+    branches:
+      - fix/web-v1.0.1-model-reviewed-keep-merge
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-keep-reviewed-v1.0.1
+  cancel-in-progress: true
+
+jobs:
+  web-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install JS testing dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Check changed source syntax
+        run: |
+          node --check content.js
+          node --check paragraph-plan.js
+          node --check tests/model-reviewed-local-merge.test.mjs
+      - name: Run focused web normal-results and preview rollback tests
+        run: |
+          node --test tests/model-reviewed-local-merge.test.mjs
+          node --test tests/paragraph-context.test.mjs tests/recovery-preview-commit.test.mjs
+      - name: Restore exact published Kiwi/Pyodide runtime
+        run: python3 restore_distribution.py
+      - name: Full regression suite
+        run: npm test
