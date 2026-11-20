@@ -2442,9 +2442,11 @@
       // Explicit cancel still rolls back unfinished previews as before.
       if(preserveValidatedPreviews){
         entry.committedModelAnnotations=[...(entry.modelAnnotations||[])];
+        entry.committedModelReviewedRanges=[...(entry.modelReviewedRanges||[])];
         entry.committedModelReviewed=entry.modelReviewed===true;
       }else{
         entry.modelAnnotations=entry.committedModelAnnotations||[];
+        entry.modelReviewedRanges=entry.committedModelReviewedRanges||[];
         entry.modelReviewed=entry.committedModelReviewed||false;
       }
       entry.hasPreview=false;const model=entry.modelAnnotations||[];
@@ -2652,14 +2654,23 @@
         }
         if(result.source==='model'){
           entry.modelAnnotations=incoming;
-          entry.modelReviewedRanges=result.smartSegmentation===true?(item.reviewed||[]):[];
-          entry.modelReviewed=Boolean(item.reviewed?.length||incoming.length);
+          // A verified model KEEP/null/nonconversion is authoritative even
+          // without a positive conversion. Validate the original source range
+          // before allowing it to override any earlier local annotation.
+          const validReview=r=>Number.isInteger(r.start)&&Number.isInteger(r.end)&&
+            r.start>=0&&r.end>r.start&&r.end<=entry.text.length&&
+            entry.text.slice(r.start,r.end)===r.surface&&
+            entry.selected.some(sel=>r.start>=sel.start&&r.end<=sel.end);
+          entry.modelReviewedRanges=(item.reviewed||[]).filter(validReview);
+          entry.modelReviewed=Boolean(entry.modelReviewedRanges.length||incoming.length);
           entry.hasPreview=item.hasPreview??result.provisional===true;
           entry.committedModelAnnotations=item.committedAnnotations??incoming;
+          entry.committedModelReviewedRanges=(item.committedReviewedRanges??entry.modelReviewedRanges).filter(validReview);
           entry.committedModelReviewed=item.committedReviewed??entry.modelReviewed;
         }else entry.localAnnotations=incoming;
         const model=entry.modelAnnotations||[];
-        entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];
+        entry.annotations=[...(entry.localAnnotations||[]).filter(a=>
+          ![...model,...(entry.modelReviewedRanges||[])].some(b=>b.start<a.end&&b.end>a.start)),...model];
       }
       if (result.type === 'RESULTS') {
         if(result.source==='local'){
