@@ -177,7 +177,7 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
             span_tokens=[t for t in tokens if start<=t.start and
                          t.start+t.length<=end and t.length>0]
         tag=span_tokens[0].tag if len(span_tokens)==1 else None
-        records=[r for r in all_records if DisambiguationService()._pos_matches(tag,r.get('part_of_speech')) is not False] if tag else all_records
+        records=[r for r in all_records if DisambiguationService()._pos_matches(tag,r.get('part_of_speech')) is not False] if tag and modes.get('reviewPosFilter',True) is not False else all_records
         options=[];mapped=0;signatures=set();unaligned=False;has_mixed=False;origin_kinds=set()
         for record in records:
             raw=record.get('origin_raw')
