@@ -73,6 +73,7 @@ class DisambiguationService:
         is_verbal_context: bool = False,
         quantity: bool = False,
         compatible_tags=None,
+        pos_filter=True,
     ) -> List[CandidateScore]:
         """Score and rank candidates for a given token.
         
@@ -93,7 +94,7 @@ class DisambiguationService:
             # POS incompatibility is a structural rejection, including reviewAll.
             # A lower score must not turn a noun into a predicate candidate.
             effective_tag=next((tag for tag in (compatible_tags or [token_tag]) if tag and self._pos_matches(tag,c.get('part_of_speech')) is True),token_tag)
-            if effective_tag and self._pos_matches(effective_tag, c.get('part_of_speech')) is False:
+            if pos_filter and effective_tag and self._pos_matches(effective_tag, c.get('part_of_speech')) is False:
                 continue
             cs = CandidateScore(
                 entry_id=c.get('entry_id', 0),
@@ -182,14 +183,15 @@ class DisambiguationService:
         return sorted(merged.values(), key=lambda x: x.score, reverse=True)
 
     @staticmethod
-    def has_keep_competitor(candidates):
+    def has_keep_competitor(candidates, pos_filter=True):
         # A matching/unknown-POS native or other non-conversion reading is
         # semantic competition, not a low-scoring failed Hanja candidate.
-        return any(not c.replacement and 'pos_mismatch' not in c.reasons for c in candidates)
+        return any(not c.replacement and (not pos_filter or 'pos_mismatch' not in c.reasons) for c in candidates)
 
     def select_best(
         self,
         scored_candidates: List[CandidateScore],
+        pos_filter=True,
     ) -> Tuple[Optional[CandidateScore], str]:
         """Select the best candidate if confidence is sufficient.
         
@@ -210,10 +212,15 @@ class DisambiguationService:
         scored_candidates = list(ranked.values())
 
         top = scored_candidates[0]
+        # When the user disables POS filtering, a mismatched dictionary sense
+        # remains legitimate competition. Do not auto-apply a seemingly unique
+        # origin before the model can examine all competing senses.
+        if not pos_filter and any('pos_mismatch' in c.reasons for c in scored_candidates):
+            return top, 'ambiguous'
 
         # Generic reliability and POS points only establish a usable spelling.
         # They cannot establish that its meaning wins over a native homograph.
-        if self.has_keep_competitor(scored_candidates) and not any(r.startswith('collocation_match(') for r in top.reasons):
+        if self.has_keep_competitor(scored_candidates, pos_filter=pos_filter) and not any(r.startswith('collocation_match(') for r in top.reasons):
             return top, 'ambiguous'
 
         # Single reliable candidate
