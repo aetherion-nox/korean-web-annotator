@@ -5,15 +5,16 @@ sys.path[:0]=[str(ROOT/'python'),str(ROOT/'python/backend/upstream'),str(ROOT/'p
 from app.services.tokenizer import TokenizerService
 from app.services.converter import ConverterService
 from app.services.disambiguation import DisambiguationService
+from backend.loanwords import collect as collect_loanwords
 
 def tokenizer(raw):
  t=TokenizerService.__new__(TokenizerService);t._available=True;t._tokenize_lock=asyncio.Semaphore(1);t._kiwi=types.SimpleNamespace(tokenize=lambda text:[types.SimpleNamespace(form=f,tag=tag,start=a,len=n) for f,tag,a,n in raw]);return t
 
 def candidate(word,pos,replacement,key=1):return dict(entry_id=key,written_form=word,origin_raw=replacement,replacement=replacement,replacement_type='pure_hanja',is_reliable=bool(replacement),part_of_speech=pos,homonym_number=1)
 class Tests(unittest.IsolatedAsyncioTestCase):
- async def convert(self,text,raw,records):
+ async def convert(self,text,raw,records,*,pos_filter=True):
   async def lookup(forms):return {f:[c for c in records if c['written_form']==f] for f in forms}
-  return (await ConverterService(tokenizer(raw),DisambiguationService()).convert(text,lookup))[0]
+  return (await ConverterService(tokenizer(raw),DisambiguationService()).convert(text,lookup,pos_filter=pos_filter))[0]
  async def test_independent_modifier_classes(self):
   for word,tag,pos,hanja in [('사실상','MAG','부사','事實上'),('각','MM','관형사','各'),('만세','IC','감탄사','萬歲'),('및','MAJ','부사','及')]:
    ss=await self.convert(word,[(word,tag,0,len(word))],[candidate(word,pos,hanja)])
@@ -43,6 +44,25 @@ class Tests(unittest.IsolatedAsyncioTestCase):
  async def test_derived_word_ambiguity_stays_whole_for_review(self):
   ss=await self.convert('사실상',[('사실','NNG',0,2),('상','XSN',2,1)],[candidate('사실상','부사','事實上'),candidate('사실상','부사','寫室上',2)])
   self.assertEqual(len(ss),1);self.assertEqual(ss[0].status,'ambiguous');self.assertEqual(ss[0].original,'사실상')
+ async def test_disabling_pos_filter_preserves_homograph_senses_for_review(self):
+  records=[candidate('하이','명사','河以',1),candidate('하이','감탄사','夏伊',2)]
+  raw=[('하이','NNG',0,2)]
+  on=await self.convert('하이',raw,records,pos_filter=True)
+  off=await self.convert('하이',raw,records,pos_filter=False)
+  self.assertEqual([c['replacement'] for s in on for c in s.candidates],['河以'])
+  self.assertEqual({c['replacement'] for s in off for c in s.candidates},{'河以','夏伊'})
+  self.assertTrue(any(s.status=='ambiguous' for s in off))
+  # Enabling the switch must remain backward-compatible.
+  self.assertTrue(any(s.status=='converted' for s in on))
+ async def test_loanword_hi_and_high_follow_same_local_pos_switch(self):
+  records={'하이':[dict(id=1,origin_raw='high',part_of_speech='명사',definition_preview='basketball'),
+                 dict(id=2,origin_raw='hi',part_of_speech='감탄사',definition_preview='greeting')]}
+  for tag,expected in [('NNG','high'),('IC','hi')]:
+   tokens=tokenizer([('하이',tag,0,2)]).tokenize('하이')
+   on=collect_loanwords('하이',tokens,records,[],force_review=True,pos_filter=True)
+   off=collect_loanwords('하이',tokens,records,[],force_review=True,pos_filter=False)
+   self.assertEqual([o['replacement'] for o in on['targets'][0]['options'] if o['type']=='loanword'],[expected])
+   self.assertEqual({o['replacement'] for o in off['targets'][0]['options'] if o['type']=='loanword'},{'high','hi'})
  async def test_added_classes_use_unchanged_base_score(self):
   ss=await self.convert('사실상',[('사실상','MAG',0,3)],[candidate('사실상','부사','事實上')])
   self.assertAlmostEqual(ss[0].candidates[0]['score'],.55)
