@@ -139,3 +139,16 @@ test('conflict, disabled filter, unknown POS and unknown meaning preserve origin
   assert.equal(out.morphology[0].tag,t.morphology[0].tag);
  }
 });
+
+test('the POS setting reaches local analysis and isolates the local paragraph cache',async()=>{
+ const {runSentencePipeline}=await import('../annotation-pipeline.js');
+ const identity={engine_version:'pos-switch-engine',dictionary_fingerprint:'dictionary'};
+ const cache=new Map(),received=[];
+ for(const enabled of [true,false,true]){
+  await runSentencePipeline({operationId:'pos-switch',sentences:[{id:'s',text:'하이'}],modes:{loanword:true},reviewPosFilter:enabled},()=>{},{
+   enabled:false,cache,status:async()=>identity,
+   analyze:async(_text,modes)=>{received.push(modes.reviewPosFilter);return {...identity,annotations:[],targets:[],stats:{}};},
+  });
+ }
+ assert.deepEqual(received,[true,false]);
+});
