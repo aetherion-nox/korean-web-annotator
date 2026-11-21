@@ -76,11 +76,11 @@ const personFilterCopy={
 };
 for(const [locale,labels] of Object.entries(personFilterCopy))Object.assign(copy[locale],{filterDictionaryPeople:labels[0],filterDictionaryPeopleHint:labels[1]});
 const reviewPosCopy={
- 'zh-CN':['送审候选词性过滤（默认开启）','送审前过滤不兼容词性；NNB 只保留依存名词或未知项。全部冲突则保留原候选，下次标注生效。'],
- 'zh-TW':['送審候選詞性過濾（預設開啟）','送審前過濾不相容詞性；NNB 只保留依存名詞或未知項。全部衝突則保留原候選，下次標註生效。'],
- en:['Filter review candidates by POS (on by default)','Filter POS conflicts before API or manual review. NNB keeps only explicit dependent nouns or unknown POS. Restore all if none remain. Applies to new tasks.'],
- ja:['審査候補を品詞で絞る（初期設定は有効）','NNB は依存名詞か品詞不明の候補のみ保持します。すべて不一致なら元の候補を保持。API・手動共通、次の処理から適用。'],
- ko:['검토 후보 품사 필터 (기본 켜짐)','NNB는 의존 명사 또는 품사 미상 후보만 유지합니다. 모두 불일치하면 원래 후보를 유지합니다. API·수동 공통, 새 작업부터 적용됩니다.']
+ 'zh-CN':['词性过滤（本地及送审，默认开启）','开启后，本地词典候选生成与模型送审均过滤明确不匹配的词性；关闭后保留跨词性候选供语义消歧，不会因此自动认定唯一词源。NNB 的特殊规则仅在开启时生效，下次标注生效。'],
+ 'zh-TW':['詞性過濾（本機及送審，預設開啟）','開啟時本機候選及模型送審均過濾明確不相符的詞性；關閉時保留跨詞性候選供語義消歧，不會因此自動認定唯一詞源。NNB 特殊規則僅開啟時生效，下次標註生效。'],
+ en:['Filter dictionary candidates by POS (on by default)','Applies to both local dictionary lookup and model review. Turn off to keep cross-POS senses for semantic disambiguation; mismatched senses never imply a unique automatic origin. NNB handling applies only while enabled. Applies to new tasks.'],
+ ja:['品詞フィルター（ローカルとモデル審査、初期設定は有効）','辞書候補生成と API・手動審査の両方に適用します。無効時は品詞の異なる語義を残して文脈で判定し、自動で唯一候補と決めつけません。次の処理から適用。'],
+ ko:['품사 필터 (로컬 및 모델 검토, 기본 켜짐)','로컬 사전 후보와 API·수동 검토에 함께 적용됩니다. 끄면 품사가 다른 뜻풀이도 남겨 문맥으로 판단하며, 단일 어원으로 자동 확정하지 않습니다. 다음 작업부터 적용됩니다.']
 };
 for(const [locale,labels] of Object.entries(reviewPosCopy))Object.assign(copy[locale],{reviewPosFilter:labels[0],reviewPosFilterHint:labels[1]});
 const preloadCopy={"zh-CN": ["浏览器启动时预加载（默认开启）", "提前加载本地词典、分词器和搭配索引，减少首次等待；关闭后按需加载。"], "zh-TW": ["瀏覽器啟動時預載入（預設開啟）", "提前載入本機詞典、分詞器和搭配索引，減少首次等待；關閉後按需載入。"], "en": ["Preload at browser startup (on by default)", "Load the local dictionary, tokenizer and collocation index early to reduce the first wait. Turn off to load on demand."], "ja": ["ブラウザー起動時に事前読み込み（初期設定は有効）", "辞書・形態素解析器・共起索引を先に読み込み、初回の待ち時間を短縮します。無効時は必要になってから読み込みます。"], "ko": ["브라우저 시작 시 미리 로드 (기본 켜짐)", "로컬 사전, 형태소 분석기와 연어 색인을 미리 로드하여 첫 대기를 줄입니다. 끄면 필요할 때 로드합니다."]};
