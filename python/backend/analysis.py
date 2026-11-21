@@ -255,6 +255,7 @@ class Engine:
         initialized_at=perf_counter()
         self._query_profile_ms=0.0
         review_all=bool(modes.get('reviewAll',False))
+        pos_filter=modes.get('reviewPosFilter',True) is not False
         # Selective audit: review positive local conversions, but do NOT resurrect
         # locally rejected/nonconversion senses or turn unchanged words into targets.
         review_conversions=review_all or bool(modes.get('reviewLocalConversions',False))
@@ -276,7 +277,7 @@ class Engine:
         tokenized_at=perf_counter()
         phase('kiwi','done',tokenCount=len(tokens))
         phase('converter','start')
-        segments,_=await converter.convert(text,conversion_lookup,tokens=tokens,
+        segments,_=await converter.convert(text,conversion_lookup,tokens=tokens,pos_filter=pos_filter,
                                            progress=(lambda part,done,total:checkpoint('converter',part,done,total)) if long_progress else None)
         converted_at=perf_counter()
         phase('converter','done',segmentCount=len(segments))
@@ -389,7 +390,7 @@ class Engine:
                     # occurrence; only exact (start,end) senses compete.
                     for candidate in review_candidates_by_span.get((start,end),()):
                         if safe_replacement(candidate.get('replacement')) or not is_nonconversion_origin(candidate.get('origin_raw'),loanword=modes.get('loanword',False)):continue
-                        if not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
+                        if pos_filter and not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
                         entry=candidate.get('entry_id')
                         if entry is None:continue
                         options.extend(nonconversion_options(text[start:end],[candidate],definitions_by_entry=definitions_by_entry,loanword=modes.get('loanword',False)))
@@ -412,7 +413,7 @@ class Engine:
             entries=token_entries
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
-            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
+            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names,pos_filter=pos_filter)
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.
