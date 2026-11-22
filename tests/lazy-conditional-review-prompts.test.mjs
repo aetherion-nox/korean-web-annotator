@@ -4,29 +4,29 @@ import {buildReviewInstructions,buildManualPrompt,buildReviewPayload,REVIEW_INST
 import {validateChoices,validateExperimentalChoices} from '../choice-review.js';
 
 const t={target_id:'t0',start:0,end:2,surface:'한국',context:'한국',options:[
- {choice_id:'KEEP',type:'keep',replacement:'한국',entry_id:null,definitions:[]},
+ {choice_id:null,type:'keep',replacement:'한국',entry_id:null,definitions:[]},
  {choice_id:'c0',type:'hanja',replacement:'韓國',entry_id:42,definitions:['Korea']},
  {choice_id:'n0',type:'nonconversion',replacement:'한국',entry_id:43,definitions:['native meaning']}
 ]};
 const parseManual=(config={})=>{
  const prompt=buildManualPrompt('한국',[t],'batch-123',config);
  const payload=JSON.parse(prompt.split('\n').at(-1));
- return {prompt,payload,preamble:prompt.slice(0,prompt.lastIndexOf('{"format":"shared-pools-v4"'))};
+ return {prompt,payload,preamble:prompt.slice(0,prompt.lastIndexOf('{"format":"shared-pools-v5"'))};
 };
 
-test('ordinary API and manual prompts contain ONLY dictionary c/n/null choices',()=>{
+test('ordinary API and manual prompts contain ONLY dictionary pooled IDs/null choices',()=>{
  const api=buildReviewInstructions();
  const {prompt,payload,preamble}=parseManual();
  assert.equal(api,REVIEW_INSTRUCTIONS);
- assert.deepEqual(Object.keys(payload.targets[0].options),['c0','n0']);
+ assert.deepEqual(payload.targets[0].options,['p0','p1']);
  assert.equal(payload.batch_id,'batch-123');
  assert.equal(payload.origin_mode,undefined);
  assert.equal(payload.allowed_origin_types,undefined);
  assert.equal(payload.dictionary_options_are_not_exhaustive,undefined);
  for(const content of [api,preamble]){
-  assert.match(content,/matching local dictionary c\/n key/);
+  assert.match(content,/pooled p/);
   assert.match(content,/actual JSON null/);
-  assert.match(content,/dictionary c key/);
+  assert.match(content,/target.options array/);
   assert.doesNotMatch(content,/OPEN-ENDED ORIGIN AUDIT|SMART SEGMENTATION|Audit every original sentence/i);
   assert.doesNotMatch(content,/literal origin|enabled Latin|enabled Hanja|enabled source|directly in c|a genuinely known Hanja\/Latin origin|genuinely known enabled|when enabled|verified_person_hanja/i);
   assert.doesNotMatch(content,/repairs|scan_only|old_target_ids/i);
@@ -73,10 +73,10 @@ test('smart segmentation and dictionary-free origin instructions are independent
 
 test('prompt refactor never changes c/n/null and experimental validation rules',()=>{
  for(const [value,expected] of [['c0','hanja'],['n0','nonconversion'],[null,'keep'],['c999','keep']]){
-  const plain=validateChoices([t],{results:[{t:'t0',c:value}]});
+  const plain=validateChoices([t],{results:[{t:'t0',c:value}]},{discardInvalidReviewResults:true});
   assert.equal(plain.accepted[0].option.type,expected);
  }
- const ordinary=validateChoices([t],{results:[{t:'t0',c:'韓國'}]});
+ const ordinary=validateChoices([t],{results:[{t:'t0',c:'韓國'}]},{discardInvalidReviewResults:true});
  assert.equal(ordinary.accepted[0].option.type,'keep');
  const origin=validateExperimentalChoices([t],{results:[{t:'t0',c:'韓國'}]},{experimentalHanja:true});
  assert.equal(origin.accepted.length,1);

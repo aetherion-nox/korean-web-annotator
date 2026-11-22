@@ -7,7 +7,7 @@ import {createManualReviewSession} from '../manual-review.js';
 import {choicePreviewParser} from '../model-stream.js';
 import {contextReviewBatches} from '../batch-budget.js';
 
-const keep=s=>({choice_id:'KEEP',type:'keep',replacement:s,entry_id:null,definitions:[]});
+const keep=s=>({choice_id:null,type:'keep',replacement:s,entry_id:null,definitions:[]});
 const target=(id,text,start,end,choice='可')=>({
  target_id:id,original_target_id:id,repair_sentence_key:'sentence1',context:text,
  start,end,surface:text.slice(start,end),
@@ -25,6 +25,7 @@ function fixture(text,targets,opts={}){
   existingRepairs:opts.existingRepairs||[]
  }]));
  const config={context:text,smartSegmentation:true,reviewPosFilter:false,
+  hanjaReadingCheck:opts.hanjaReadingCheck===true,
   repairModes:{hanja:true,loanword:true},repairScopes:scopes};
  const wire=buildReviewPayload(text,targets,config).payload;
  return {config,targets,sid:wire.sentences[0].sentence_id};
@@ -65,7 +66,7 @@ test('wrong POS does not prevent repair, but protected proper names are never in
  assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,2,text,'game')]).accepted.length,1);
  const name=fixture(text,[t],{protected_ranges:[[0,2]]});
  assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,'game')]).accepted.length,0);
- assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,'KEEP')]).accepted.length,1);
+ assert.equal(validate(name,[row(name.sid,'replace',['t0'],0,2,text,null)]).accepted.length,1);
 });
 
 test('omitted word with no existing target can be added in a one-pass scan-only sentence',()=>{
@@ -74,15 +75,15 @@ test('omitted word with no existing target can be added in a one-pass scan-only 
  const r=validate(f,[row(f.sid,'add',[],0,2,text,'game')]);
  assert.equal(r.accepted.length,1);assert.equal(r.accepted[0].annotations[0].replacement,'game');
  assert.equal(validate(f,[row(f.sid,'replace',['scan'],0,2,text,'game')]).accepted.length,0);
- const unknown=validate(f,[row(f.sid,'add',[],0,2,text,'KEEP')]);
- assert.equal(unknown.accepted.length,0,'native text must not be added as an artificial KEEP repair');
+ const unknown=validate(f,[row(f.sid,'add',[],0,2,text,null)]);
+ assert.equal(unknown.accepted.length,0,'native text must not be added as an artificial null repair');
 });
 
 test('a dictionary flagged as a person cannot be re-originated but can be kept',()=>{
  const text='이수민',t={...target('t0',text,0,3,'李壽民'),dictionary_person_name:true};
  const f=fixture(text,[t],{protected_ranges:[]});
  assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'李壽民')]).accepted.length,0);
- assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'KEEP')]).accepted.length,1);
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,null)]).accepted.length,1);
 });
 
 test('repaired Hanja stems may retain exact unchanged Korean endings but may not fabricate them',()=>{
@@ -94,12 +95,12 @@ test('repaired Hanja stems may retain exact unchanged Korean endings but may not
  assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,3,text,'可那라')]).accepted.length,0);
 });
 
-test('delete and KEEP may safely suppress malformed spans containing punctuation',()=>{
+test('delete and null replacement may safely suppress malformed spans containing punctuation',()=>{
  const text='한국, 정부',f=fixture(text,[target('t0',text,0,text.length,'韓國政府')]);
- const deleted=validate(f,[row(f.sid,'delete',['t0'],0,text.length,text,'KEEP')]);
+ const deleted=validate(f,[row(f.sid,'delete',['t0'],0,text.length,text,null)]);
  assert.equal(deleted.accepted.length,1);
  assert.deepEqual(deleted.accepted[0].annotations,[]);
- const keep=validate(f,[row(f.sid,'replace',['t0'],0,text.length,text,'KEEP')]);
+ const keep=validate(f,[row(f.sid,'replace',['t0'],0,text.length,text,null)]);
  assert.equal(keep.accepted.length,1);
  const unsafe=validate(f,[row(f.sid,'replace',['t0'],0,text.length,text,'韓國政府')]);
  assert.equal(unsafe.accepted.length,0);
@@ -115,7 +116,7 @@ test('UTF-16 source indices, wrong offsets, missing/duplicate IDs and unsafe for
   row('other','add',[],2,4,'게임','game'),
   row(f.sid,'replace',['unlisted'],2,4,'게임','game'),
   {...good,extra:true},
-  row(f.sid,'delete',[],2,4,'게임','KEEP'),
+  row(f.sid,'delete',[],2,4,'게임',null),
   row(f.sid,'add',[],2,4,'게임','word😀'),
  ];
  const result=validate(f,[...invalid,good]);
@@ -132,7 +133,7 @@ test('conflicting overlapping repairs reject both and keep old normal target dec
  const malformed=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學'),
   row(f.sid,'replace',['t0'],2,4,'기술','invalid😀')]);
  assert.equal(malformed.accepted.length,0,'bad split sibling cannot discard original target');
- const deleteReplace=validate(f,[row(f.sid,'delete',['t0'],0,4,text,'KEEP'),
+ const deleteReplace=validate(f,[row(f.sid,'delete',['t0'],0,4,text,null),
   row(f.sid,'replace',['t0'],0,2,'과학','科學')]);
  assert.equal(deleteReplace.accepted.length,0);
 });
@@ -153,7 +154,7 @@ test('selected text confinement, person-names and no second lookup for repaired 
  assert.equal(validate(f,[row(f.sid,'add',[],2,4,'다나','多羅')]).accepted.length,1);
  const f2=fixture(text,[{...target('scan',text,0,7,'可'),scan_only:true,options:[keep(text)]}],{protected_ranges:[[2,4]]});
  assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다라','多羅')]).accepted.length,0);
- assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다나','KEEP')]).accepted.length,0);
+ assert.equal(validate(f2,[row(f2.sid,'add',[],2,4,'다나',null)]).accepted.length,0);
 });
 
 test('a partial split safely retires the old target while leaving unmatched native text in Korean',()=>{
@@ -162,15 +163,15 @@ test('a partial split safely retires the old target while leaving unmatched nati
  assert.equal(partial.accepted.length,1);
  assert.deepEqual(partial.accepted[0].annotations.map(a=>a.replacement),['科學']);
  const complete=validate(f,[row(f.sid,'replace',['t0'],0,2,'과학','科學'),
-  row(f.sid,'replace',['t0'],2,4,'기술','KEEP')]);
+  row(f.sid,'replace',['t0'],2,4,'기술',null)]);
  assert.equal(complete.accepted.length,2);
  assert.deepEqual(complete.accepted.flatMap(r=>r.annotations.map(a=>a.replacement)),['科學']);
 });
 
-test('KEEP cannot consume unrelated text outside referenced old target',()=>{
+test('null replacement cannot consume unrelated text outside referenced old target',()=>{
  const text='한국 정부',f=fixture(text,[target('t0',text,0,2,'韓國')]);
- assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,5,text,'KEEP')]).accepted.length,0);
- assert.equal(validate(f,[row(f.sid,'delete',['t0'],0,2,'한국','KEEP')]).accepted.length,1);
+ assert.equal(validate(f,[row(f.sid,'replace',['t0'],0,5,text,null)]).accepted.length,0);
+ assert.equal(validate(f,[row(f.sid,'delete',['t0'],0,2,'한국',null)]).accepted.length,1);
 });
 
 test('nearby offset correction accepts only unique source substring',()=>{
@@ -191,10 +192,13 @@ test('more than 48 repairs preserves the safe prefix rather than discarding the 
  assert.equal(result.rejected[0].index,48);
 });
 
-test('repair Hanja is checked phonetically but ordinary dictionary choices stay unchanged',()=>{
- const bad=fixture('사과',[target('t0','사과',0,2,'韓國')]);
+test('repair Hanja is checked phonetically only when explicitly ON',()=>{
+ const noCheck=fixture('사과',[target('t0','사과',0,2,'韓國')]);
+ assert.equal(validate(noCheck,[row(noCheck.sid,'replace',['t0'],0,2,'사과','韓國')]).accepted.length,1,
+  'model-written repair Hanja skips the optional phonetic veto by default');
+ const bad=fixture('사과',[target('t0','사과',0,2,'韓國')],{hanjaReadingCheck:true});
  assert.equal(validate(bad,[row(bad.sid,'replace',['t0'],0,2,'사과','韓國')]).accepted.length,0);
- const good=fixture('한국',[target('t0','한국',0,2,'韓國')]);
+ const good=fixture('한국',[target('t0','한국',0,2,'韓國')],{hanjaReadingCheck:true});
  const resolved=validate(good,[row(good.sid,'replace',['t0'],0,2,'한국','韓國')]);
  assert.equal(resolved.accepted.length,1);
  assert.equal(resolved.accepted[0].annotations[0].origin_source,'model-unverified');
@@ -300,7 +304,7 @@ test('streaming parser does not apply incomplete repair data as a visible annota
  const content='{"results":[{"t":"t0","c":null}],"repairs":[{"sentence_id":"s0"';
  parser(content.slice(0,24));assert.equal(snapshots.length,0);
  parser(content.slice(24));
- assert.deepEqual(snapshots.at(-1),['KEEP']);
+ assert.deepEqual(snapshots.at(-1),[null]);
  // A partial repair is never parsed into DOM edits: only completed JSON is
  // passed through the independent repair validator.
  const f=fixture(text,[t]);

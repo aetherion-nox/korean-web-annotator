@@ -1,22 +1,15 @@
 // Manual answers have one canonical format, but the wrapper is not part of
 // the annotation. Keep identity checks separate from per-row origin checks.
-export function normalizeManualAnswer(value,{requestId,knownTargetIds}={}){
+export function normalizeManualAnswer(value,{requestId,knownTargetIds,discardInvalidReviewResults=false}={}){
  const response=Array.isArray(value)?{results:value}:value;
  if(!response||typeof response!=='object'||Array.isArray(response)||
     !Array.isArray(response.results))
   throw Error('结果必须是 t/c 数组，或包含 results 数组的 JSON 对象。');
  if(typeof requestId!=='string'||!requestId)throw Error('当前批次没有可验证的请求 ID。');
- // Some models accidentally emit {"t":"t29","n2":"c0"}, using a
- // nonconversion choice ID as the property name. This is a known target with
- // an unusable conversion response, NOT an unknown target. Converting it to
- // JSON null can only preserve the Korean source and cannot fabricate Hanja.
- // Do not guess what an arbitrary extra property means.
- const results=response.results.map(row=>{
-  if(!row||typeof row!=='object'||Array.isArray(row)||
-     typeof row.t!=='string'||!/^n\d+$/u.test(Object.keys(row).find(k=>k!=='t')||'')||
-     Object.keys(row).length!==2||Object.hasOwn(row,'c'))return row;
-  return {t:row.t,c:null};
- });
+ // Invalid row shapes are never inferred as null in strict review mode.
+ // In discard mode the caller deliberately rejects malformed rows as null.
+ // Preserve the unmodified model response for target-level validation.
+ const results=response.results;
  const normalized={...response,results};
  if(Object.hasOwn(response,'batch_id')){
   if(response.batch_id!==requestId)

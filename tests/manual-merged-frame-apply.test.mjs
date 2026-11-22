@@ -20,15 +20,15 @@ function fixture(){
  vm.createContext(c);
  vm.runInContext(src.slice(src.indexOf('  function recoverManualConnection'),
   src.indexOf('  function status(')),c);
- const batch={requestId:'late-batch',bindings:[{
+ const batch={requestId:'late-batch',choiceIndex:{t0:{p0:['c0']}},bindings:[{
   target_id:'t0',sentenceId:'p0',start:0,end:1,surface:'가',
   choices:[
-   {choice_id:'KEEP',annotations:[]},
+   {choice_id:null,annotations:[]},
    {choice_id:'c0',annotations:[{start:0,end:1,surface:'가',replacement:'可',type:'hanja'}]}
   ]
  }]};
  const frame={frameId:3,operationId:'orig-op',backup:batch,
-  originalPrompt:'',answer:JSON.stringify({batch_id:'late-batch',results:[{t:'t0',c:'c0'}]})};
+  originalPrompt:'',answer:JSON.stringify({batch_id:'late-batch',results:[{t:'t0',c:'p0'}]})};
  return {c,task,entry,frame};
 }
 test('two-phase rescue validates before it modifies the source DOM',async()=>{
@@ -77,7 +77,7 @@ test('same-spelling loanword literals survive cross-frame offline validation and
    target_id:surface==='머스크'?'t560':'t577',
    sentenceId:'p0',start,end:start+surface.length,surface,
    choices:[
-    {choice_id:'KEEP',annotations:[]},
+    {choice_id:null,annotations:[]},
     {choice_id:'c0',annotations:[{start,end:start+surface.length,surface,replacement:raw,type:'loanword'}]}
    ],
    literalOrigin:{eligible:true,hanja:true,loanword:true,hanjaEligible:false,

@@ -18,7 +18,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.0.0-long-text-checkpoints';
+const CONTENT_SCRIPT_VERSION='1.1.0-web-content-startup-handshake';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -349,7 +349,7 @@ const pendingPopupPageStarts=new Map();
 const activeFrameScans=new Map();
 const FRAME_DISCOVERY_GRACE_MS=15000;
 const mergedFrameReviews=createMergedFrameReviewCoordinator({
- run:(message,post,signal,session)=>runStreamingAnnotation(message,post,signal,session),
+ run:(message,post,signal,session,waitForUnfinishedReview)=>runStreamingAnnotation(message,post,signal,session,waitForUnfinishedReview),
  createSession:config=>createManualReviewSession(config)
 });
 
@@ -365,6 +365,7 @@ async function inspectChildFrames(tabId,run,finalPass=false){
   start:async frame=>chrome.tabs.sendMessage(tabId,{
    type:'START_ANNOTATION',modes:run.modes,deepAnalysis:true,
    forceRegenerate:run.forceRegenerate,requestConcurrency:4,uiSettings:run.uiSettings,
+   analysisSettingsStamp:run.analysisSettingsStamp,
    mergeGroupId:run.groupId,mergeHost:false,autoResume:run.autoResume===true
   },{frameId:frame.frameId})
  });
@@ -435,15 +436,37 @@ chrome.webNavigation?.onCommitted?.addListener(details=>{
  activeFrameScans.delete(details.tabId);
 });
 
+// A non-secret fingerprint of review settings; fail open (reanalyze) if
+// configuration cannot be read. No API key is sent to the page.
+async function wholePageAnalysisStamp(){
+ try{
+  const config=await engineConfig();
+  const api=config.enableModelReview&&!config.manualModelReview?await getApiConfig():null;
+  const safeApi=api?{
+   endpoint:api.endpoint,model:api.model,provider:api.provider,
+   minConfidence:api.minConfidence,disableThinking:api.disableThinking,
+   reasoningEffort:api.reasoningEffort,paragraphFastPath:api.paragraphFastPath,
+   profileId:api.profileId
+  }:null;
+  const bytes=new TextEncoder().encode(JSON.stringify(['manual-context-v1',config,safeApi]));
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+ }catch(error){
+  console.warn('[KRA incremental settings]',error.message);
+  return null;
+ }
+}
+
 async function startWholePageForTab(tabId,settings){
  const uiSettings=sanitizeUiSettings(settings.uiSettings);
+ const analysisSettingsStamp=await wholePageAnalysisStamp();
  const groupId='frame-group-'+tabId+'-'+crypto.randomUUID();
  const startedAt=Date.now();
  const run={groupId,until:startedAt+FRAME_DISCOVERY_GRACE_MS,
   collectionDeadline:startedAt+FRAME_COLLECTION_MAX_MS,
   lastFrameEventAt:0,lastFrameReport:null,started:new Set(),
   serial:Promise.resolve(),timer:null,finalizer:null,finalizing:false,modes:settings.modes,
-  forceRegenerate:Boolean(settings.forceRegenerate),autoResume:settings.autoResume===true,uiSettings,
+  forceRegenerate:Boolean(settings.forceRegenerate),autoResume:settings.autoResume===true,uiSettings,analysisSettingsStamp,
   trigger:settings.trigger||'popup'};
  const previous=activeFrameScans.get(tabId);
  if(previous){
@@ -455,7 +478,7 @@ async function startWholePageForTab(tabId,settings){
  catch(error){mergedFrameReviews.abort(groupId,error.message);throw error;}
  const main=await chrome.tabs.sendMessage(tabId,{
   type:'START_ANNOTATION',modes:run.modes,forceRegenerate:run.forceRegenerate,
-  deepAnalysis:true,requestConcurrency:4,uiSettings,
+  analysisSettingsStamp:run.analysisSettingsStamp,deepAnalysis:true,requestConcurrency:4,uiSettings,
   mergeGroupId:groupId,mergeHost:true,autoResume:run.autoResume===true
  },{frameId:0});
  if(!main?.ok){
@@ -669,7 +692,7 @@ async function clearAnnotationCache(){await loadCache();cache.clear();cacheLoade
 async function markCurrentProviderStreamUnstable(){return;}
 async function testApi(){
  const config=await getApiConfig();
- const target={target_id:'test-id',start:0,end:2,surface:'경제',context:'경제',options:[{choice_id:'KEEP',type:'keep',replacement:'경제',entry_id:null,definitions:[]}]};
+ const target={target_id:'test-id',start:0,end:2,surface:'경제',context:'경제',options:[{choice_id:null,type:'keep',replacement:'경제',entry_id:null,definitions:[]}]};
  const result=await reviewTargets({...config,enableModelReview:true},[target]);
  if(result.accepted.length!==1)throw Error(result.errors?.length ? result.errors.map(e=>`${e.message}: ${e.detail||''}`).join('\n') : 'API did not return a valid dictionary choice ID');
  return 'API ID protocol test succeeded.';
@@ -679,17 +702,19 @@ async function loadCache(){
  if(!cacheLoadPromise)cacheLoadPromise=(async()=>{await prepareCacheSession(chrome.storage,CACHE_KEY);await chrome.storage.local.remove('kraDictionaryReviewCacheV1Alignment3');const saved=(await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];if(Array.isArray(saved))for(const [key,value] of saved)cache.set(key,value);cacheLoaded=true;})().finally(()=>{cacheLoadPromise=null;});
  await cacheLoadPromise;
 }
-async function runModern(message,post,signal,manualSession){
+async function runModern(message,post,signal,manualSession,waitForUnfinishedReview=null){
  await loadCache();const config=await engineConfig();
  if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
- const modelConfig=async()=>({...(config.manualModelReview?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit,matchManualOutputBudget:config.matchManualOutputBudget,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,hanjaReadingCheck:config.hanjaReadingCheck,smartSegmentation:config.smartSegmentation});
+ const reviewConfiguration=async manual=>({...((manual)?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit,matchManualOutputBudget:config.matchManualOutputBudget,reviewPosFilter:config.reviewPosFilter,retryInvalidDictionaryChoices:config.retryInvalidDictionaryChoices,discardInvalidReviewResults:config.discardInvalidReviewResults,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,hanjaReadingCheck:config.hanjaReadingCheck,smartSegmentation:config.smartSegmentation});
+ const modelConfig=()=>reviewConfiguration(config.manualModelReview===true);
+ const continuationModelConfig=mode=>reviewConfiguration(mode==='manual');
   const allowNoDictionary=config.enableModelReview&&(
    config.experimentalHanja===true&&message.modes?.hanja===true||
    config.experimentalLoanword===true&&message.modes?.loanword===true);
   const status=(signal,progress)=>engineStatus(signal,progress,{allowNoDictionary});
   const analyze=(text,modes,signal,progress)=>analyzeLocal(text,{...modes,allowNoDictionary},signal,progress);
   const analyzeBatch=(texts,modes,signal,progress)=>analyzeLocalBatch(texts,{...modes,allowNoDictionary},signal,progress);
-  return runSentencePipeline({...message,nameProtection:config.nameProtection,filterDictionaryPeople:config.filterDictionaryPeople,experimentalLoanwordAudit:config.enableModelReview===true&&config.experimentalLoanword===true,experimentalHanjaAudit:config.enableModelReview===true&&config.experimentalHanja===true,smartSegmentation:config.smartSegmentation,reviewAllCandidates:config.reviewAllCandidates,reviewLocalConversions:config.enableModelReview&&config.reviewLocalConversions},post,{signal,enabled:config.enableModelReview,modelConfig,status,analyze,analyzeBatch,cache,persist:async map=>{
+  return runSentencePipeline({...message,webUserContinuation:typeof waitForUnfinishedReview==='function',nameProtection:config.nameProtection,filterDictionaryPeople:config.filterDictionaryPeople,reviewPosFilter:config.reviewPosFilter,experimentalLoanwordAudit:config.enableModelReview===true&&config.experimentalLoanword===true,experimentalHanjaAudit:config.enableModelReview===true&&config.experimentalHanja===true,smartSegmentation:config.smartSegmentation,reviewAllCandidates:config.reviewAllCandidates,reviewLocalConversions:config.enableModelReview&&config.reviewLocalConversions},post,{signal,enabled:config.enableModelReview,modelConfig,status,analyze,analyzeBatch,cache,waitForUnfinishedReview,continuationModelConfig,persist:async map=>{
    // Keep one paragraph string in the cache key; never persist that same
    // full text in every target as well. Target.context is rehydrated after
    // validateAnalysis() on a subsequent cache hit.
@@ -712,29 +737,35 @@ function legacyPlan(message){
  }
  return {sentences,mapping};
 }
-async function runStreamingAnnotation(message,post,signal,manualSession){
- if(Array.isArray(message.sentences))return runModern(message,post,signal,manualSession);
+async function runStreamingAnnotation(message,post,signal,manualSession,waitForUnfinishedReview=null){
+ if(Array.isArray(message.sentences))return runModern(message,post,signal,manualSession,waitForUnfinishedReview);
  const {sentences,mapping}=legacyPlan(message);
  return runModern({...message,operationId:message.operationId||crypto.randomUUID(),sentences},event=>{
   if(event.type==='RESULTS'){
    const results=event.results.flatMap(r=>mapping.filter(m=>m.sentenceId===r.id).map(m=>({id:m.id,annotations:r.annotations.filter(a=>a.start>=m.start&&a.end<=m.end).map(a=>({...a,start:a.start-m.start,end:a.end-m.start}))})));
    post({...event,results,completedCandidates:event.completedSentences===event.totalSentences?mapping.length:0,totalCandidates:mapping.length});
   }else post({...event,completedCandidates:event.completedSentences===event.totalSentences?mapping.length:0,totalCandidates:mapping.length});
- },signal,manualSession);
+ },signal,manualSession,waitForUnfinishedReview);
 }
 async function recoverMergedManualBatch(tabId,message){
  const scope=message?.frameRouting;
  if(typeof message.groupId!=='string'||!message.groupId.startsWith('frame-group-'))
   throw Error('跨框架恢复任务身份无效。');
  const frames=partitionMergedManualRecovery(scope,message.backup,message.response,message.originalPrompt);
- // Two-phase validation: no frame commits until every still-open frame has
- // verified its own operation identity and original paragraph DOM geometry.
+ // Preserve the two-phase DOM safety check, but a missing or invalid
+ // dictionary result must not block independent, already-verified annotations.
+ // This is permitted only in the configured retry mode, never discard mode.
+ const allowPartial=message.partial===true||
+  message.backup?.retryInvalidDictionaryChoices===true&&
+  message.backup?.discardInvalidReviewResults!==true;
+ const committed=[];
  for(const phase of ['validate','commit']){
   for(const frame of frames){
    let answer;
    try{
     answer=await chrome.tabs.sendMessage(tabId,{type:'KRA_MANUAL_OFFLINE_FRAME',phase,
-      groupId:message.groupId,frame},{frameId:frame.frameId});
+      groupId:message.groupId,frame,partial:allowPartial,
+      trustedValidated:message.trustedValidated===true},{frameId:frame.frameId});
    }catch(error){
     throw Error('第 '+frame.frameId+' 个框架已离开或无法连接：'+String(error.message||error));
    }
@@ -743,9 +774,14 @@ async function recoverMergedManualBatch(tabId,message){
     throw Error(location+(phase==='validate'?'校验':'写入')+'失败：'+
       (answer?.error||'原页面已变化'));
    }
+   if(phase==='commit')committed.push(answer.checked||{});
   }
  }
- return {ok:true,appliedFrames:frames.length};
+ const missingTargetIds=[...new Set(committed.flatMap(c=>c.missingIds||[]))];
+ const missingReasons=Object.assign({},...committed.map(c=>c.missingReasons||{}));
+ return {ok:true,appliedFrames:frames.length,partial:missingTargetIds.length>0,
+  missingTargetIds,missingReasons,
+  acceptedCount:committed.reduce((n,c)=>n+(c.accepted||0)+(c.retired||0),0)};
 }
 async function handleAnnotateBatch(message){
  const final=new Map();let stats;
@@ -754,6 +790,18 @@ async function handleAnnotateBatch(message){
 }
 function handleStreamingPort(port){
  let started=false,operationId,manualSession,groupId=null;const controller=new AbortController();
+ let pendingContinuation=null;
+ const waitForUnfinishedReview=()=>{
+  if(controller.signal.aborted)return Promise.reject(Error('Review operation was cancelled'));
+  return new Promise((resolve,reject)=>{
+   const abort=()=>{pendingContinuation=null;reject(Error('Review operation was cancelled'))};
+   controller.signal.addEventListener('abort',abort,{once:true});
+   pendingContinuation=mode=>{
+    pendingContinuation=null;controller.signal.removeEventListener('abort',abort);
+    resolve({mode});
+   };
+  });
+ };
  let checkpoint=null;
  const post=event=>{
   if(controller.signal.aborted)return;
@@ -774,6 +822,13 @@ function handleStreamingPort(port){
   if(groupId)mergedFrameReviews.detach(groupId,participant());
  });
  port.onMessage.addListener(message=>{
+  if(message?.type==='CONTINUE_REVIEW'&&message.operationId===operationId){
+   if(['api','manual','null'].includes(message.mode)){
+    if(groupId)mergedFrameReviews.continueReview(groupId,participant(),message.mode);
+    else pendingContinuation?.(message.mode);
+   }
+   return;
+  }
   if(message?.type==='KEEPALIVE'){post({type:'PONG',operationId,at:Date.now()});return;}
   if(message?.type==='CANCEL'&&message.operationId===operationId){
    controller.abort();
@@ -802,7 +857,7 @@ function handleStreamingPort(port){
    return;
   }
   manualSession=createManualReviewSession({operationId,post,signal:controller.signal});
-  runStreamingAnnotation({...message,operationId},post,controller.signal,manualSession)
+  runStreamingAnnotation({...message,operationId},post,controller.signal,manualSession,waitForUnfinishedReview)
    .catch(error=>{if(!controller.signal.aborted)post({type:'ERROR',operationId,error:error.message});});
  });
 }

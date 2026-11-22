@@ -20,7 +20,7 @@ function setup(){
  const paragraphPlan=createParagraphPlan(entries,element=>({text:element.textContent,
   runs:[{node,start:0,end:node.data.length}]}),'p');
  assert.equal(paragraphPlan.sentences[0].id,'p0');
- const choice={choice_id:'KEEP',type:'keep',replacement:text,entry_id:null,definitions:[]};
+ const choice={choice_id:null,type:'keep',replacement:text,entry_id:null,definitions:[]};
  const target={target_id:'t0',original_target_id:'t0',repair_sentence_key:'p0',start:0,end:text.length,
   surface:text,context:text,repair_context:{kiwi_tokens:[],protected_ranges:[]},
   options:[choice]};
@@ -33,7 +33,7 @@ function setup(){
     repair_sentence_key:'p0',start:0,end:text.length,surface:text}],
     scopes:[['p0',scope]]},
   bindings:[{target_id:'t0',sentenceId:'p0',start:0,end:text.length,surface:text,
-    choices:[{choice_id:'KEEP',annotations:[]}]}]};
+    choices:[{choice_id:null,annotations:[]}]}]};
  const task={operationId:'op',entries,paragraphPlan,manualBackup:backup,
   manualRequest:'batch1',manualLocalOnly:true,manualPlan:[backup],
   manualOriginalPrompt:prompt,modes:{hanja:true,loanword:true},

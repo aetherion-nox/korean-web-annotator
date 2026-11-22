@@ -9,10 +9,10 @@ import {describeBatchBudget,normalizeOutputTokenLimit,contextReviewBatches} from
 const identity={engine_version:'direct-origin',dictionary_fingerprint:'dict-1'};
 const sentence='원잠 게임';
 const target0={target_id:'local-0',start:0,end:2,surface:'원잠',context:sentence,options:[
- {choice_id:'KEEP',type:'keep',entry_id:null,replacement:'원잠',definitions:[]},
+ {choice_id:null,type:'keep',entry_id:null,replacement:'원잠',definitions:[]},
  {choice_id:'c0',type:'hanja',entry_id:1,replacement:'元箴',definitions:['unrelated']}]};
 const target1={target_id:'local-1',start:3,end:5,surface:'게임',context:sentence,options:[
- {choice_id:'KEEP',type:'keep',entry_id:null,replacement:'게임',definitions:[]},
+ {choice_id:null,type:'keep',entry_id:null,replacement:'게임',definitions:[]},
  {choice_id:'n0',type:'nonconversion',entry_id:2,replacement:'게임',definitions:['native sense']}]};
 const data=(targets=[])=>({...identity,annotations:[],targets,stats:{pending:targets.length}});
 const answer=targets=>({results:targets.map((t,i)=>({t:t.target_id,c:i===0?'原潛':'n0'}))});
@@ -56,9 +56,10 @@ test('manual falls back to null for unrecognized c, but rejects obsolete experim
  const id=events[0].requestId;
  const submit=payload=>session.submit({operationId:'manual-bad',requestId:id,text:JSON.stringify({batch_id:id,...payload})});
  assert.equal(submit({results:[{t:'t0',c:'原潛'}],experimental_options:[]}),false);
- assert.equal(submit({results:[{t:'t0',c:'x0'}]}),true);
+ assert.equal(submit({results:[{t:'t0',c:'x0'}]}),false);
+ assert.equal(submit({results:[{t:'t0',c:null}]}),true);
  assert.equal((await pending).results[0].c,null);
- assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_ERROR').length,1);
+ assert.equal(events.filter(e=>e.type==='MANUAL_REVIEW_ERROR').length,2);
 });
 
 test('API sends results-only protocol and configurable max_tokens (DeepSeek)',async()=>{
@@ -124,7 +125,7 @@ test('stream previews valid raw Hanja and dictionary choices from completed rows
  assert.deepEqual(events.at(-1),['原潛','n0']);
  const badEvents=[],bad=experimentalChoicePreviewParser([target0],{experimentalHanja:true},rows=>badEvents.push(rows));
  bad(JSON.stringify({results:[{t:'local-0',c:'x0'}]}));
- assert.deepEqual(badEvents.at(-1).map(row=>row.option.type),['keep']);
+ assert.deepEqual(badEvents.at(-1).map(row=>row.option.type),[]);
 });
 
 test('output cap defaults, validation, and planning budgets are consistent',()=>{

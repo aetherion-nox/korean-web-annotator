@@ -9,7 +9,7 @@ const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
 
 const target=(id,start)=>({
  target_id:id,start,end:start+2,surface:'학교',context:'학교 학교 학교 학교',
- options:[{choice_id:'KEEP',type:'keep',replacement:'학교',entry_id:null,definitions:[]},
+ options:[{choice_id:null,type:'keep',replacement:'학교',entry_id:null,definitions:[]},
   {choice_id:'c0',type:'hanja',replacement:'學校',entry_id:42,definitions:['school']}]
 });
 test('a transient API failure automatically halves the request and finishes every target',async()=>{

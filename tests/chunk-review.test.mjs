@@ -5,7 +5,7 @@ import {contextReviewBatches} from '../batch-budget.js';
 import {runSentencePipeline} from '../annotation-pipeline.js';
 import {reviewTargets} from '../choice-review.js';
 const identity={engine_version:'test',dictionary_fingerprint:'dict'};
-const target=(text='학교')=>({target_id:'t0',start:0,end:2,surface:'학교',context:text,options:[{choice_id:'KEEP',type:'keep',replacement:'학교',entry_id:null,definitions:[]},{choice_id:'c0',type:'hanja',replacement:'學校',entry_id:1,definitions:['교육 기관']}]});
+const target=(text='학교')=>({target_id:'t0',start:0,end:2,surface:'학교',context:text,options:[{choice_id:null,type:'keep',replacement:'학교',entry_id:null,definitions:[]},{choice_id:'c0',type:'hanja',replacement:'學校',entry_id:1,definitions:['교육 기관']}]});
 test('neighbor evidence is pooled per sentence and distinguishes identical text occurrences',()=>{
  const a={...target(),adjacent_context:{before:'이전 문장.',after:'다음 문장.'}},b={...target(),target_id:'t1',adjacent_context:{before:'다른 문장.',after:''}};
  const {payload}=buildReviewPayload('',[a,{...a,target_id:'t2'},b]);

@@ -239,7 +239,7 @@ export function applySessionHanjaGlossary(text,analysis,glossary,{selected=null,
    while(usedIds.has(id))id='session-hanja-'+start+'-'+sequence++;
    usedIds.add(id);
    const target={target_id:id,start,end,surface:source,context:text,
-    options:[{choice_id:'KEEP',type:'keep',replacement:source,entry_id:null,definitions:[]},...optionsWithIds]};
+    options:[{choice_id:null,type:'keep',replacement:source,entry_id:null,definitions:[]},...optionsWithIds]};
    targets.push(target);
    addedLastEnd=end;
    byStart.set(start,[target]);

@@ -12,7 +12,7 @@ const source=fs.readFileSync(new URL('../content.js',import.meta.url),'utf8');
 function target(id,surface,start,options,extra={}){
  return {target_id:id,surface,start,end:start+surface.length,
    context:'데 학교',options:[
-     {choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]},
+     {choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]},
      ...options],...extra};
 }
 const one=target('t0','데',0,[

@@ -42,11 +42,15 @@ test('unknown Hanja reading is explicitly unknown, not falsely marked dictionary
 
 test('direct model-origin Hanja rejects reading mismatch and tracks unverified origin',()=>{
  const target={target_id:'t0',start:0,end:2,surface:'한국',context:'한국',
-  options:[{choice_id:'KEEP',type:'keep',replacement:'한국',entry_id:null,definitions:[]}]};
- const selected=literalOriginOption(target,'韓國',{experimentalHanja:true});
+  options:[{choice_id:null,type:'keep',replacement:'한국',entry_id:null,definitions:[]}]};
+ const selected=literalOriginOption(target,'韓國',{experimentalHanja:true,hanjaReadingCheck:true});
  assert.equal(selected?.origin_source,'model-unverified');
- assert.equal(literalOriginOption({...target,surface:'사과',context:'사과'},'韓國',{experimentalHanja:true}),null);
- assert.equal(literalOriginOption({...target,options:undefined},'韓國',{experimentalHanja:true})?.origin_source,'model-unverified');
+ const impossible={...target,surface:'사과',context:'사과'};
+ assert.equal(literalOriginOption(impossible,'韓國',{experimentalHanja:true,hanjaReadingCheck:true}),null);
+ assert.equal(literalOriginOption(impossible,'韓國',{experimentalHanja:true})?.origin_source,'model-unverified',
+  'default OFF permits direct model Hanja when its other safety checks pass');
+ assert.equal(literalOriginOption(impossible,'韓國',{experimentalHanja:true,hanjaReadingCheck:false})?.origin_source,'model-unverified');
+ assert.equal(literalOriginOption({...target,options:undefined},'韓國',{experimentalHanja:true,hanjaReadingCheck:true})?.origin_source,'model-unverified');
 });
 
 test('the page identifies dictionary-backed and model-unverified annotations',async()=>{

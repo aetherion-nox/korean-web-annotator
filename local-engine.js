@@ -72,10 +72,14 @@ export function validateAnalysis(text,data){
    if(Object.keys(o).some(k=>!['choice_id','type','replacement','entry_id','definitions','segments','written_form','part_of_speech','subject_category','semantic_category'].includes(k)))throw Error('Invalid engine option fields');
    if(o.written_form!==undefined&&typeof o.written_form!=='string'||o.part_of_speech!==undefined&&o.part_of_speech!==null&&typeof o.part_of_speech!=='string')throw Error('Invalid dictionary metadata');
    for(const key of ['subject_category','semantic_category'])if(o[key]!==undefined&&o[key]!==null&&typeof o[key]!=='string')throw Error('Invalid dictionary category');
-   if(typeof o.choice_id!=='string'||choices.has(o.choice_id)||!Array.isArray(o.definitions))throw Error('Invalid engine option');
+   // Null is the only internal identity for the no-conversion option.
+   // The Latin string "KEEP" is never a control token or a reserved option ID.
+   if((o.type==='keep'?o.choice_id!==null:typeof o.choice_id!=='string')||
+      choices.has(o.choice_id)||!Array.isArray(o.definitions))throw Error('Invalid engine option');
    choices.add(o.choice_id);
-   if(o.choice_id==='KEEP'&&o.type!=='keep')throw Error('Invalid KEEP');
-   if(o.type==='keep'){if(o.choice_id!=='KEEP'||o.replacement!==t.surface)throw Error('Invalid KEEP');}
+   if(o.type==='keep'){
+    if(o.replacement!==t.surface||o.entry_id!==null)throw Error('Invalid null option');
+   }
    else if(o.type==='nonconversion'){
     if(o.replacement!==t.surface||o.entry_id===undefined||o.entry_id===null||o.segments||!o.definitions.length||o.definitions.some(d=>typeof d!=='string'||!d))throw Error('Invalid non-conversion sense');
    }
@@ -86,22 +90,28 @@ export function validateAnalysis(text,data){
    }
    validOptions.push(o);
   }
-  if(!choices.has('KEEP'))throw Error('Missing KEEP');
+  if(!choices.has(null))throw Error('Missing null option');
   const convertible=validOptions.some(o=>['hanja','loanword','mixed'].includes(o.type));
   const nameOnlyReview=(t.suspected_person_name===true||t.dictionary_name_homograph===true)&&validOptions.some(o=>o.type==='nonconversion');
-   // Dictionary-free inputs have KEEP only; the model can propose allowed
+   // Dictionary-free inputs have a null option only; the model can propose allowed
    // Hanja/Latin origins which are independently validated before application.
-   if(!convertible&&!nameOnlyReview&&!dictionaryFree&&t.experimental_loanword_audit!==true){rejectedTargets++;continue;}
+   if(!convertible&&!nameOnlyReview&&!dictionaryFree&&t.experimental_loanword_audit!==true&&t.experimental_hanja_audit!==true){rejectedTargets++;continue;}
   // Browser engine transmits the source text once per analyzed paragraph.
   // Restore the original Target.context contract for all existing model,
   // manual, and experimental checks, while preserving strict text agreement.
   targets.push({...t,context:text,options:validOptions});ranges.push([t.start,t.end]);
  }
  ranges.sort((a,b)=>a[0]-b[0]);if(ranges.some((r,i)=>i&&r[0]<ranges[i-1][1]))throw Error('Overlapping engine spans');
- return {...data,annotations,targets,diagnostics,stats:{...data.stats,local_determined:Math.max(0,Number(data.stats.local_determined||0)-rejectedAnnotations),pending:Math.max(0,Number(data.stats.pending||0)-rejectedTargets),structural_rejections:Number(data.stats.structural_rejections||0)+rejectedAnnotations+rejectedTargets,rejected_options:Number(data.stats.rejected_options||0)+rejectedOptions}};
+ // Count both sides of the validator's target-filter boundary. These counters
+ // reflect actual engine output, even when analysis results come from cache.
+ const hanjaGenerated=data.targets.filter(t=>t.experimental_hanja_audit===true).length;
+ const hanjaRetained=targets.filter(t=>t.experimental_hanja_audit===true).length;
+ const loanwordGenerated=data.targets.filter(t=>t.experimental_loanword_audit===true).length;
+ const loanwordRetained=targets.filter(t=>t.experimental_loanword_audit===true).length;
+ return {...data,annotations,targets,diagnostics,stats:{...data.stats,experimental_hanja_audit_generated:hanjaGenerated,experimental_hanja_audit_retained:hanjaRetained,experimental_hanja_audit_filtered:hanjaGenerated-hanjaRetained,experimental_loanword_audit_generated:loanwordGenerated,experimental_loanword_audit_retained:loanwordRetained,local_determined:Math.max(0,Number(data.stats.local_determined||0)-rejectedAnnotations),pending:Math.max(0,Number(data.stats.pending||0)-rejectedTargets),structural_rejections:Number(data.stats.structural_rejections||0)+rejectedAnnotations+rejectedTargets,rejected_options:Number(data.stats.rejected_options||0)+rejectedOptions}};
 }
 export async function engineConfig(){
- const saved=await chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','experimentalHanja','experimentalLoanword','hanjaReadingCheck','smartSegmentation','reviewLocalConversions','batchContextTier','manualOutputTokenLimit','apiOutputTokenLimit','matchManualOutputBudget','nameProtection','filterDictionaryPeople','reviewPosFilter']);
+ const saved=await chrome.storage.local.get(['enableModelReview','reviewAllCandidates','manualModelReview','experimentalHanja','experimentalLoanword','hanjaReadingCheck','smartSegmentation','reviewLocalConversions','retryInvalidDictionaryChoices','discardInvalidReviewResults','batchContextTier','manualOutputTokenLimit','apiOutputTokenLimit','matchManualOutputBudget','nameProtection','filterDictionaryPeople','reviewPosFilter']);
  const switches=engineSwitchValues(saved);
  return {...switches,
   enableModelReview:switches.enableModelReview||switches.reviewAllCandidates||switches.manualModelReview||switches.experimentalHanja||switches.experimentalLoanword||switches.smartSegmentation,

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {buildReviewPayload,buildManualPrompt} from '../review-payload.js';
 import {modelTargets,validateChoices} from '../choice-review.js';
 const option=(id,pos,type='hanja')=>({choice_id:id,type,replacement:type==='nonconversion'?'가':'可',entry_id:id,part_of_speech:pos,definitions:['definition']});
-const target=(tag,options)=>({target_id:'t0',surface:'가',start:0,end:1,context:'가',morphology:[{form:'가',tag,start:0,end:1}],options:[{choice_id:'KEEP',type:'keep',replacement:'가',entry_id:null,definitions:[]},...options]});
+const target=(tag,options)=>({target_id:'t0',surface:'가',start:0,end:1,context:'가',morphology:[{form:'가',tag,start:0,end:1}],options:[{choice_id:null,type:'keep',replacement:'가',entry_id:null,definitions:[]},...options]});
 const packed=t=>buildReviewPayload('가',[t]).payload;
 const ids=t=>Object.keys(packed(t).targets[0].options);
 test('reliable POS families exclude incompatible review senses without changing source choices',()=>{
@@ -24,25 +24,25 @@ test('all conflicts restore original options and signal POS conflict',()=>{
  assert.match(buildManualPrompt('가',[t],'batch'),/pos_conflict/);
 });
 test('whole derived and inflected spans are checked as a whole, incomplete spans stay unknown',()=>{
- const t={...target('NNG',[]),surface:'사실상',context:'사실상',end:3,morphology:[{form:'사실',tag:'NNG',start:0,end:2},{form:'상',tag:'XSN',start:2,end:3}],options:[{choice_id:'KEEP',type:'keep'},option('c0','부사'),option('c1','관형사'),option('c2','명사'),option('c3','동사')]};
+ const t={...target('NNG',[]),surface:'사실상',context:'사실상',end:3,morphology:[{form:'사실',tag:'NNG',start:0,end:2},{form:'상',tag:'XSN',start:2,end:3}],options:[{choice_id:null,type:'keep'},option('c0','부사'),option('c1','관형사'),option('c2','명사'),option('c3','동사')]};
  assert.deepEqual(ids(t),['c0','c1','c2']);
- const v={...t,morphology:[{form:'명확',tag:'XR',start:0,end:2},{form:'하',tag:'XSA',start:2,end:3}],options:[{choice_id:'KEEP',type:'keep'},option('c0','형용사'),option('c1','명사')]};
+ const v={...t,morphology:[{form:'명확',tag:'XR',start:0,end:2},{form:'하',tag:'XSA',start:2,end:3}],options:[{choice_id:null,type:'keep'},option('c0','형용사'),option('c1','명사')]};
  assert.deepEqual(ids(v),['c0']);
  const part={...target('MAG',[option('c0','부사'),option('c1','명사')]),morphology:[{form:'다른단어',tag:'MAG',start:0,end:4}]};
  assert.deepEqual(ids(part),['c0','c1']);
 });
 test('manual and API export use identical allowed keys and validation rejects removed choices',()=>{
  const t=target('MAG',[option('c0','부사'),option('c1','명사'),option('n0','부사','nonconversion')]);
- const wire=modelTargets([t]);assert.deepEqual(wire[0].options.map(o=>o.choice_id),['KEEP','c0','n0']);
+ const wire=modelTargets([t]);assert.deepEqual(wire[0].options.map(o=>o.choice_id),[null,'c0','n0']);
  const manual=JSON.parse(buildManualPrompt('가',[t],'batch').split('\n').at(-1));
  assert.deepEqual(manual.targets[0].options,packed(t).targets[0].options);
- assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]}).accepted[0].option.type,'keep');
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]},{discardInvalidReviewResults:true}).accepted[0].option.type,'keep');
  assert.equal(validateChoices([t],{results:[{t:'t0',c:null}]}).accepted.length,1);
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'n0'}]}).accepted.length,1);
  assert.equal(modelTargets([target('MAG',[option('c0','명사')])])[0].pos_conflict,true);
 });
 test('merged choices use their own dictionary headword span, never the last token of a different word',()=>{
- const t={...target('NNG',[]),surface:'사실상',context:'사실상',end:3,morphology:[{form:'사실',tag:'NNG',start:0,end:2},{form:'상',tag:'XSN',start:2,end:3}],options:[{choice_id:'KEEP',type:'keep'}, {...option('c0','부사'),written_form:'사실상'},{...option('c1','접사'),written_form:'-상'},{...option('c2','동사'),written_form:'다른단어'}]};
+ const t={...target('NNG',[]),surface:'사실상',context:'사실상',end:3,morphology:[{form:'사실',tag:'NNG',start:0,end:2},{form:'상',tag:'XSN',start:2,end:3}],options:[{choice_id:null,type:'keep'}, {...option('c0','부사'),written_form:'사실상'},{...option('c1','접사'),written_form:'-상'},{...option('c2','동사'),written_form:'다른단어'}]};
  assert.deepEqual(ids(t),['c0','c1','c2']);
 });
 test('switch off preserves API, manual and validation candidates without conflict hints',()=>{
@@ -50,7 +50,7 @@ test('switch off preserves API, manual and validation candidates without conflic
  const t=target('MAG',[option('c0','부사'),option('c1','명사')]);
  const p=buildReviewPayload('가',[t],config).payload;
  assert.deepEqual(Object.keys(p.targets[0].options),['c0','c1']);assert.equal(p.targets[0].pos_conflict,undefined);
- assert.deepEqual(modelTargets([t],config)[0].options.map(o=>o.choice_id),['KEEP','c0','c1']);
+ assert.deepEqual(modelTargets([t],config)[0].options.map(o=>o.choice_id),[null,'c0','c1']);
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'c1'}]},config).accepted.length,1);
  const manual=JSON.parse(buildManualPrompt('가',[t],'batch',config).split('\n').at(-1));
  assert.deepEqual(Object.keys(manual.targets[0].options),['c0','c1']);
@@ -69,7 +69,7 @@ test('pipeline separates on/off model caches and applies request configuration',
   });
   assert.ok(events.some(e=>e.type==='RESULTS'&&e.source==='model'&&e.results[0].annotations.length===1));
  }
- assert.deepEqual(sent,[['KEEP','c0'],['KEEP','c0','c1']]);
+ assert.deepEqual(sent,[[null,'c0'],[null,'c0','c1']]);
 });
 test('manual review session honors the captured switch for prompt and answer validation',async()=>{
  const {createManualReviewSession}=await import('../manual-review.js');
@@ -87,13 +87,13 @@ test('manual review session honors the captured switch for prompt and answer val
 
 test('NNB keeps only explicit dependent POS and unknown senses across API and manual review',()=>{
  const context='수능 2주앞… ‘AI 스마트안경’ 부정행위 차단 비상';const start=context.indexOf('주');
- const t={...target('NNB',[]),surface:'주',context,start,end:start+1,morphology:[{form:'주',tag:'NNB',start,end:start+1}],options:[{choice_id:'KEEP',type:'keep',replacement:'주'},option('c0','의존 명사'),option('c1','依存名詞'),option('c2','불완전 명사'),option('c3','명사'),option('c4','名詞'),option('c5','普通名词'),option('c6','명사 / 의존 명사'),{...option('c7','명사'),written_form:'주01'},option('n0',null,'nonconversion'),option('n1','명사','nonconversion'),option('n2','未知詞性','nonconversion')]};
+ const t={...target('NNB',[]),surface:'주',context,start,end:start+1,morphology:[{form:'주',tag:'NNB',start,end:start+1}],options:[{choice_id:null,type:'keep',replacement:'주'},option('c0','의존 명사'),option('c1','依存名詞'),option('c2','불완전 명사'),option('c3','명사'),option('c4','名詞'),option('c5','普通名词'),option('c6','명사 / 의존 명사'),{...option('c7','명사'),written_form:'주01'},option('n0',null,'nonconversion'),option('n1','명사','nonconversion'),option('n2','未知詞性','nonconversion')]};
  const expected=['c0','c1','c2','c6','n0','n2'];
  assert.deepEqual(Object.keys(buildReviewPayload(context,[t]).payload.targets[0].options),expected);
- assert.deepEqual(modelTargets([t])[0].options.map(o=>o.choice_id),['KEEP',...expected]);
+ assert.deepEqual(modelTargets([t])[0].options.map(o=>o.choice_id),[null,...expected]);
  const manual=JSON.parse(buildManualPrompt(context,[t],'batch').split('\n').at(-1));
  assert.deepEqual(Object.keys(manual.targets[0].options),expected);assert.equal(manual.sentences[0].text,context);
- assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]}).accepted[0].option.type,'keep');
+ assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]},{discardInvalidReviewResults:true}).accepted[0].option.type,'keep');
  assert.deepEqual(modelTargets([t],{reviewPosFilter:false})[0].options.map(o=>o.choice_id),t.options.map(o=>o.choice_id));
  assert.equal(validateChoices([t],{results:[{t:'t0',c:'c3'}]},{reviewPosFilter:false}).accepted.length,1);
  const conflicted=packed(target('NNB',[option('c0','명사'),option('n0','名詞','nonconversion')]));
@@ -122,7 +122,7 @@ test('proper noun protection survives compact POS prompt',()=>{
 test('derived word retains segments while stripping redundant Kiwi POS',()=>{
  const t={...target('NNG',[]),surface:'사실상',context:'사실상',end:3,
   morphology:[{form:'사실',tag:'NNG',start:0,end:2},{form:'상',tag:'XSN',start:2,end:3}],
-  options:[{choice_id:'KEEP',type:'keep'},option('c0','부사'),option('c1','동사')]};
+  options:[{choice_id:null,type:'keep'},option('c0','부사'),option('c1','동사')]};
  const out=packed(t).targets[0];
  assert.deepEqual(out.morphology,[{form:'사실',start:0,end:2},{form:'상',start:2,end:3}]);
  assert.deepEqual(Object.keys(out.options),['c0']);

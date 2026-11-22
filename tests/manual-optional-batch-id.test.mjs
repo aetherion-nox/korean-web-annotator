@@ -5,7 +5,7 @@ import {normalizeManualAnswer} from '../manual-answer-format.js';
 
 const makeTarget=(id,surface)=>({target_id:id,start:0,end:surface.length,surface,context:surface,
  options:[
-  {choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]},
+  {choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]},
   {choice_id:'c0',type:'hanja',replacement:'漢字',entry_id:1,definitions:['sample dictionary sense']}
  ]});
 const targets=[makeTarget('local-a','한국'),makeTarget('local-b','정부')];

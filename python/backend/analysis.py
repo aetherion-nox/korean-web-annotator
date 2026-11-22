@@ -16,7 +16,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-name-homograph-1.1.55'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-null-only-origin-1.1.56.64'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 
 class _SpanIndex:
@@ -255,6 +255,7 @@ class Engine:
         initialized_at=perf_counter()
         self._query_profile_ms=0.0
         review_all=bool(modes.get('reviewAll',False))
+        pos_filter=modes.get('reviewPosFilter',True) is not False
         # Selective audit: review positive local conversions, but do NOT resurrect
         # locally rejected/nonconversion senses or turn unchanged words into targets.
         review_conversions=review_all or bool(modes.get('reviewLocalConversions',False))
@@ -271,12 +272,46 @@ class Engine:
         # for general conversion. Exact mixed/cross-origin words have a
         # complete whole-entry choice path below, before source projection.
         converter=ConverterService(self.tokenizer,self.disambiguation)
+        # Dictionary probes are exact, but a Kiwi stem can query a longer
+        # *lemma* (주/VV -> 주다). Such a match is only a proposal: reject
+        # the Hanja spelling before scoring it if it cannot be projected onto
+        # the actual original Hangul characters.
+        from backend.mixed_origins import align_mixed
+        projection_rejected=0
+        projection_samples=[]
+        def source_candidate_projectable(surface,candidate,token):
+            nonlocal projection_rejected
+            if not re.fullmatch(r'[가-힣]+',surface) or not safe_replacement(candidate.replacement):
+                return True
+            display=(converter._build_display_text(token,candidate)
+                     if token is not None else candidate.replacement)
+            if (token is not None and token.is_verb_stem
+                    and token.form.endswith('하')
+                    and len(candidate.replacement)<len(token.original)):
+                display=candidate.replacement+surface[len(candidate.replacement):]
+            display=restore_mixed_display(surface,display,candidate.origin_raw,
+                                          token=token,written_form=candidate.written_form)
+            # align_mixed intentionally handles mixed-script entries only;
+            # plain all-Hanja exact-length forms require their own fast path.
+            if (len(display)==len(surface) and all(
+                    HANJA.fullmatch(letter) or letter==source
+                    for source,letter in zip(surface,display))):
+                return True
+            if align_mixed(surface,display) is not None:
+                return True
+            projection_rejected+=1
+            if len(projection_samples)<6:
+                projection_samples.append(dict(surface=surface,
+                    candidate=candidate.replacement,projected=display,
+                    dictionary_form=candidate.written_form))
+            return False
         phase('kiwi','start')
         tokens=await self.tokens(text)
         tokenized_at=perf_counter()
         phase('kiwi','done',tokenCount=len(tokens))
         phase('converter','start')
-        segments,_=await converter.convert(text,conversion_lookup,tokens=tokens,
+        segments,_=await converter.convert(text,conversion_lookup,tokens=tokens,pos_filter=pos_filter,
+                                           candidate_filter=source_candidate_projectable,
                                            progress=(lambda part,done,total:checkpoint('converter',part,done,total)) if long_progress else None)
         converted_at=perf_counter()
         phase('converter','done',segmentCount=len(segments))
@@ -382,14 +417,14 @@ class Engine:
         if modes.get('hanja',True):
             for number,component in enumerate(components):
                 start=min(x[0] for x in component);end=max(x[1] for x in component)
-                options=[dict(choice_id='KEEP',type='keep',replacement=text[start:end],entry_id=None,definitions=[])]
+                options=[dict(choice_id=None,type='keep',replacement=text[start:end],entry_id=None,definitions=[])]
                 if self.dictionary is not None:
                     # Dictionary readings that preserve Korean are explicit sense options.
                     # A sense of a subspan cannot explain the whole merged
                     # occurrence; only exact (start,end) senses compete.
                     for candidate in review_candidates_by_span.get((start,end),()):
                         if safe_replacement(candidate.get('replacement')) or not is_nonconversion_origin(candidate.get('origin_raw'),loanword=modes.get('loanword',False)):continue
-                        if not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
+                        if pos_filter and not review_all and 'pos_mismatch' in (candidate.get('selection_reason') or ''):continue
                         entry=candidate.get('entry_id')
                         if entry is None:continue
                         options.extend(nonconversion_options(text[start:end],[candidate],definitions_by_entry=definitions_by_entry,loanword=modes.get('loanword',False)))
@@ -412,7 +447,7 @@ class Engine:
             entries=token_entries
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
-            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names)
+            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names,pos_filter=pos_filter)
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.
@@ -420,7 +455,7 @@ class Engine:
             for annotation in loan['annotations']:
                 overlapping=hanja_target_index.overlaps(annotation['start'],annotation['end'])
                 if overlapping:
-                    loan['targets'].append(dict(start=annotation['start'],end=annotation['end'],surface=annotation['surface'],context=text,options=[dict(choice_id='KEEP',type='keep',replacement=annotation['surface'],entry_id=None,definitions=[]),dict(choice_id='c0',type='loanword',replacement=annotation['replacement'],entry_id=annotation['entry_id'],definitions=annotation['definitions'])]))
+                    loan['targets'].append(dict(start=annotation['start'],end=annotation['end'],surface=annotation['surface'],context=text,options=[dict(choice_id=None,type='keep',replacement=annotation['surface'],entry_id=None,definitions=[]),dict(choice_id='c0',type='loanword',replacement=annotation['replacement'],entry_id=annotation['entry_id'],definitions=annotation['definitions'])]))
                 else:annotations.append({k:v for k,v in annotation.items() if k not in ('entry_id','definitions')})
             targets=merge_targets(text,targets+loan['targets'])
         loanwords_at=perf_counter()
@@ -428,7 +463,7 @@ class Engine:
         phase('audits','start')
         targets=sorted(targets+mixed['targets']+homograph_targets+suspect_targets,key=lambda t:(t['start'],t['end']))
         # Only opt-in experimental Latin review gets additional proper-name
-        # targets. Keep local person protection: these are KEEP-only options,
+        # targets. Keep local person protection: these have only null/no-conversion options,
         # never an automatic conversion or a speculative Hanja reading.
         if modes.get('experimentalLoanwordAudit',False) and modes.get('loanword',False):
             covered=_SpanIndex([(t['start'],t['end']) for t in targets]+
@@ -449,7 +484,7 @@ class Engine:
                 if covered.overlaps(start,end):continue
                 targets.append(dict(target_id='latin-audit',start=start,end=end,surface=word,
                     context=text,experimental_loanword_audit=True,
-                    options=[dict(choice_id='KEEP',type='keep',replacement=word,
+                    options=[dict(choice_id=None,type='keep',replacement=word,
                                   entry_id=None,definitions=[])]))
                 covered.add(start,end)
             targets.sort(key=lambda t:(t['start'],t['end']))
@@ -497,7 +532,7 @@ class Engine:
                         continue
                     targets.append(dict(target_id='hanja-audit',start=start,end=end,surface=word,
                         context=text,experimental_hanja_audit=True,
-                        options=[dict(choice_id='KEEP',type='keep',replacement=word,
+                        options=[dict(choice_id=None,type='keep',replacement=word,
                                       entry_id=None,definitions=[])]))
                     target_index.add(start,end)
                 targets.sort(key=lambda t:(t['start'],t['end']))
@@ -514,7 +549,7 @@ class Engine:
                     continue
                 target=overlapping[0] if overlapping else dict(
                     start=start,end=end,surface=text[a:b],context=text,
-                    options=[dict(choice_id='KEEP',type='keep',replacement=text[a:b],
+                    options=[dict(choice_id=None,type='keep',replacement=text[a:b],
                                   entry_id=None,definitions=[])])
                 if not overlapping:targets.append(target)
                 trusted=target.setdefault('verified_person_hanja',[])
@@ -553,10 +588,10 @@ class Engine:
                         seen.add(key)
                         native.append({**option,'choice_id':f'n{len(native)}','definitions':[definition]})
                 else:conversions.append({**option,'choice_id':f'c{len(conversions)}','definitions':definitions})
-            target['options']=[dict(choice_id='KEEP',type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
+            target['options']=[dict(choice_id=None,type='keep',replacement=target['surface'],entry_id=None,definitions=[])]+native+conversions
             if removed_person_sense and not native and not conversions:
                 filtered_person_only.add(id(target))
-        # Do not send person-only remnants (KEEP with no lexical sense) to the
+        # Do not send person-only remnants (null choice with no lexical sense) to the
         # model, which could otherwise invent an experimental origin for a name.
         if filtered_person_only:
             targets=[target for target in targets if id(target) not in filtered_person_only]
@@ -618,7 +653,9 @@ class Engine:
             target_finalize=(finished_at-audits_at)*1000,
             sqlite_queries=self._query_profile_ms,
             total=(finished_at-analyzed_at)*1000).items()}
-        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,**repair_context,stats=dict(timings_ms=timing_ms,token_count=len(tokens),option_count=sum(len(t['options']) for t in targets),segment_count=len(segments),local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
+        return dict(engine_version=ENGINE_VERSION,dictionary_fingerprint=self.fingerprint,annotations=annotations,targets=targets,**repair_context,stats=dict(timings_ms=timing_ms,token_count=len(tokens),option_count=sum(len(t['options']) for t in targets),segment_count=len(segments),local_determined=len(annotations),pending=len(targets),protected_names=len(protected_names),structural_rejections=rejected,upstream_alignment_pruned=projection_rejected,
+            upstream_alignment_samples=projection_samples,
+            skipped_mixed=skipped_mixed+mixed['skipped_mixed'],**upstream_counts))
 
 _default_engine=None
 async def analyze(text: str,modes: dict) -> dict:

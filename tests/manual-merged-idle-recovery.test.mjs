@@ -10,7 +10,7 @@ const routing=[
  {sentenceId:'f3_s0',frameId:3,operationId:'op-child',localId:'p0'}
 ];
 const choice=(target_id,sentenceId,surface)=>({target_id,sentenceId,surface,start:0,end:surface.length,
- choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[{
+ choices:[{choice_id:null,annotations:[]},{choice_id:'c0',annotations:[{
   start:0,end:surface.length,surface,replacement:'韓國',type:'hanja'
  }]}]});
 const backup={requestId:'batch-long-wait',bindings:[choice('t0','f0_s0','한국'),choice('t1','f3_s0','한국')],
@@ -41,16 +41,14 @@ test('merged offline coordinator accepts bare arrays and missing batch ID when I
  }
 });
 
-test('model n-key property slips become null without dropping other iframe answers',()=>{
+test('malformed n-key field remains invalid instead of being silently normalized to null',()=>{
  const response={batch_id:backup.requestId,results:[
   {t:'t0',n2:'c0'},{t:'t1',c:'c0'}]};
  const normalized=normalizeManualAnswer(response,{
   requestId:backup.requestId,knownTargetIds:new Set(['t0','t1'])
  });
- assert.deepEqual(normalized.results,[{t:'t0',c:null},{t:'t1',c:'c0'}]);
- const frames=partitionMergedManualRecovery(routing,backup,response);
- assert.deepEqual(JSON.parse(frames.find(x=>x.frameId===0).answer).results,[{t:'t0',c:null}]);
- assert.deepEqual(JSON.parse(frames.find(x=>x.frameId===3).answer).results,[{t:'t1',c:'c0'}]);
+ assert.deepEqual(normalized.results,[{t:'t0',n2:'c0'},{t:'t1',c:'c0'}]);
+ assert.throws(()=>partitionMergedManualRecovery(routing,backup,response),/无效的 c/);
  assert.deepEqual(response.results[0],{t:'t0',n2:'c0'},'input response must not be mutated');
 });
 test('wrong batch ID still rejects even when the typo could be normalized',()=>{
@@ -84,11 +82,11 @@ test('smart segmentation backup and repair positions are localized per frame',()
    {target_id:'t1',repair_sentence_key:'f3_s0',surface:'한국'}],
   scopes:[['f0_s0',{text:'한국'}],['f3_s0',{text:'한국'}]]
  }};
- const prompt='INSTRUCTIONS\n'+JSON.stringify({format:'shared-pools-v4',batch_id:backup.requestId,
+ const prompt='INSTRUCTIONS\n'+JSON.stringify({format:'shared-pools-v5',batch_id:backup.requestId,
   sentences:routing.map(r=>({sentence_id:r.sentenceId,text:'한국'})),
   targets:[
-   {target_id:'t0',sentence_id:'f0_s0',options:{c0:'p0'}},
-   {target_id:'t1',sentence_id:'f3_s0',options:{c0:'p0'}}],
+   {target_id:'t0',sentence_id:'f0_s0',options:['p0']},
+   {target_id:'t1',sentence_id:'f3_s0',options:['p0']}],
   candidates:[{candidate_id:'p0',replacement:'韓國'}]});
  const response={batch_id:backup.requestId,results:[{t:'t0',c:'c0'}],
   repairs:[{sentence_id:'f3_s0',op:'delete',old_target_ids:['t1'],start:0,end:2,surface:'한국'}]};

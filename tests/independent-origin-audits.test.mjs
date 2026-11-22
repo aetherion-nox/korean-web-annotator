@@ -5,7 +5,7 @@ import {validateExperimentalChoices} from '../choice-review.js';
 import {validateSegmentationRepairs} from '../segmentation-repairs.js';
 import {runSentencePipeline} from '../annotation-pipeline.js';
 
-const keep=surface=>({choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]});
+const keep=surface=>({choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]});
 const unknown={target_id:'audit',start:0,end:2,surface:'원잠',context:'원잠',
   experimental_hanja_audit:true,options:[keep('원잠')]};
 
@@ -24,7 +24,7 @@ test('Hanja dictionary-gap audit is an independent target, not a segmentation re
  assert.equal(accepted.accepted.length,1);
  assert.equal(accepted.accepted[0].option.replacement,'原潛');
  assert.equal(validateExperimentalChoices([unknown],{results:[{t:'audit',c:'原潛'}]},
-  {}).accepted[0].option.type,'keep');
+  {discardInvalidReviewResults:true}).accepted[0].option.type,'keep');
  assert.equal(validateExperimentalChoices([unknown],{results:[{t:'audit',c:null}]},
   {experimentalHanja:true}).accepted[0].option.type,'keep');
 });

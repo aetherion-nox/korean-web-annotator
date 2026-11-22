@@ -1,7 +1,7 @@
 // Additional model decisions are an optional array in the SAME response.
 // Each repair has exactly these fields (including [] for add):
 // {sentence_id,op:"add"|"replace"|"delete",old_target_ids:[],start,end,
-//  surface,choice_id:literal Hanja|literal Latin original (or KEEP for legacy delete).
+//  surface,choice_id:literal Hanja|literal Latin original|null (or omit for delete).
 // All positions are UTF-16 offsets in sentences[].text. A repair replaces
 // its referenced original targets atomically; results[] may omit them.
 const HANGUL_SPAN=/^[가-힣]+$/u;
@@ -30,20 +30,20 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
   }
   const required=['choice_id','end','old_target_ids','op','sentence_id','start','surface'];
   const actual=Object.keys(row).sort().join(',');
-  // A delete may omit choice_id; legacy delete/KEEP remains supported.
+  // Delete is expressed by op='delete' and null/omitted choice_id, never a Latin origin.
   if(actual!==required.join(',')&&
      !(row.op==='delete'&&actual==='end,old_target_ids,op,sentence_id,start,surface')){
    fail(index,'repair fields do not match schema',row);continue;
   }
-  let {sentence_id,op,old_target_ids,start,end,surface,choice_id='KEEP'}=row;
+  let {sentence_id,op,old_target_ids,start,end,surface,choice_id=null}=row;
   const sentence=bySentence.get(sentence_id);
   if(!sentence||!['add','replace','delete'].includes(op)||!Array.isArray(old_target_ids)||
      !old_target_ids.every(x=>typeof x==='string')||new Set(old_target_ids).size!==old_target_ids.length||
      !isInt(start)||!isInt(end)||start<0||end<=start||end>sentence.text.length||
      typeof surface!=='string'||
      !/[가-힣]/u.test(surface)||surface.length>300||
-     (choice_id!=='KEEP'&&(!HANGUL_SPAN.test(surface)||surface.length>90))||
-     typeof choice_id!=='string'){
+     (choice_id!==null&&(!HANGUL_SPAN.test(surface)||surface.length>90))||
+     (choice_id!==null&&typeof choice_id!=='string')){
    fail(index,'unknown sentence, invalid operation, source span, or choice',row);continue;
   }
   // Models are frequently off by one UTF-16 position. Correct only a
@@ -65,11 +65,11 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
   if(op==='add'?old_target_ids.length!==0:old_target_ids.length<1||old_target_ids.length>12){
    fail(index,'old target ID count invalid for operation',row);continue;
   }
-  if(op==='add'&&choice_id==='KEEP'){
+  if(op==='add'&&choice_id===null){
    fail(index,'add requires a real Hanja or borrowed-language origin; omit native text',row);continue;
   }
-  if(op==='delete'&&choice_id!=='KEEP'){
-   fail(index,'delete requires KEEP',row);continue;
+  if(op==='delete'&&choice_id!==null){
+   fail(index,'delete requires null or omitted choice_id',row);continue;
   }
   const old=old_target_ids.map(id=>byId.get(id));
   if(old.some(t=>!t||t.scan_only||t.sentence_id!==sentence_id)){
@@ -91,12 +91,12 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
   }else if(op==='replace'&&!old.every(t=>overlaps(span,t))){
    fail(index,'replacement does not intersect every referenced old target',row);continue;
   }
-  // A KEEP replacement must not consume unrelated text outside the old
+  // A null (no-conversion) replacement must not consume unrelated text outside the old
   // target envelope. A multi-fragment replace must account for every old
   // Hangul character (checked transactionally below).
-  if(op==='replace'&&choice_id==='KEEP'&&
+  if(op==='replace'&&choice_id===null&&
      (start<Math.min(...old.map(t=>t.start))||end>Math.max(...old.map(t=>t.end)))){
-   fail(index,'KEEP replacement extends beyond old target',row);continue;
+   fail(index,'null replacement extends beyond old target',row);continue;
   }
   // Every source target intersecting this new span must be referenced (add
   // cannot shadow one). Never override an already-applied repair silently.
@@ -109,11 +109,11 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
   const protectedRange=(scope.protected_ranges||[]).some(([a,b])=>start<b&&a<end)||
    old.some(t=>t.proper_noun===true||t.suspected_person_name===true||
     t.dictionary_person_name===true||t.dictionary_name_homograph===true);
-  if(choice_id!=='KEEP'&&protectedRange){
+  if(choice_id!==null&&protectedRange){
    fail(index,'protected name or proper noun',row);continue;
   }
   let annotations=[];
-  if(choice_id!=='KEEP'){
+  if(choice_id!==null){
    // Caller validates the actual origin and returns exact source spans.
    // A missing verifier cannot authorize an annotation.
    try{
@@ -141,7 +141,7 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
  for(const r of prepared)if(rejected.some(badRow=>badRow.old_target_ids?.some(id=>r.old_target_ids.includes(id))))bad.add(r.index);
  // A validated repair retires every referenced old target atomically.
  // Unchanged Korean suffixes, particles and other gaps remain in the DOM
- // naturally; no artificial KEEP fragment is required.
+ // naturally; no artificial placeholder fragment is required.
 
  // Propagate a conflicting split to all sibling repairs sharing old targets.
  let changed=true;

@@ -8,11 +8,11 @@ import {validateSegmentationRepairsCore} from './repair-validation-core.js';
 // geometric validator is shared with the offline page recovery path.
 export function verifySegmentationOrigin({start,end,surface,choice_id,sentence,config}){
  const virtual={target_id:'repair',start,end,surface,context:sentence.text,
-  options:[{choice_id:'KEEP',type:'keep',replacement:surface,definitions:[],entry_id:null}]};
+  options:[{choice_id:null,type:'keep',replacement:surface,definitions:[],entry_id:null}]};
  let option=literalOriginOption(virtual,choice_id,{
   experimentalHanja:config.repairModes?.hanja===true,
   experimentalLoanword:config.repairModes?.loanword===true,
-  hanjaReadingCheck:config.hanjaReadingCheck!==false
+  hanjaReadingCheck:config.hanjaReadingCheck===true
  });
  // Preserve explicitly unchanged Hangul anchors inside a Hanja repaired
  // surface; this does not authorize arbitrary truncation or invented suffixes.
@@ -26,7 +26,7 @@ export function verifySegmentationOrigin({start,end,surface,choice_id,sentence,c
  try{
   let annotations=projectAnnotation(sentence.text,{...virtual,...option});
   if(!annotations.length)return null;
-  if(option.type==='hanja'&&config.hanjaReadingCheck!==false&&
+  if(option.type==='hanja'&&config.hanjaReadingCheck===true&&
      validateModelHanjaReadings(sentence.text,annotations).status==='mismatch')return null;
   return annotations.map(a=>({...a,origin_source:'model-unverified'}));
  }catch{return null;}

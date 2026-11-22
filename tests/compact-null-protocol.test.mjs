@@ -5,7 +5,7 @@ import {buildReviewPayload,buildManualPrompt,buildReviewInstructions} from '../r
 import {createManualReviewSession} from '../manual-review.js';
 
 const target=(surface='킵')=>({target_id:'t0',start:0,end:surface.length,surface,context:surface,
- options:[{choice_id:'KEEP',type:'keep',replacement:surface,definitions:[],entry_id:null},
+ options:[{choice_id:null,type:'keep',replacement:surface,definitions:[],entry_id:null},
   {choice_id:'c0',type:'hanja',replacement:'韓國',definitions:['unrelated meaning'],entry_id:1}]});
 
 test('the ONLY results wire protocol is {t,c}; a JSON null keeps the source',()=>{
@@ -15,10 +15,13 @@ test('the ONLY results wire protocol is {t,c}; a JSON null keeps the source',()=
  for(const old of [
   {results:[{target_id:'t0',choice_id:'c0'}]},
   {results:[{tID:'t0',cID:'c0'}]},
-  {results:[{t:'t0',c:'c0',choice_id:'KEEP'}]},
+  {results:[{t:'t0',c:'c0',choice_id:null}]},
   {results:[{t:'t0',c:null},{t:'t0',c:'c0'}]}
  ])assert.equal(validateChoices([t],old).accepted.length,0,JSON.stringify(old));
- for(const raw of ['KEEP','null'])assert.equal(validateChoices([t],{results:[{t:'t0',c:raw}]}).accepted[0].option.type,'keep');
+ for(const raw of ['null','NULL','Null'])assert.equal(validateChoices([t],{results:[{t:'t0',c:raw}]}).accepted[0].option.type,'keep');
+ const invalid=validateChoices([t],{results:[{t:'t0',c:'KEEP'}]});
+ assert.equal(invalid.accepted.length,0);
+ assert.equal(invalid.unresolved.length,1);
 });
 
 test('a literal Latin origin KEEP is not the old keep instruction',()=>{
@@ -34,7 +37,7 @@ test('a literal Latin origin KEEP is not the old keep instruction',()=>{
 test('the exported model prompt has no legacy result objects or fallback sentinel',()=>{
  const t=target(),cfg={experimentalLoanword:true};
  const payload=buildReviewPayload('킵',[t],cfg).payload;
- assert.equal(payload.format,'shared-pools-v4');
+ assert.equal(payload.format,'shared-pools-v5');
  assert.equal(Object.hasOwn(payload.targets[0].options,'KEEP'),false);
  const prompt=buildManualPrompt('킵',[t],'batch-id',cfg),instructions=buildReviewInstructions(cfg);
  assert.match(prompt,/{"t":"t0","c":"c0"}/);

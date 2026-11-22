@@ -54,7 +54,7 @@ test('upgraded biography filter never reuses local results created before the fi
  const modes={hanja:true,loanword:false,nameProtection:true,filterDictionaryPeople:true};
  const oldKey=JSON.stringify(['dictionary-v3-alignment',false,identity.engine_version,identity.dictionary_fingerprint,modes,text]);
  const outdated={...identity,annotations:[],targets:[{target_id:'old',surface:text,start:0,end:3,
-  context:text,options:[{choice_id:'KEEP',type:'keep',replacement:text,entry_id:null,definitions:[]},
+  context:text,options:[{choice_id:null,type:'keep',replacement:text,entry_id:null,definitions:[]},
    {choice_id:'c0',type:'hanja',replacement:'張保皐',entry_id:262577,definitions:['historical general']}]}],stats:{pending:1}};
  const cache=new Map([[oldKey,outdated]]);
  let analyzed=0;

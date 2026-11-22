@@ -1,0 +1,133 @@
+name: Publish Korean Web Annotator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifest.json
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: korean-web-annotator-v1.1.0
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify version
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          assert json.loads(Path('manifest.json').read_text())['version'] == '1.1.0'
+          assert json.loads(Path('package.json').read_text())['version'] == '1.1.0'
+          assert 'mixed-origin-alignment.js' in json.loads(Path('manifest.json').read_text())['web_accessible_resources'][0]['resources']
+          assert 'partial-review-json.js' in json.loads(Path('manifest.json').read_text())['web_accessible_resources'][0]['resources']
+          PY
+          node --check content.js
+          node --check service-worker.js
+          node --check choice-review.js
+          node --check review-payload.js
+      - name: Run focused regressions
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          node --test \
+            tests/web-v1.2.12-content-startup.test.mjs \
+            tests/long-text-context-wire.test.mjs \
+            tests/v1.2.3-pooled-output-protocol.test.mjs \
+            tests/v1.2.8-pos-filter-independent-pool-recovery.test.mjs \
+            tests/manual-continuation.test.mjs \
+            tests/nonexistent-indexed-choices.test.mjs \
+            tests/pos-local-switch.test.mjs
+      - name: Restore and verify bundled runtime
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download v1.0.0 --pattern 'Korean-Web-Annotator-v1.0.0.zip' --dir "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          echo 'a5b01f812feb99d09b60ccf83b3cd3a58df62094488291503dd5065142a4526b  Korean-Web-Annotator-v1.0.0.zip' | sha256sum --check -
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import os
+          root=Path.cwd()
+          archive=Path(os.environ['RUNNER_TEMP'])/'Korean-Web-Annotator-v1.0.0.zip'
+          with ZipFile(archive) as z:
+              assert z.testzip() is None
+              for name in z.namelist():
+                  parts=Path(name).parts
+                  sub=parts[1:]
+                  if len(sub)<2 or sub[0] not in ('runtime','icons') or '..' in sub or name.endswith('/'):
+                      continue
+                  target=root.joinpath(*sub)
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  target.write_bytes(z.read(name))
+          PY
+          git restore --source=HEAD -- runtime/python-sources.json
+      - name: Package installable extension
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,subprocess,zipfile
+          root=Path.cwd()
+          tracked=[Path(x) for x in subprocess.check_output(['git','ls-files','-z']).decode().split('\0') if x]
+          files={p for p in tracked if p.parts[0] not in {'.github','distribution','tests','scripts'}
+                 and p.name!='restore_distribution.py' and (root/p).is_file()}
+          for folder in ('runtime','icons'):
+              files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
+          Path('dist').mkdir(exist_ok=True)
+          archive=root/'dist/Korean-Web-Annotator-v1.1.0.zip'
+          with zipfile.ZipFile(archive,'w',allowZip64=True) as z:
+              for path in sorted(files):
+                  z.write(root/path,'Korean-Web-Annotator/'+path.as_posix(),
+                          compress_type=zipfile.ZIP_DEFLATED,compresslevel=9 if path.suffix=='.mdl' else 6)
+          with zipfile.ZipFile(archive) as z:
+              assert z.testzip() is None
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.0'
+              for path in ['content.js','service-worker.js','mixed-origin-alignment.js','partial-review-json.js','runtime/models/cong.mdl']:
+                  assert 'Korean-Web-Annotator/'+path in z.namelist(), path
+              assert z.getinfo('Korean-Web-Annotator/runtime/models/cong.mdl').file_size==75854705
+          assert archive.stat().st_size>80_000_000
+          print('Built and verified',archive,archive.stat().st_size)
+          PY
+      - name: Prepare dictionary and release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download v1.0.0 --pattern 'hanja_dict.zip' --dir dist
+          cd dist
+          echo 'd41b9ac1fb9119d9fe5cd2db7c7e6bf77a4563240e75c2f5ea0ccf85c490fb6d  hanja_dict.zip' | sha256sum --check -
+          cat > RELEASE_NOTES.md <<'EOF'
+          ## Korean Web Annotator 1.1.0
+          
+          - More accurate Korean Hanja and loanword review, including word-boundary and dictionary-candidate validation.
+          - Shared candidate pools, context-efficient requests, and improved recovery of partial or invalid model answers.
+          - More reliable content-script startup, dynamic page annotation, and manual/API continuation.
+          - Optional smart segmentation repair, model-based origin completion and configurable part-of-speech filtering.
+          - Multiple built-in model providers and customizable compatible API endpoints.
+          
+          Download Korean-Web-Annotator-v1.1.0.zip and unpack it before loading the Chrome extension.
+          Download hanja_dict.zip separately if you want the prebuilt dictionary.
+          EOF
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view v1.1.0 >/dev/null 2>&1; then
+            gh release upload v1.1.0 dist/Korean-Web-Annotator-v1.1.0.zip dist/hanja_dict.zip --clobber
+          else
+            gh release create v1.1.0 dist/Korean-Web-Annotator-v1.1.0.zip dist/hanja_dict.zip \
+              --target "$GITHUB_SHA" --title 'Korean Web Annotator 1.1.0' \
+              --notes-file dist/RELEASE_NOTES.md --latest
+          fi

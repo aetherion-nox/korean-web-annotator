@@ -7,7 +7,7 @@ import {createManualReviewSession} from '../manual-review.js';
 const identity={engine_version:'multi-frame-engine',dictionary_fingerprint:'multi-frame-dict'};
 const option={choice_id:'c0',type:'hanja',replacement:'韓國',entry_id:1,
  definitions:['Korea']};
-const keep={choice_id:'KEEP',type:'keep',replacement:'한국',entry_id:null,definitions:[]};
+const keep={choice_id:null,type:'keep',replacement:'한국',entry_id:null,definitions:[]};
 const analyze=async text=>({...identity,annotations:[],targets:[{
  target_id:'local',start:0,end:2,surface:'한국',context:text,
  options:[keep,option]

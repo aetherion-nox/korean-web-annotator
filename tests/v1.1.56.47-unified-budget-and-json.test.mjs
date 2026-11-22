@@ -7,7 +7,7 @@ import {reviewTargets} from '../choice-review.js';
 function target(i){
  const surface='학교';
  return {target_id:'t'+i,start:i*3,end:i*3+surface.length,surface,context:'학교 학교',
-   options:[{choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]},
+   options:[{choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]},
     {choice_id:'c'+('x'.repeat(110)),type:'hanja',replacement:'學校',entry_id:1,definitions:['school']}]};
 }
 const targets=Array.from({length:650},(_,i)=>target(i));

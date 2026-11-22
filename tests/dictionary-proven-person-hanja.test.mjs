@@ -15,13 +15,13 @@ const name={
   verified_person_hanja:['李承晩'],
   morphology:[{form:actual,tag:'NNP',start:0,end:3}],
   options:[
-    {choice_id:'KEEP',type:'keep',replacement:actual,entry_id:null,definitions:[]},
+    {choice_id:null,type:'keep',replacement:actual,entry_id:null,definitions:[]},
     {choice_id:'c0',type:'hanja',replacement:'李承晩',entry_id:712,definitions:['역사 인물'],part_of_speech:'고유 명사',subject_category:'인명'}
   ]
 };
-const choice=(target,value,experimental=true)=>(
-  experimental?validateExperimentalChoices([target],{results:[{t:target.target_id,c:value}]},{experimentalHanja:true})
-              :validateChoices([target],{results:[{t:target.target_id,c:value}]})
+const choice=(target,value,experimental=true,discard=false)=>(
+  experimental?validateExperimentalChoices([target],{results:[{t:target.target_id,c:value}]},{experimentalHanja:true,discardInvalidReviewResults:discard})
+              :validateChoices([target],{results:[{t:target.target_id,c:value}]},{discardInvalidReviewResults:discard})
 );
 
 test('person with EXACT local dictionary Hanja may be converted by c0 or raw spelling',()=>{
@@ -48,10 +48,10 @@ test('missing dictionary proof, incorrect characters, or wrong span stay null as
    {...name,options:[name.options[0]],verified_person_hanja:['李承晩']},
    {...name,suspected_person_name:true,dictionary_person_name:undefined}
  ]){
-  assert.equal(choice(t,'李承晩').accepted[0].option.type,'keep');
+  assert.equal(choice(t,'李承晩',true,true).accepted[0].option.type,'keep');
  }
  for(const raw of ['李承晚','李承滿','韓東勳','이승만']){
-  const answer=choice(name,raw);
+  const answer=choice(name,raw,true,true);
   assert.equal(answer.accepted[0].option.type,'keep',raw);
  }
 });
@@ -93,6 +93,6 @@ test('personal Hanja remains protected even if multiple other origin modes are e
  const t={...name,options:[name.options[0]],verified_person_hanja:undefined,
    suspected_person_name:true};
  for(const raw of ['李承晩','韓東勳']){
-  assert.equal(choice(t,raw).accepted[0].option.type,'keep');
+  assert.equal(choice(t,raw,true,true).accepted[0].option.type,'keep');
  }
 });

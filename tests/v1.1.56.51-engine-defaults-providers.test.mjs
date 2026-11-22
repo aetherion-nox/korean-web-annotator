@@ -14,15 +14,15 @@ const engineScript=await fs.readFile(new URL('../engine-settings.js',import.meta
 const tick=()=>new Promise(resolve=>setTimeout(resolve,25));
 const catalog=globalThis.KRA_MODEL_CATALOG;
 const target={target_id:'t0',start:0,end:2,surface:'경제',context:'경제',
- options:[{choice_id:'KEEP',type:'keep',replacement:'경제',entry_id:null,definitions:[]}]};
+ options:[{choice_id:null,type:'keep',replacement:'경제',entry_id:null,definitions:[]}]};
 const answer=JSON.stringify({results:[{t:'t0',c:null}]});
 
 test('fresh engine defaults match the photographed switches; 1M is a separate default',async()=>{
  assert.deepEqual(ENGINE_SWITCH_DEFAULTS,{
   enableModelReview:true,preloadEngineOnStartup:true,nameProtection:true,
   filterDictionaryPeople:true,reviewPosFilter:true,experimentalHanja:true,
-  hanjaReadingCheck:true,experimentalLoanword:true,smartSegmentation:true,
-  reviewLocalConversions:true,reviewAllCandidates:false,manualModelReview:true
+  hanjaReadingCheck:false,experimentalLoanword:true,smartSegmentation:true,
+  reviewLocalConversions:true,retryInvalidDictionaryChoices:true,discardInvalidReviewResults:false,reviewAllCandidates:false,manualModelReview:true
  });
  assert.equal(normalizeBatchContextTier(undefined),'1m');
  assert.equal(normalizeBatchContextTier('invalid'),'1m');
@@ -45,7 +45,7 @@ test('explicit review-disabled profiles keep their legacy choice before reset',(
  assert.equal(engineSwitchValues({enableModelReview:false,experimentalHanja:true}).experimentalHanja,true);
 });
 
-test('reset button changes only the 12 switches and leaves batch size, keys, logs, dictionary, profiles untouched',async()=>{
+test('reset button changes only the 14 switches and leaves batch size, keys, logs, dictionary, profiles untouched',async()=>{
  const dom=new JSDOM(html);
  const stored={
   enableModelReview:false,manualModelReview:false,smartSegmentation:false,
@@ -62,7 +62,7 @@ test('reset button changes only the 12 switches and leaves batch size, keys, log
  await tick();
  const root=dom.window.document.querySelector('.engine-switch-panel');
  assert.ok(root);
- assert.equal(root.querySelectorAll('input[type=checkbox]').length,12);
+ assert.equal(root.querySelectorAll('input[type=checkbox]').length,14);
  assert.equal(root.contains(dom.window.document.getElementById('batchContextTier')),false);
  dom.window.document.getElementById('resetEngineSwitches').click();
  await tick();
@@ -85,6 +85,7 @@ test('official endpoints and region-dependent Tencent model inference are select
  assert.equal(providers.gemini.endpoint,'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
  assert.equal(providers.muse.endpoint,'https://api.meta.ai/v1/chat/completions');
  assert.equal(providers.hunyuan.endpoint,'https://tokenhub.tencentmaas.com/v1/chat/completions');
+ assert.equal(providers.hunyuan.models[0].id,'hy4-flash');
  for(const [provider,id] of [['gemini','gemini-3.5-flash'],['muse','muse-spark-1.3'],['hunyuan','hy4']])
   assert.ok(catalog.resolve({provider,model:id}));
  assert.equal(catalog.inferProvider('https://tokenhub-intl.tencentmaas.com/v1/chat/completions'),'hunyuan');

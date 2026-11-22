@@ -94,7 +94,7 @@ test('manual recovery bindings project to original text entries',()=>{
  const pieces=plan.projectBinding(binding,{annotations:[{start:0,end:2,surface:'학교',replacement:'學校',type:'hanja'}]});assert.equal(pieces.length,2);assert.deepEqual(pieces.map(p=>p.annotations[0].replacement),['學','校']);dom.window.close();
 });
 test('dictionary category metadata passes validation for identity review',()=>{
- const target={target_id:'t0',start:0,end:3,surface:'이수민',context:'이수민',dictionary_person_name:true,options:[{choice_id:'KEEP',type:'keep',replacement:'이수민',entry_id:null,definitions:[]},{choice_id:'c0',type:'hanja',replacement:'李壽民',entry_id:1,definitions:['인물'],subject_category:'인명',semantic_category:null}]};
+ const target={target_id:'t0',start:0,end:3,surface:'이수민',context:'이수민',dictionary_person_name:true,options:[{choice_id:null,type:'keep',replacement:'이수민',entry_id:null,definitions:[]},{choice_id:'c0',type:'hanja',replacement:'李壽民',entry_id:1,definitions:['인물'],subject_category:'인명',semantic_category:null}]};
  assert.equal(validateAnalysis('이수민',{...identity,annotations:[],targets:[target],stats:{}}).targets[0].options[1].subject_category,'인명');
 });
 

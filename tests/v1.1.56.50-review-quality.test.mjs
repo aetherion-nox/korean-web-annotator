@@ -7,7 +7,7 @@ import {buildSessionHanjaGlossary} from '../session-hanja-glossary.js';
 import {protectRepeatedArticleNames} from '../article-name-consistency.js';
 import {buildReviewInstructions} from '../review-payload.js';
 
-const keep=surface=>({choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]});
+const keep=surface=>({choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]});
 const hanja=(id,replacement)=>({choice_id:id,type:'hanja',replacement,entry_id:id,definitions:['dictionary entry']});
 const target=(surface,options,extra={})=>({
  target_id:'t0',surface,start:0,end:surface.length,context:surface,options:[keep(surface),...options],...extra
@@ -23,12 +23,14 @@ test('quoted JSON null is never painted as a Latin model origin',()=>{
  assert.match(content,/choiceId\.toLowerCase\(\)==='null'/);
 });
 
-test('dictionary spelling with an impossible reading is kept, not displayed',()=>{
+test('dictionary c/n selection does not depend on the experimental reading checker',()=>{
  const t=target('곽면우',[hanja('c0','郭傘宇')]);
- const reply=validateChoices([t],{results:[{t:'t0',c:'c0'}]},{hanjaReadingCheck:true});
- assert.equal(reply.accepted.length,1);
- assert.equal(reply.accepted[0].option.type,'keep');
- assert.equal(reply.accepted[0].invalidChoiceFallback,true);
+ for(const hanjaReadingCheck of [false,true]){
+  const reply=validateChoices([t],{results:[{t:'t0',c:'c0'}]},{hanjaReadingCheck});
+  assert.equal(reply.accepted.length,1);
+  assert.equal(reply.accepted[0].option.choice_id,'c0');
+  assert.deepEqual(reply.unresolved,[]);
+ }
 });
 
 test('incorrect inline parenthetical spelling remains local but is not reused',()=>{
@@ -90,7 +92,7 @@ test('person-name protection preserves phonetic author Hanja glossary evidence',
   targets:[source],repair_context:{kiwi_tokens:[]},stats:{pending:1}
  });
  assert.equal(result.protectedCount,1);
- assert.deepEqual(result.analysis.targets[0].options.map(o=>o.choice_id),['KEEP','c0']);
+ assert.deepEqual(result.analysis.targets[0].options.map(o=>o.choice_id),[null,'c0']);
 });
 
 test('two ordinary place names without independent person evidence are unaffected',()=>{

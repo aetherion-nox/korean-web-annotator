@@ -9,7 +9,7 @@ import {runSentencePipeline} from '../annotation-pipeline.js';
 const token=(str,tag,position)=>({str,tag,position,length:str.length});
 const mode={hanja:true,loanword:false,allowNoDictionary:true};
 
-test('Kiwi-only analysis works with KEEP targets, no automatic conversions or dictionary metadata',()=>{
+test('Kiwi-only analysis works with null-only targets, no automatic conversions or dictionary metadata',()=>{
  const text='경제학을 공부한다';
  const tokens=[token('경제','NNG',0),token('학','XSN',2),token('을','JKO',3),
   token('공부','NNG',5),token('한다','EF',7)];
@@ -18,7 +18,7 @@ test('Kiwi-only analysis works with KEEP targets, no automatic conversions or di
  assert.equal(result.dictionary_fingerprint,NO_DICTIONARY_IDENTITY.dictionary_fingerprint);
  assert.deepEqual(result.annotations,[]);
  assert.deepEqual(result.targets.map(t=>t.surface),['경제학','공부']);
- assert.equal(result.targets[0].options[0].choice_id,'KEEP');
+ assert.equal(result.targets[0].options[0].choice_id,null);
  assert.deepEqual(validateAnalysis(text,result).targets.map(t=>t.surface),['경제학','공부']);
  const withDict={...result,dictionary_free:false};
  assert.deepEqual(validateAnalysis(text,withDict).targets,[]);
@@ -51,10 +51,12 @@ test('without a dictionary, raw Hanja origins still go through existing reading/
  const text='가';
  const result=validateAnalysis(text,analyzeWithoutDictionary(text,[token('가','NNG',0)],mode));
  const target=result.targets[0];
- const good=literalOriginOption(target,'可',{experimentalHanja:true});
- const bad=literalOriginOption(target,'韓',{experimentalHanja:true});
+ const good=literalOriginOption(target,'可',{experimentalHanja:true,hanjaReadingCheck:true});
+ const bad=literalOriginOption(target,'韓',{experimentalHanja:true,hanjaReadingCheck:true});
  assert.equal(good?.replacement,'可');
  assert.equal(bad,null);
+ assert.equal(literalOriginOption(target,'韓',{experimentalHanja:true})?.replacement,'韓',
+  'reading check is now opt-in for free-form model Hanja');
  assert.equal(literalOriginOption(target,'game',{experimentalHanja:true,experimentalLoanword:false}),null);
 });
 
@@ -69,7 +71,7 @@ test('model instruction and manual prompts identify no dictionary and still use 
  assert.match(prompt,/JSON null/);
  assert.match(prompt,/authentic generated origin/);
  const payload=buildReviewPayload(text,targets,cfg).payload;
- assert.equal(payload.format,'shared-pools-v4');
+ assert.equal(payload.format,'shared-pools-v5');
  assert.deepEqual(payload.candidates,[]);
  assert.deepEqual(payload.targets[0].options,{});
  assert.equal(payload.origin_mode,'open-origin');
@@ -84,7 +86,7 @@ test('model instruction and manual prompts identify no dictionary and still use 
  assert.equal(dictionaryPayload.origin_mode,undefined);
 });
 
-test('dictionary-free sentence pipeline issues review requests and retains model KEEP results',async()=>{
+test('dictionary-free sentence pipeline issues review requests and retains model null results',async()=>{
  const text='경제',analysis=analyzeWithoutDictionary(text,[token('경제','NNG',0)],mode);
  const events=[],seen=[];
  const request=async(config,targets)=>{

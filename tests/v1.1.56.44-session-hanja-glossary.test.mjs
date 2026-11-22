@@ -4,7 +4,7 @@ import {buildSessionHanjaGlossary,applySessionHanjaGlossary} from '../session-ha
 import {applyInlineHanjaAnnotations} from '../inline-hanja-evidence.js';
 import {runSentencePipeline} from '../annotation-pipeline.js';
 import {splitText} from '../text-chunks.js';
-const keep=s=>({choice_id:'KEEP',type:'keep',replacement:s,entry_id:null,definitions:[]});
+const keep=s=>({choice_id:null,type:'keep',replacement:s,entry_id:null,definitions:[]});
 const candidate=(id,spelling,meaning='original dictionary sense')=>({
  choice_id:id,type:'hanja',replacement:spelling,entry_id:99,definitions:[meaning]
 });
@@ -45,7 +45,7 @@ test('augment an existing dictionary spelling with citation without erasing its 
  assert.equal(res.stats.newChoices,0);
  assert.equal(res.stats.enhancedChoices,1);
  assert.equal(res.analysis.targets.length,1);
- assert.deepEqual(res.analysis.targets[0].options.map(o=>o.choice_id),['KEEP','c0','c1']);
+ assert.deepEqual(res.analysis.targets[0].options.map(o=>o.choice_id),[null,'c0','c1']);
  assert.deepEqual(res.analysis.targets[0].options[1].definitions[0],'existing sense');
  assert.match(res.analysis.targets[0].options[1].definitions[1],/본문|本文/);
  assert.equal(t.options[1].definitions.length,1,'do not mutate cached engine objects');

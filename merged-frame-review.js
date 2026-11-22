@@ -69,7 +69,7 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
     send(part,{type:'MANUAL_REVIEW_STANDBY'});
    return;
   }
-  if(['MANUAL_REVIEW_REQUEST','MANUAL_REVIEW_ERROR','MANUAL_REVIEW_ACCEPTED'].includes(event.type)){
+  if(['MANUAL_REVIEW_REQUEST','MANUAL_REVIEW_ERROR','MANUAL_REVIEW_ACCEPTED','REVIEW_PAUSED','REVIEW_CONTINUATION_STARTED'].includes(event.type)){
    if(group.host)send(group.host,event);
    return;
   }
@@ -121,8 +121,17 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   }
   group.session=createSession({operationId:id,post:event=>broadcast(group,event),
    signal:group.controller.signal});
+  const waitForUnfinishedReview=()=>new Promise((resolve,reject)=>{
+   if(group.controller.signal.aborted){reject(Error('Shared review cancelled'));return;}
+   const onAbort=()=>{group.pendingContinuation=null;reject(Error('Shared review cancelled'))};
+   group.controller.signal.addEventListener('abort',onAbort,{once:true});
+   group.pendingContinuation=mode=>{
+    group.controller.signal.removeEventListener('abort',onAbort);
+    group.pendingContinuation=null;resolve({mode});
+   };
+  });
   group.runPromise=Promise.resolve().then(()=>
-   run(message,event=>broadcast(group,event),group.controller.signal,group.session)
+   run(message,event=>broadcast(group,event),group.controller.signal,group.session,waitForUnfinishedReview)
   ).catch(error=>{
    if(!group.controller.signal.aborted)
     broadcast(group,{type:'ERROR',operationId:id,error:error.message});
@@ -135,6 +144,13 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   if(!group||!group.session||!group.host||
      group.host.port!==part.port||group.finished)return false;
   return group.session.submit({...message,operationId:id});
+ }
+ function continueReview(id,part,mode){
+  const group=groups.get(id);
+  if(!group||group.finished||group.host?.port!==part.port||
+     group.host?.frameId!==part.frameId||
+     !['api','manual','null'].includes(mode)||!group.pendingContinuation)return false;
+  group.pendingContinuation(mode);return true;
  }
  function detach(id,part){
   const group=groups.get(id);if(!group||group.finished)return;
@@ -166,7 +182,7 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   for(const part of group.parts)send(part,{type:'ERROR',operationId:id,error:reason});
   groups.delete(id);
  }
- return {open,join,finalize,respond,detach,abort,
+ return {open,join,finalize,respond,continueReview,detach,abort,
   state:id=>{const g=groups.get(id);return g?{joined:g.parts.length,closed:g.closed,
    frames:g.parts.map(p=>p.frameId),host:g.host?.frameId}:null;}};
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {extractInlineHanjaPairs,applyInlineHanjaAnnotations} from '../inline-hanja-evidence.js';
 import {runSentencePipeline} from '../annotation-pipeline.js';
 
-const keep=surface=>({choice_id:'KEEP',type:'keep',entry_id:null,replacement:surface,definitions:[]});
+const keep=surface=>({choice_id:null,type:'keep',entry_id:null,replacement:surface,definitions:[]});
 const choice=(surface,hanja,id=3)=>({choice_id:'c0',type:'hanja',entry_id:id,replacement:hanja,definitions:['dictionary']});
 const target=(text,surface,start,hanja)=>({target_id:'t0',start,end:start+surface.length,surface,context:text,options:[keep(surface),choice(surface,hanja)]});
 const analysis=(text,targets=[],annotations=[])=>({

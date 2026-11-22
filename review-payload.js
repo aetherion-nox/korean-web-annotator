@@ -1,44 +1,67 @@
 import {filterReviewTargets,canTrimReviewMorphology} from './review-pos.js';
+import {projectAnnotation} from './local-engine.js';
 import {buildExperimentalOriginInstructions} from './experimental-options.js';
 import {SMART_SEGMENTATION_INSTRUCTIONS} from './smart-segmentation-prompt.js';
 
 // Compact-ID JSON protocol. No support for old result row field names.
-export const REVIEW_INSTRUCTIONS=[
- 'Annotate Korean occurrences by true origin and context-specific meaning, using the supplied dictionary senses.',
- 'Input format shared-pools-v4: sentences[] contains source sentences; targets[].sentence_id references its sentence, and each target retains a unique target_id. Each target options maps its local c/n keys to pooled candidates p keys; p keys are not valid answers.',
- 'For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c must be a matching local dictionary c/n key or actual JSON null to preserve the Korean original.',
- 'Field names are ALWAYS exactly t and c. An n0/n1/n2 nonconversion choice belongs in the VALUE of c (e.g. {"t":"tX","c":"n2"}), NEVER as a property name (not {"t":"tX","n2":"c0"}).',
- 'For API replies, return {"results":[{"t":"t0","c":"c0"},{"t":"t1","c":null}]}. For manual replies, also include the original batch_id in the outer object. Do not use string "null" for actual null, and never put explanatory text or other fields into a result row.',
- 'Decide meaning from the sentence and adjacent context BEFORE selecting a dictionary sense: identify the exact source word, surrounding phrase, named entities and context-specific meaning. Dictionary options are proposals, not proof: reject a c/n key whose definition denotes a different meaning even if it is the only available candidate. Nonconversion dictionary senses use their n key; use actual JSON null when no supported origin applies.',
- 'Check the entire orthographic word and its grammatical suffixes before committing any shorter fragment. If a candidate cuts through a personal name, title or indivisible word, do not convert that fragment. Preserve it with JSON null rather than inventing a partial meaning.',
- 'Verify Hanja readings against the actual Hangul syllables; do not select an otherwise valid dictionary word only because its spelling looks plausible. Repeated occurrences of the same identifiable person, title or place in one article should inform interpretation, not force speculative Hanja.',
- 'Names require exact identity evidence; proper_noun, dictionary_name_homograph and Kiwi morphology are hints, not proof. For a personal name, choose a matching dictionary c key only when its meaning matches the context. Otherwise return JSON null; never infer unlisted personal-name spellings. Other proper nouns likewise require a matching dictionary sense.',
- 'Session-local candidates whose entry_id starts with session-inline-hanja: come from an explicit Hangul(漢字) parenthesis already ENCOUNTERED earlier in the CURRENT article, or earlier in this very paragraph. Their definitions quote the source context, not an external dictionary. Treat them as strong article evidence but NOT proof that every identical-looking word or person name has the same meaning. Compete with existing dictionary choices and choose only when the current occurrence supports that sense; otherwise select the ordinary alternative or JSON null.',
- 'An empty options object {} supplies NO local c/n keys; never invent a numbered option. Without any established supported origin, answer actual JSON null. Any invalid or unavailable choice is treated as null by local validation without changing target identity.',
- 'Do not invent or repeat t identifiers, and do not change source start/end positions. Preserve every source word boundary and native suffix.'
+// Shared semantic gate: dictionary candidates must match the contextual sense;
+// an etymological origin must match BOTH meaning and Korean pronunciation.
+const CORE_REVIEW_INSTRUCTIONS=[
+ "Annotate Korean occurrences by true origin and context-specific meaning, using the supplied dictionary senses.",
+ "Input format shared-pools-v5: sentences[] contains source sentences; targets[].sentence_id references its sentence. targets[].options is an ARRAY of pooled p candidate IDs. For dictionary answers choose results[].c from that exact target's options array. The internal dictionary numbering is not sent to the model.",
+ "For EACH target return exactly one JSON object with fields t and c in results[]. t must match its target_id precisely. c is a matching pooled p candidate ID, actual JSON null, or an authentic direct origin only when its experimental origin type is enabled.",
+ "Field names are exactly t and c. For dictionary answers copy a p candidate ID from this target.options array, e.g. {\"t\":\"tX\",\"c\":\"p412\"}. Never derive a candidate ID from a numeric suffix or a different target.",
+ "For API replies, return {\"results\":[{\"t\":\"t0\",\"c\":\"p0\"},{\"t\":\"t1\",\"c\":null}]}. For manual replies, also include the original batch_id. Use actual JSON null, not string \"null\". Do not include explanatory fields in result rows.",
+ "Decide meaning from the sentence and adjacent context BEFORE selecting a dictionary sense: identify the actual Korean lexical item, morpheme boundaries, named entity, and context-specific meaning. Dictionary options are proposals, not proof. A pooled candidate may combine multiple original dictionary entries with the SAME projected annotation; inspect ALL its senses[] (or its single definitions field). A wrong pooled candidate is wrong even when it is the only candidate; NEVER choose the nearest available ID merely to complete the response. Nonconversion dictionary senses within a pooled candidate require a real native meaning match, or use JSON null.",
+ "Check the entire orthographic word and its grammatical suffixes before committing any shorter fragment. If a candidate cuts through a personal name, title or indivisible word, do not convert that fragment. Preserve it with JSON null rather than inventing a partial meaning.",
+ "Hanja annotations must represent authentic Hanja etymology aligned to Korean readings, NOT a Chinese translation or semantically similar expression pronounced differently in Korean. Never replace a native Korean morpheme with Hanja merely to express its meaning. Verify individual Hanja readings against the actual Hangul syllables and word boundaries, including valid initial-sound phenomena; matching semantics alone is insufficient.",
+ "Names require exact identity evidence; proper_noun, dictionary_name_homograph and Kiwi morphology are hints, not proof. For a personal name, choose a matching dictionary pooled p ID only when its meaning matches the context. Otherwise return JSON null; never infer unlisted personal-name spellings. Other proper nouns also require reliable contextual identity and origin evidence.",
+ "Session-local senses whose entry_id (including within candidate.senses[]) starts with session-inline-hanja: come from an explicit Hangul(漢字) parenthesis already ENCOUNTERED earlier in the CURRENT article, or earlier in this very paragraph. Their definitions quote the source context, not an external dictionary. Treat them as strong article evidence but NOT proof that every identical-looking word or person name has the same meaning. Compete with existing dictionary choices and choose only when the current occurrence supports that sense; otherwise select the ordinary alternative or JSON null.",
+ "An empty options array [] supplies NO dictionary candidates; never invent a p ID. Each non-null dictionary choice must be an exact element of the current target.options array. Invalid IDs are handled by the configured retry/discard strategy.",
+ "Do not invent or repeat t identifiers, and do not change source start/end positions. Preserve every source word boundary and native suffix.",
 ].join('\n');
+const STANDARD_REVIEW_RULES=[
+ "DICTIONARY-ONLY ANSWERS: results[].c must be a pooled p candidate ID in the current target.options array or actual JSON null. Directly written Hanja or Latin spellings are NOT valid when experimental origins are disabled. If no candidate fits the contextual meaning, return actual JSON null.",
+ "An empty options array [] provides no dictionary candidates. Use actual JSON null for that target. Never fabricate a p ID for an empty candidate list.",
+].join('\n');
+export const REVIEW_INSTRUCTIONS=[CORE_REVIEW_INSTRUCTIONS,STANDARD_REVIEW_RULES].join('\n');
 
 export function buildReviewInstructions(config={}){
+ if(config.dictionaryCorrectionOnly===true){
+  // Targeted retries keep the original origin-audit toggles. Only segmentation
+  // repairs are excluded: the model is correcting t/c decisions, not spans.
+  const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
+  return [
+   experimental?
+    'ORIGIN-AUDIT CORRECTION: Previous valid answers are saved. Reconsider only the supplied target IDs with the same enabled experimental origin types as the original request.':
+    'DICTIONARY-ONLY CORRECTION: Previous valid answers are saved. Reconsider only the supplied target IDs.',
+   buildReviewInstructions({...config,dictionaryCorrectionOnly:false,smartSegmentation:false}),
+   "Do not repeat saved answers. Return exactly one t/c row for each supplied target, with actual JSON null if the context does not support an authorized origin. Use only pooled p IDs in each target.options array, and do not submit repairs or unrelated targets.",
+   "WEB CORRECTION FEEDBACK: rejected_choices records earlier rejected model answers with their local validation reasons. Reconsider semantic meaning, pronunciation and word boundaries. Reject repeated invalid literal origins; when uncertain use JSON null. Pooled p IDs are PER-REQUEST and may change when rebatching: a previously invalid numeric p ID is NOT a global ban against the same p ID in the NEW current options.",
+   "API response format: {\"results\":[{\"t\":\"t0\",\"c\":\"p0\"},{\"t\":\"t1\",\"c\":null}]}. Manual retries must also include their original batch_id."
+  ].join('\n');
+ }
  const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
  const generated=experimental?buildExperimentalOriginInstructions(config):'';
  const noDictionary=experimental&&config.dictionaryFree===true?[
   'OPEN-ENDED ORIGIN AUDIT: no external dictionary was loaded; empty options do not prohibit an authentic generated origin.',
-  'Infer a reliably known etymological Hanja spelling or borrowed Latin original only for the enabled origin type; not an invented translation, transcription, or romanization.',
+  'Infer a reliably known etymological Hanja spelling or borrowed Latin original only for the enabled origin type; NEVER substitute a meaning translation, invented spelling, or unrelated word.',
   'For genuine Korean native vocabulary and uncertain cases use actual JSON null. Never invent a dictionary option key.'
  ].join('\n'):'';
- return [REVIEW_INSTRUCTIONS,...(generated?[generated]:[]),...(noDictionary?[noDictionary]:[]),
+ return [experimental?CORE_REVIEW_INSTRUCTIONS:REVIEW_INSTRUCTIONS,
+  ...(generated?[generated]:[]),...(noDictionary?[noDictionary]:[]),
   ...(config.smartSegmentation===true?[SMART_SEGMENTATION_INSTRUCTIONS]:[])].join('\n');
 }
 export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,config);
  const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
  if(batchId!==undefined)payload.batch_id=batchId;
- const example=JSON.stringify({batch_id:batchId,results:[{t:'t0',c:'c0'},{t:'t1',c:null}]});
+ const example=JSON.stringify({batch_id:batchId,results:[{t:'t0',c:'p0'},{t:'t1',c:null}]});
  const notes=[
   config.smartSegmentation===true?'MANUAL REVIEW: Preferred response is one JSON object containing batch_id, results and optional repairs.':'MANUAL REVIEW: Preferred response is one JSON object containing batch_id and results.',
   'Copy the current batch_id exactly. Example answer structure (use real target IDs and choices from this request): '+example+'. If the wrapper is omitted accidentally, the local validator also accepts a bare t/c array or an object with results, but only when every returned t belongs to the active batch.',
-  'Never write n0, n1, n2 or any dictionary choice as the JSON property name. A nonconversion answer is {"t":"tX","c":"n2"}, not {"t":"tX","n2":"c0"}.',
-  'Result rows use ONLY the exact field names t and c: {"t":"t0","c":"c0"} or {"t":"t1","c":null}. The t value matches target_id in the request. c is '+(experimental?'a local dictionary key or an enabled literal origin':'a local dictionary c/n key')+', not a pooled candidate ID.',
+  "For dictionary answers copy only a pooled p ID from the CURRENT target.options array. For example {\"t\":\"tX\",\"c\":\"p412\"} only if p412 appears in that target.options list.",
+  'Result rows use ONLY the exact field names t and c: {"t":"t0","c":"p0"} or {"t":"t1","c":null}. The t value matches target_id; c is '+(experimental?'a pooled p ID from this target.options array or an enabled authentic literal origin':'a pooled p ID from this target.options array')+', or actual JSON null.',
   'Use real JSON null (without quotes) to leave text unchanged.',
   ...(experimental?[config.experimentalHanja===true&&config.experimentalLoanword===true?
    'A genuine enabled Hanja or Latin source spelling is an origin string, never a keep instruction.':
@@ -58,10 +81,53 @@ function canonical(value){
  if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])]));
  return value;
 }
+// Only the final projected annotation matters for accepting an equivalent
+// pooled ID. Never infer a source from its p-number or its dictionary gloss.
+// Conversion equivalence requires an exact, uniquely alignable source span.
+function projectedEffect(target,option){
+ try{
+  const rendered=projectAnnotation(target.context,{
+   ...option,start:target.start,end:target.end,surface:target.surface
+  });
+  return rendered.map(a=>({
+   start:a.start-target.start,end:a.end-target.start,
+   surface:a.surface,replacement:a.replacement,type:a.type
+  }));
+ }catch{return null;}
+}
+const effectShape=effect=>JSON.stringify(effect.map(a=>[
+ a.type,a.surface,a.replacement
+]));
+const sameEffect=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+// Pool only outputs with identical source-relative projected annotations.
+// Inflected native forms can additionally share a no-op pool by dictionary
+// headword (나/내), but distinct unconverted lexemes never merge blindly.
+function poolEffectKey(target,meaning,effect){
+ if(!effect)return 'legacy:'+JSON.stringify(canonical(meaning));
+ if(meaning.type==='nonconversion'&&effect.length===0)
+  return JSON.stringify(['native',meaning.written_form||target.surface]);
+ if(!effect.length)return 'legacy:'+JSON.stringify(canonical(meaning));
+ return JSON.stringify(['rendered',target.surface,meaning.type,effect]);
+}
+function compactSense(meaning){
+ const {type,replacement,segments,...sense}=meaning;
+ return sense;
+}
+function rebaseEffect(source,localSurface){
+ const at=localSurface.indexOf(source.surface);
+ if(at<0||localSurface.indexOf(source.surface,at+1)!==-1)return null;
+ return source.effect.map(a=>({...a,start:a.start+at,end:a.end+at}));
+}
+
 export function buildReviewPayload(context,targets,config={}){
- const originalOptionCount=targets.reduce((n,t)=>n+t.options.length,0);
+ const originalTargets=Array.isArray(config.unfilteredReviewTargets)?config.unfilteredReviewTargets:targets;
+ const originalOptionCount=originalTargets.reduce((n,t)=>n+t.options.length,0);
+ // POS filtering remains model-facing only. The hidden fallback resolver may
+ // reuse an authentic, pre-filter option of THIS target if a foreign pooled p
+ // has the exact same source-bound rendered annotation.
  targets=filterReviewTargets(targets,config);
- const sentences=[],candidates=[],sentenceIds=new Map(),candidateIds=new Map();
+ const originalById=new Map(originalTargets.map(t=>[t.target_id,t]));
+ const sentences=[],candidates=[],sentenceIds=new Map(),candidateIds=new Map(),choiceIndex={},poolSources=new Map(),poolSenses=new Map(),poolForms=new Map();
  const packedTargets=targets.map(target=>{
   const text=target.context;
   const adjacent_context=target.adjacent_context;
@@ -77,18 +143,40 @@ export function buildReviewPayload(context,targets,config={}){
    kiwi_tokens:(target.repair_context?.kiwi_tokens||[]).map(t=>[t.form,t.tag,t.start,t.end]),
    protected_ranges:target.repair_context?.protected_ranges||[]
   }: {})});}
-  const options=Object.fromEntries(target.options.map(option=>{
-   if(option.type==='keep')return null;
+  // The model sees only pooled p IDs; local c/n options stay in the
+  // private per-request index used by validation and recovery.
+  const poolIds=[],byPool={};
+  for(const option of target.options){
+   if(option.type==='keep')continue;
    const {choice_id,...meaning}=option;
-   // Dictionary arrows express etymological direction, not a Latin letter.
-   // Keep the original option and choice ID for local validation/display;
-   // only strip display-only arrows from the model-facing candidate.
    if(meaning.type==='loanword'&&typeof meaning.replacement==='string')
      meaning.replacement=meaning.replacement.replace(/[←→]/g,'');
-   const key=JSON.stringify(canonical(meaning));
-   if(!candidateIds.has(key)){const candidate_id=`p${candidates.length}`;candidateIds.set(key,candidate_id);candidates.push({candidate_id,...meaning});}
-   return [choice_id,candidateIds.get(key)];
-  }).filter(Boolean));
+   const effect=projectedEffect(target,meaning);
+   const key=poolEffectKey(target,meaning,effect);
+   if(!candidateIds.has(key)){
+    const candidate_id=`p${candidates.length}`;
+    candidateIds.set(key,candidate_id);
+    candidates.push({candidate_id,...meaning});
+    poolSenses.set(candidate_id,new Map());
+    poolForms.set(candidate_id,new Set());
+   }
+   const poolId=candidateIds.get(key);
+   poolIds.push(poolId);
+   // Same projected output means one deterministic local choice. Never
+   // create ambiguous c/n mappings for semantically duplicate p groups.
+   if(!Object.hasOwn(byPool,poolId))byPool[poolId]=[choice_id];
+   const sense=compactSense(meaning),signature=JSON.stringify(canonical(sense));
+   poolSenses.get(poolId).set(signature,sense);
+   poolForms.get(poolId).add(target.surface);
+   if(effect){
+    if(!poolSources.has(poolId))poolSources.set(poolId,[]);
+    const sources=poolSources.get(poolId);
+    if(!sources.some(a=>a.surface===target.surface&&sameEffect(a.effect,effect)))
+     sources.push({surface:target.surface,effect});
+   }
+  }
+  choiceIndex[target.target_id]=byPool;
+  const options=[...new Set(poolIds)];
   const {context:unused,adjacent_context:unusedAdjacent,options:oldOptions,repair_context:unusedRepair,repair_sentence_key:unusedKey,original_target_id:unusedOriginal,...occurrence}=target;
   if(config.smartSegmentation===true&&target.scan_only===true)delete occurrence.surface;
   // Smart segmentation already sends the full Kiwi tokens once per sentence.
@@ -103,14 +191,72 @@ export function buildReviewPayload(context,targets,config={}){
     occurrence.morphology=target.morphology.map(({tag,...part})=>part);
    }
   }
-  return {...occurrence,sentence_id,options};
+  const rejected=config.retryHistoryFeedback===true?
+   config.rejectedChoices?.[target.target_id]:null;
+  return {...occurrence,sentence_id,options,
+   ...(Array.isArray(rejected)&&rejected.length?{
+    rejected_choices:rejected.slice(0,12).map(x=>({c:x.c,reason:x.reason,
+     ...(/^[pcn]\d+$/u.test(x.c)?{scope:'previous_request_only'}:{})}))
+   }:{})};
  });
+ // Keep every original meaning available even after collapsing
+ // dictionary entries that produce the same visible conversion. For a
+ // single sense the legacy flat candidate shape remains unchanged.
+ // For merged senses, the model reads senses[]; no dictionary provenance
+ // or lexical definitions are silently dropped.
+ for(const candidate of candidates){
+  const senses=[...poolSenses.get(candidate.candidate_id).values()];
+  const forms=[...poolForms.get(candidate.candidate_id)];
+  if(senses.length>1){
+   for(const key of ['entry_id','definitions','written_form','part_of_speech','subject_category','semantic_category'])
+    delete candidate[key];
+   candidate.senses=senses;
+  }
+  if(forms.length>1)candidate.surface_forms=forms;
+ }
  const experimental=config.experimentalHanja===true||config.experimentalLoanword===true;
- const payload={format:'shared-pools-v4',...(experimental?{
+ // Private safety index: a foreign p can reuse the same rendered annotation
+ // in this target's ORIGINAL dictionary options even if optional POS filtering
+ // hid the local sense from the MODEL. Never introduce an annotation absent
+ // from this target's local dictionary choices, and never alter its wire options.
+ // Neither entry ID nor gloss determines rendering equivalence.
+ const poolByShape=new Map(),noOpPoolIds=[];
+ for(const candidate of candidates){
+  const poolId=candidate.candidate_id,sources=poolSources.get(poolId)||[];
+  for(const source of sources){
+   if(!source.effect.length)continue;
+   const shape=effectShape(source.effect);
+   if(!poolByShape.has(shape))poolByShape.set(shape,[]);
+   poolByShape.get(shape).push({poolId,...source});
+  }
+  if(candidate.type==='nonconversion'&&sources.some(s=>s.effect.length===0))
+   noOpPoolIds.push(poolId);
+ }
+ for(const target of targets){
+  const mapping=choiceIndex[target.target_id]||{};
+  const sourceTarget=originalById.get(target.target_id)||target;
+  for(const option of sourceTarget.options){
+   if(option.type==='keep')continue;
+   const effect=projectedEffect(sourceTarget,option);
+   if(!effect?.length)continue; // A no-op already has the explicit null choice.
+   const shape=effectShape(effect);
+   for(const source of poolByShape.get(shape)||[]){
+    if(Object.hasOwn(mapping,source.poolId))continue;
+    const projected=rebaseEffect(source,target.surface);
+    if(projected&&sameEffect(projected,effect))
+     mapping[source.poolId]=[option.choice_id];
+   }
+  }
+ }
+ // A pooled nonconversion is visual KEEP, regardless of which dictionary
+ // definition produced it. Null is already a legal choice for every target.
+ // Store this sparse fallback once instead of repeating it for all targets.
+ if(noOpPoolIds.length)choiceIndex.__noOpPoolIds=noOpPoolIds;
+ const payload={format:'shared-pools-v5',...(experimental?{
   origin_mode:'open-origin',
   allowed_origin_types:[...(config.experimentalHanja===true?['hanja']:[]),...(config.experimentalLoanword===true?['loanword']:[])],
   ...(config.dictionaryFree===true?{null_is_fallback_only:true}:{dictionary_options_are_not_exhaustive:true})
- }:{}),...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
+ }:{}),sentences,candidates,targets:packedTargets};
  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
  const userBytes=bytes(payload);
  // The legacy-size diagnostic is an estimate. Serializing the old,
@@ -119,6 +265,44 @@ export function buildReviewPayload(context,targets,config={}){
  const encodedContextBytes=new Map(sentences.map(s=>[s.text,bytes(s.text)]));
  const repeatedContextBytes=targets.reduce((total,t)=>total+(encodedContextBytes.get(t.context)||0)+11,0);
  const legacyUserBytes=userBytes+repeatedContextBytes;
- const stats={posFilteredOptions:originalOptionCount-targets.reduce((n,t)=>n+t.options.length,0),posConflictTargets:targets.filter(t=>t.pos_conflict).length,format:payload.format,targets:targets.length,sentences:sentences.length,candidates:candidates.length,userBytes,legacyUserBytes,savedPercent:Math.round((1-userBytes/legacyUserBytes)*1000)/10};
- return {payload,stats};
+ const totalOffered=targets.reduce((n,t)=>n+t.options.filter(o=>o.type!=='keep').length,0);
+ const totalPooledReferences=packedTargets.reduce((n,t)=>n+t.options.length,0);
+ const stats={posFilteredOptions:originalOptionCount-targets.reduce((n,t)=>n+t.options.length,0),
+  collapsedLocalOptions:totalOffered-totalPooledReferences,
+  mergedPooledCandidates:candidates.filter(c=>Array.isArray(c.senses)).length,
+  posConflictTargets:targets.filter(t=>t.pos_conflict).length,format:payload.format,targets:targets.length,sentences:sentences.length,candidates:candidates.length,userBytes,legacyUserBytes,savedPercent:Math.round((1-userBytes/legacyUserBytes)*1000)/10};
+ return {payload,stats,choiceIndex};
+}
+
+/**
+ * An exact target option, a visually identical safely rebased conversion,
+ * or a no-op pooled nonconversion is allowed. Unalignable/alien conversion
+ * results and ambiguous targets still follow strict retry/discard rules.
+ */
+export function normalizePooledChoiceAnswers(response,choiceIndex){
+ if(!Array.isArray(response?.results))return response;
+ return {...response,results:response.results.map(row=>{
+  if(!row||typeof row!=='object'||typeof row.c!=='string')return row;
+  if(/^[cn]\d+$/u.test(row.c))return {...row,c:'invalid_local_key:'+row.c};
+  if(!/^p\d+$/u.test(row.c))return row;
+  const keys=choiceIndex?.[row.t]?.[row.c];
+  if(Array.isArray(keys)&&keys.length===1)return {...row,c:keys[0]};
+  if(choiceIndex?.[row.t]&&choiceIndex.__noOpPoolIds?.includes(row.c))
+   return {...row,c:null};
+  return row;
+ })};
+}
+
+// Extract only the authentic shared-pools payload embedded in a prompt
+// generated by this extension. A malformed prompt provides no
+// authority to reinterpret p IDs and will leave them invalid.
+export function poolPayloadFromManualPrompt(prompt){
+ if(typeof prompt!=='string')return null;
+ const marker='{"format":"shared-pools-v5"';
+ const start=prompt.indexOf(marker);
+ if(start<0)return null;
+ try{
+  const payload=JSON.parse(prompt.slice(start));
+  return payload?.format==='shared-pools-v5'?payload:null;
+ }catch{return null;}
 }

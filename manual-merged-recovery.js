@@ -57,7 +57,7 @@ export function partitionMergedManualRecovery(topology,backup,response,originalP
    throw Error('分词修复不能跨越不同 iframe 的目标。');
   frame.repairs.push({...repair,sentence_id:owner.localId});
  }
- const original=originalPrompt.indexOf('{"format":"shared-pools-v4"');
+ const original=originalPrompt.indexOf('{"format":"shared-pools-v5"');
  const payload=backup.smartSegmentation&&original>=0?
   (()=>{try{return JSON.parse(originalPrompt.slice(original));}catch{return null;}})():null;
  for(const frame of frames.values()){
@@ -84,11 +84,13 @@ export function partitionMergedManualRecovery(topology,backup,response,originalP
      ...s,sentence_id:from.get(s.sentence_id).localId
     }))
    };
-   const pools=new Set(framePayload.targets.flatMap(t=>Object.values(t.options||{})));
+   const pools=new Set(framePayload.targets.flatMap(t=>(Array.isArray(t.options)?t.options:[])));
    framePayload.candidates=(framePayload.candidates||[]).filter(c=>pools.has(c.candidate_id));
    prompt=originalPrompt.slice(0,original)+JSON.stringify(framePayload);
   }
-  frame.backup={...backup,bindings:frame.bindings,repairValidation};
+  frame.backup={...backup,bindings:frame.bindings,repairValidation,
+   choiceIndex:{...Object.fromEntries([...ids].map(id=>[id,backup.choiceIndex?.[id]||{}])),
+    ...(backup.choiceIndex?.__noOpPoolIds?{__noOpPoolIds:backup.choiceIndex.__noOpPoolIds}: {})}};
   frame.answer=JSON.stringify({batch_id:backup.requestId,results:frame.rows||[],
     ...(response.repairs!==undefined?{repairs:frame.repairs}:{})});
   frame.originalPrompt=prompt;

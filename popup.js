@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.0.0-long-text-checkpoints';
+const CONTENT_SCRIPT_VERSION = '1.1.0-web-content-startup-handshake';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');

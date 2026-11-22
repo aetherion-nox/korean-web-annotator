@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildReviewPayload,buildManualPrompt} from '../review-payload.js';
 import {modelTargets,validateChoices} from '../choice-review.js';
-const target={target_id:'t0',start:0,end:2,surface:'이상',context:'이상은 시인이다.',morphology:[{form:'이상',tag:'NNG',start:0,end:2}],dictionary_person_name:true,dictionary_name_homograph:true,options:[{choice_id:'KEEP',type:'keep',replacement:'이상',entry_id:null,definitions:[]},{choice_id:'c0',type:'hanja',replacement:'李箱',entry_id:1,part_of_speech:'고유 명사',subject_category:'인명',definitions:['시인']},{choice_id:'c1',type:'hanja',replacement:'理想',entry_id:2,part_of_speech:'명사',definitions:['이상적인 상태']}]};
+const target={target_id:'t0',start:0,end:2,surface:'이상',context:'이상은 시인이다.',morphology:[{form:'이상',tag:'NNG',start:0,end:2}],dictionary_person_name:true,dictionary_name_homograph:true,options:[{choice_id:null,type:'keep',replacement:'이상',entry_id:null,definitions:[]},{choice_id:'c0',type:'hanja',replacement:'李箱',entry_id:1,part_of_speech:'고유 명사',subject_category:'인명',definitions:['시인']},{choice_id:'c1',type:'hanja',replacement:'理想',entry_id:2,part_of_speech:'명사',definitions:['이상적인 상태']}]};
 test('name homograph bypasses Kiwi POS and retains both candidate definitions',()=>{
  const payload=buildReviewPayload(target.context,[target]).payload;
  assert.deepEqual(Object.keys(payload.targets[0].options),['c0','c1']);

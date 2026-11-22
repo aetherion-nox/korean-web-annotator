@@ -25,7 +25,7 @@ class SelectiveReview(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(t['surface']==word for t in audited['targets']),audited)
         target=next(t for t in audited['targets'] if t['surface']==word)
         self.assertEqual((target['start'],target['end']),(0,len(word)))
-        self.assertIn('KEEP',[o['choice_id'] for o in target['options']])
+        self.assertIn(None,[o['choice_id'] for o in target['options']])
         self.assertIn('事務室',[o['replacement'] for o in target['options'] if o['type']=='hanja'])
 
     async def test_original_native_nonconversion_is_not_promoted_into_a_target(self):

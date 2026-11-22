@@ -55,6 +55,8 @@ class ConverterService:
         *,
         tokens: Optional[List[MorphToken]] = None,
         progress=None,
+        pos_filter=True,
+        candidate_filter=None,
     ) -> Tuple[List[ConversionSegment], float]:
         start_time = time.perf_counter()
 
@@ -173,7 +175,9 @@ class ConverterService:
 
             group_segments = self._process_word_group(
                 text, group, candidates_map, segment_id, context_by_start, tokens, quantity_by_start,
-                progress=progress if progress is not None and len(group.tokens)>=128 else None
+                progress=progress if progress is not None and len(group.tokens)>=128 else None,
+                pos_filter=pos_filter,
+                candidate_filter=candidate_filter,
             )
             segments.extend(group_segments)
             segment_id += len(group_segments)
@@ -194,6 +198,8 @@ class ConverterService:
         all_tokens=None,
         quantity_by_start=None,
         progress=None,
+        pos_filter=True,
+        candidate_filter=None,
     ) -> List[ConversionSegment]:
         segments = []
         seg_id = start_id
@@ -269,13 +275,16 @@ class ConverterService:
                     token_tag=head_tag,
                     compatible_tags=[head_tag,'MAG','MM'] if derived_modifier else None,
                     context_forms=[f for f in sentence_context if f not in (span_text, span_form)],
+                    pos_filter=pos_filter,
                 )
+                if candidate_filter is not None:
+                    scored=[sc for sc in scored if candidate_filter(span_text,sc,None)]
                 if not scored:
                     continue
-                selected, status = self.disambiguation.select_best(scored)
+                selected, status = self.disambiguation.select_best(scored, pos_filter=pos_filter)
 
                 converted=bool(selected and selected.replacement and selected.is_reliable and status == 'converted')
-                keep_competitor=self.disambiguation.has_keep_competitor(scored)
+                keep_competitor=self.disambiguation.has_keep_competitor(scored, pos_filter=pos_filter)
                 whole_modifier=derived_modifier and any(c.part_of_speech in {'부사','관형사'} for c in scored)
                 if converted or keep_competitor or whole_modifier:
                     selected=selected or scored[0]
@@ -364,8 +373,11 @@ class ConverterService:
                         is_verbal_context=is_verbal_context,
                         quantity=(quantity_by_start.get(token.start,False) if quantity_by_start is not None
                               else has_quantity_before(text, all_tokens or group.tokens, token.start)),
+                        pos_filter=pos_filter,
                     )
-                    selected, status = self.disambiguation.select_best(scored)
+                    if candidate_filter is not None:
+                        scored=[sc for sc in scored if candidate_filter(original_text,sc,token)]
+                    selected, status = self.disambiguation.select_best(scored, pos_filter=pos_filter)
 
                     cand_list = [
                         {

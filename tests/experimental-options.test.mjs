@@ -6,13 +6,13 @@ import {validateExperimentalChoices,validateChoices} from '../choice-review.js';
 import {projectAnnotation} from '../local-engine.js';
 
 const hanja={target_id:'t0',start:0,end:2,surface:'원잠',context:'원잠을 보유한다.',options:[
- {choice_id:'KEEP',type:'keep',replacement:'원잠',entry_id:null,definitions:[]},
+ {choice_id:null,type:'keep',replacement:'원잠',entry_id:null,definitions:[]},
  {choice_id:'c0',type:'hanja',replacement:'元箴',entry_id:10,definitions:['unrelated meaning']}]};
 const loan={target_id:'t1',start:0,end:2,surface:'게임',context:'게임을 한다.',options:[
- {choice_id:'KEEP',type:'keep',replacement:'게임',entry_id:null,definitions:[]},
+ {choice_id:null,type:'keep',replacement:'게임',entry_id:null,definitions:[]},
  {choice_id:'n0',type:'nonconversion',replacement:'게임',entry_id:12,definitions:['native meaning']}]};
-const reply=(target_id,choice_id)=>({results:[{t:target_id,c:choice_id==='KEEP'?null:choice_id}]});
-const choose=(target,choice_id,config)=>validateExperimentalChoices([target],reply(target.target_id,choice_id),config);
+const reply=(target_id,choice_id)=>({results:[{t:target_id,c:choice_id}]});
+const choose=(target,choice_id,config)=>validateExperimentalChoices([target],reply(target.target_id,choice_id),{discardInvalidReviewResults:true,retryInvalidDictionaryChoices:false,...config});
 
 test('literal Hanja is read from results.choice_id; no proposal array or x0 required',()=>{
  const result=choose(hanja,'原潛',{experimentalHanja:true});
@@ -21,17 +21,17 @@ test('literal Hanja is read from results.choice_id; no proposal array or x0 requ
  assert.equal(result.accepted[0].option.entry_id,'experimental:hanja');
  assert.deepEqual(projectAnnotation(hanja.context,{...result.accepted[0].target,...result.accepted[0].option}).map(a=>a.replacement),['原潛']);
  assert.equal(result.experimentalAccepted,1);
- assert.deepEqual(hanja.options.map(o=>o.choice_id),['KEEP','c0'],'dictionary target is not mutated');
+ assert.deepEqual(hanja.options.map(o=>o.choice_id),[null,'c0'],'dictionary target is not mutated');
 });
 
-test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>{
- for(const id of ['c0','KEEP']){
+test('dictionary c/n keys and JSON null keep their separate meanings',()=>{
+ for(const id of ['c0',null]){
   const result=choose(hanja,id,{experimentalHanja:true});
   assert.equal(result.accepted[0].option.choice_id,id);
   assert.equal(result.experimentalAccepted,0);
  }
  assert.equal(choose(loan,'n0',{experimentalLoanword:true}).accepted[0].option.type,'nonconversion');
- assert.equal(validateChoices([hanja],reply('t0','原潛')).accepted[0].option.type,'keep',
+ assert.equal(validateChoices([hanja],reply('t0','原潛'),{discardInvalidReviewResults:true}).accepted[0].option.type,'keep',
   'ordinary mode must not convert unsupported raw origins');
  assert.equal(choose(hanja,'元箴',{experimentalHanja:true}).accepted.length,1,'matching dictionary spelling can be proposed independently');
 });
@@ -39,13 +39,13 @@ test('original dictionary keys continue to work, including KEEP, c0 and n0',()=>
 test('identical literal origin and dictionary spelling remain separate evidence for Musk, Yugo and Hanja',()=>{
  const musk={target_id:'t560',start:2,end:5,surface:'머스크',context:'멜론머스크',
   suspected_person_name:true,proper_noun:true,options:[
-   {choice_id:'KEEP',type:'keep',replacement:'머스크',entry_id:null,definitions:[]},
+   {choice_id:null,type:'keep',replacement:'머스크',entry_id:null,definitions:[]},
    ...['c0','c1','c2'].map((id,i)=>({choice_id:id,type:'loanword',
     replacement:'musk',entry_id:100+i,definitions:['unrelated dictionary meaning']}))
   ]};
  const yugo={target_id:'t577',start:1,end:3,surface:'유고',context:'‘유고의 그림자’',
   suspected_person_name:true,options:[
-   {choice_id:'KEEP',type:'keep',replacement:'유고',entry_id:null,definitions:[]},
+   {choice_id:null,type:'keep',replacement:'유고',entry_id:null,definitions:[]},
    {choice_id:'c9',type:'loanword',replacement:'Yugo',entry_id:209,definitions:['former country']}
   ]};
  for(const [target,raw,existingKey] of [[musk,'musk','c0'],[yugo,'Yugo','c9']]){
@@ -116,7 +116,7 @@ test('compound components accept aligned Latin and Hanja origins without a bound
  const companyContext='L3해리스가 운영한다';
  const company={target_id:'t383',start:2,end:5,surface:'해리스',context:companyContext,
   proper_noun:true,dictionary_person_name:true,experimental_loanword_audit:true,
-  options:[{choice_id:'KEEP',type:'keep',replacement:'해리스',entry_id:null,definitions:[]}]};
+  options:[{choice_id:null,type:'keep',replacement:'해리스',entry_id:null,definitions:[]}]};
  const companyResult=choose(company,'Harris',{experimentalLoanword:true});
  assert.equal(canProposeExperimentalOption(company,'loanword'),true);
  assert.equal(companyResult.accepted.length,1);
@@ -125,7 +125,7 @@ test('compound components accept aligned Latin and Hanja origins without a bound
  assert.equal(companyContext.slice(0,company.start)+'Harris'+companyContext.slice(company.end),'L3Harris가 운영한다');
 
  const compound={target_id:'t384',start:2,end:4,surface:'정책',context:'경제정책',
-  options:[{choice_id:'KEEP',type:'keep',replacement:'정책',entry_id:null,definitions:[]}]};
+  options:[{choice_id:null,type:'keep',replacement:'정책',entry_id:null,definitions:[]}]};
  const hanjaResult=choose(compound,'政策',{experimentalHanja:true});
  assert.equal(canProposeExperimentalOption(compound,'hanja'),true);
  assert.equal(hanjaResult.accepted.length,1);
@@ -153,7 +153,7 @@ test('cross-batch, duplicate, extra fields and obsolete experimental arrays are 
 
 test('cross-space lexical targets cannot be created from dictionary alias spellings',()=>{
  const t={target_id:'t2',start:0,end:6,surface:'이산화 탄소',context:'이산화 탄소',options:[
-  {choice_id:'KEEP',type:'keep',replacement:'이산화 탄소',entry_id:null,definitions:[]}]};
+  {choice_id:null,type:'keep',replacement:'이산화 탄소',entry_id:null,definitions:[]}]};
  assert.equal(choose(t,'二酸化炭素',{experimentalHanja:true}).accepted[0].option.type,'keep');
  assert.equal(literalOriginOption(t,'二酸化',{experimentalHanja:true}),null);
  assert.equal(choose(t,'KEEP',{experimentalHanja:true}).accepted[0].option.type,'keep');
@@ -189,8 +189,8 @@ test('only the enabled experimental origin rule is included in each manual/API p
   assert.ok(!prompt.includes('"experimental_options":['));
  }
  const packed=buildReviewPayload(hanja.context,[hanja],{experimentalHanja:true}).payload;
- assert.equal(packed.targets[0].options.c0,'p0');
- assert.equal(packed.format,'shared-pools-v4');
+ assert.deepEqual(packed.targets[0].options,['p0']);
+ assert.equal(packed.format,'shared-pools-v5');
  assert.equal(packed.experimental_modes,undefined);
  assert.ok(both.length<common.length+2300,'experimental instructions should remain compact for large batches');
  assert.ok(common.includes('Decide meaning from the sentence and adjacent context'));
@@ -202,7 +202,7 @@ test('only the enabled experimental origin rule is included in each manual/API p
   assert.ok(prompt.includes('When no supplied dictionary sense matches'));
   assert.ok(prompt.includes('directly in c'));
   assert.ok(prompt.includes('JSON null'));
-  assert.ok(prompt.includes('never invent a dictionary key'));
+  assert.ok(prompt.includes('never invent a pooled p ID'));
   assert.ok(!prompt.includes('you may write'));
  }
  assert.equal((both.match(/FIRST infer/g)||[]).length,1,'the audit order must appear once');

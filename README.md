@@ -2,7 +2,7 @@
 
 **简体中文** · [繁體中文](README.zh-TW.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-在韩语网页中显示汉字词和外来语的词源，帮助阅读时理解词汇。扩展使用浏览器内的分词器和词典进行分析，也可结合大模型处理有歧义的词语或补充词源。
+在韩语网页中显示汉字词和外来语的词源，帮助阅读时理解词汇。当前正式版为 **1.1.0**。扩展使用浏览器内的分词器和词典进行分析，也可结合大模型处理有歧义的词语或补充词源。
 
 ## 功能
 
@@ -43,7 +43,26 @@
 
 ## 大模型审核
 
-在**引擎 / API 设置**中选择服务商和模型、填写 API Key，测试连接并保存，然后启用模型审核。支持 Gemini、Meta Muse、腾讯混元及其他服务商，也可配置兼容的接口。按服务商和模型支持情况设置思考模式及输出上限。
+在**引擎 / API 设置**中选择服务商和模型、填写 API Key，测试连接并保存，然后启用模型审核。可以按服务商设置思考模式、输出 Token 限额和批次容量；也可以自行填写兼容接口的 URL 与模型 ID。
+
+### 可选服务商及模型示例
+
+以下是插件**内置配置列表的示例**，不是模型可用性或效果保证。模型 ID、版本、API 权限和计费政策以服务商实际提供的信息为准；未列出的模型也可尝试通过自定义兼容接口配置。
+
+| 服务商 | 模型 ID 示例 |
+| --- | --- |
+| OpenAI | `gpt-6.1-sol`、`gpt-6-astra`、`gpt-6-luna` |
+| Anthropic Claude | `claude-sonnet-5-5`、`claude-opus-5-5`、`claude-haiku-5-5` |
+| DeepSeek | `deepseek-flash`、`deepseek-v4-pro` |
+| Z.AI / GLM | `glm-5.3-flash`、`glm-5.3-flashx`、`glm-5.3` |
+| Xiaomi MiMo | `mimo-v2.6-flash`、`mimo-v2.6-pro`、`mimo-v2.5-pro` |
+| 阿里云百炼 / Qwen | `qwen3.8-max`、`qwen3.8-flash`、`qwen3.7-plus`、`qwen-plus` |
+| Google Gemini | `gemini-3.8-flash`、`gemini-3.1-pro-preview`、`gemini-2.5-flash`、`gemini-2.5-pro` |
+| Meta Muse | `muse-spark-1.3`、`muse-wonder-1.0`、`muse-ember-1.0` |
+| 腾讯混元 | `hy4-flash`、`hy4`、`hy4-preview`、`hy3` |
+| 自定义接口 | 按相应 OpenAI 兼容服务填写 Endpoint、模型 ID 和 API Key |
+
+各服务商不一定支持同一套思考控制、流式输出和 JSON 协议；插件会根据内置适配器处理差异，实际使用请先测试连接。
 
 - **普通审核：** 模型结合上下文判断词典候选；可按需扩大审核范围。
 - **重审选区：** 对选中的文字单独请求模型重新判断。

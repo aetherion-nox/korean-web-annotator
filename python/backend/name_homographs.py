@@ -27,7 +27,7 @@ def _option_for_entry(word,record,modes):
     return {**option,'type':'nonconversion','replacement':word}
 
 def homograph_target(text,start,end,word,records,modes):
-    options=[dict(choice_id='KEEP',type='keep',replacement=word,entry_id=None,definitions=[])]
+    options=[dict(choice_id=None,type='keep',replacement=word,entry_id=None,definitions=[])]
     next_native=next_conversion=0
     for record in records:
         option=_option_for_entry(word,record,modes)

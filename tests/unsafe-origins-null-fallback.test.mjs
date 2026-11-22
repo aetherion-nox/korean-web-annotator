@@ -4,7 +4,7 @@ import {validateChoices,validateExperimentalChoices} from '../choice-review.js';
 import {createManualReviewSession} from '../manual-review.js';
 import {experimentalChoicePreviewParser} from '../model-stream.js';
 
-const keep=surface=>({choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]});
+const keep=surface=>({choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]});
 const surface1='한동훈',surface2='이승만';
 const targets=[
  {target_id:'person-korean',surface:surface1,context:'한동훈이 말했다.',start:0,end:3,
@@ -15,7 +15,7 @@ const targets=[
 
 test('unsupported Hangul string and blocked historical personal Hanja leave original Korean',()=>{
  const resp={results:[{t:'person-korean',c:'한동훈'},{t:'protected-person',c:'李承晩'}]};
- const v=validateExperimentalChoices(targets,resp,{experimentalHanja:true});
+ const v=validateExperimentalChoices(targets,resp,{experimentalHanja:true,discardInvalidReviewResults:true});
  assert.equal(v.unresolved.length,0);
  assert.deepEqual(v.accepted.map(x=>x.option.type),['keep','keep']);
  assert.equal(v.experimentalRejected,2);
@@ -26,7 +26,7 @@ test('unsupported Hangul string and blocked historical personal Hanja leave orig
 
 test('fallback applies without experimental modes, but never converts unauthorized Hanja',()=>{
  const v=validateChoices(targets,{results:[
-  {t:'person-korean',c:'한동훈'},{t:'protected-person',c:'李承晩'}]});
+  {t:'person-korean',c:'한동훈'},{t:'protected-person',c:'李承晩'}]},{discardInvalidReviewResults:true});
  assert.equal(v.unresolved.length,0);
  assert.deepEqual(v.accepted.map(x=>x.option.type),['keep','keep']);
 });
@@ -43,7 +43,7 @@ test('nonempty but unsafe source formats, disabled modes and Hanja alignment all
   ['https://example.test',{experimentalLoanword:true}],
   ['c20',{experimentalHanja:true}]
  ]){
-  const v=validateExperimentalChoices([base],{results:[{t:'t',c}]},config);
+  const v=validateExperimentalChoices([base],{results:[{t:'t',c}]},{...config,discardInvalidReviewResults:true});
   assert.equal(v.unresolved.length,0,c);
   assert.equal(v.accepted[0].option.type,'keep',c);
  }
@@ -76,7 +76,7 @@ test('duplicate, foreign, missing and malformed rows still never complete review
 
 test('manual full batch with rejected individual origins completes without a retry',async()=>{
  const events=[],session=createManualReviewSession({operationId:'blocked-person',post:x=>events.push(x)});
- const done=session.request({context:targets.map(t=>t.context).join('\n'),experimentalHanja:true},targets);
+ const done=session.request({context:targets.map(t=>t.context).join('\n'),experimentalHanja:true,discardInvalidReviewResults:true},targets);
  const ask=events.find(x=>x.type==='MANUAL_REVIEW_REQUEST');
  assert.equal(session.submit({operationId:'blocked-person',requestId:ask.requestId,
   text:JSON.stringify({batch_id:ask.requestId,results:[
@@ -92,5 +92,5 @@ test('streaming preview only shows source-kept words for rejected per-target ori
  const parser=experimentalChoicePreviewParser(targets,{experimentalHanja:true},callback);
  parser(JSON.stringify({results:[
   {t:'person-korean',c:'한동훈'},{t:'protected-person',c:'李承晩'}]}));
- assert.deepEqual(events.at(-1),['keep','keep']);
+ assert.deepEqual(events.at(-1),[]);
 });

@@ -71,7 +71,7 @@ test('engineConfig uses configured values and falls back safely for old installa
 
 test('custom reply caps affect output budget, never pretend to override actual chat UI cap',()=>{
  const t={target_id:'t0',surface:'원잠',context:'원잠',start:0,end:2,options:[
-  {choice_id:'KEEP',type:'keep',replacement:'원잠',entry_id:null,definitions:[]}]};
+  {choice_id:null,type:'keep',replacement:'원잠',entry_id:null,definitions:[]}]};
  const manual=describeBatchBudget('원잠',[t],{tier:'512k',manual:true,manualOutputTokenLimit:130000});
  const api=describeBatchBudget('원잠',[t],{tier:'512k',manual:false,apiOutputTokenLimit:30000});
  assert.equal(manual.outputLimit,130000);assert.equal(api.outputLimit,30000);

@@ -6,7 +6,7 @@ import {
 import {extractInlineHanjaPairs,applyInlineHanjaAnnotations} from '../inline-hanja-evidence.js';
 import {runSentencePipeline} from '../annotation-pipeline.js';
 
-const original=s=>({choice_id:'KEEP',type:'keep',replacement:s,entry_id:null,definitions:[]});
+const original=s=>({choice_id:null,type:'keep',replacement:s,entry_id:null,definitions:[]});
 const raw=(text,targets=[],annotations=[])=>({
  engine_version:'test',dictionary_fingerprint:'test',targets,annotations,
  stats:{pending:targets.length,local_determined:annotations.length}

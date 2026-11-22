@@ -36,7 +36,7 @@ function fixture({offline=false,merged=false}={}){
  const request=n=>({type:'MANUAL_REVIEW_REQUEST',requestId:'r'+n,
   batchNumber:n,batchTotal:2,targetCount:1,text:'prompt '+n,
   bindings:[{target_id:'t0',sentenceId:'p0',start:0,end:2,surface:'한국',
-   choices:[{choice_id:'KEEP',annotations:[]},{choice_id:'c0',annotations:[]}]}]});
+   choices:[{choice_id:null,annotations:[]},{choice_id:'c0',annotations:[]}]}]});
  context.handleManualEvent(task,request(1));
  task.manualLocalOnly=offline;
  const panel=dom.window.document.querySelector('.kra-manual-review');

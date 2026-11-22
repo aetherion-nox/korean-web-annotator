@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.0.0-long-text-checkpoints';
+  const VERSION = '1.1.0-web-content-startup-handshake';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -31,6 +31,9 @@
   // whole-page run; continuous future scanning remains opt-in.
   const seenSources = new Set(); // legacy session bookkeeping; NOT a deduplication key
   const analyzedNodeVersions = new WeakMap();
+  // Explicit rescans may skip an unconverted source only while its paragraph,
+  // adjacent context and model/dictionary settings remain unchanged.
+  const analyzedManualContexts = new WeakMap();
   let lastScanStats = null;
   const history = [];
   const redoStack = [];
@@ -775,10 +778,56 @@
     return panels;
   }
 
-  function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false) {
+  function createManualContextCache(){
+    return {scopes:new WeakMap(),sources:new WeakMap(),page:pageIdentity()};
+  }
+  function manualAnalysisContext(node,cache){
+    const element=node?.parentElement;
+    const scope=element?.closest(BLOCK_TAGS+',div,section,article,main')||element;
+    if(!scope)return null;
+    let context=cache.scopes.get(scope);
+    if(context)return context;
+    const text=element=>{
+      if(!element)return '';
+      if(!cache.sources.has(element))cache.sources.set(element,sourceOf(element).text);
+      return cache.sources.get(element);
+    };
+    context={page:cache.page,paragraph:text(scope),
+      before:text(scope.previousElementSibling),
+      after:text(scope.nextElementSibling)};
+    cache.scopes.set(scope,context);
+    return context;
+  }
+  function sameManualContext(previous,current){
+    return Boolean(previous&&current&&previous.page===current.page&&
+      previous.paragraph===current.paragraph&&
+      previous.before===current.before&&previous.after===current.after);
+  }
+  function rememberCompletedManualAnalysis(entries,settingsStamp){
+    if(!settingsStamp)return;
+    const cache=createManualContextCache();
+    for(const entry of entries.values()){
+      if(entry.invalidated||entry.renderFailure||!entry.manualScanContext)continue;
+      const record=entry.renderRecord;
+      if(record&&(!record.parent?.isConnected||!record.inserted?.length||
+         !record.inserted.every((node,i)=>node.isConnected&&node.parentNode===record.parent&&
+           node.isEqualNode(record.snapshots?.[i]))))continue;
+      const nodes=[entry.node,...(record?.inserted||[])];
+      for(const node of nodes){
+        if(node?.nodeType!==3||!node.isConnected||
+           node===entry.node&&node.data!==entry.text)continue;
+        const context=manualAnalysisContext(node,cache);
+        if(!sameManualContext(entry.manualScanContext,context))continue;
+        analyzedNodeVersions.set(node,node.data);
+        analyzedManualContexts.set(node,{text:node.data,settingsStamp,context});
+      }
+    }
+  }
+
+  function collectTextNodes(ranges=null, includeOwned=false, automatic=false, trackRecovery=false, manualSettingsStamp=null) {
     const entries=new Map();
     const stats={textNodes:0,hangulNodes:0,eligibleNodes:0,selectedNodes:0,
-      skippedHidden:0,skippedExcluded:0,skippedProcessed:0,skippedSelection:0,
+      skippedHidden:0,skippedExcluded:0,skippedProcessed:0,skippedIncremental:0,skippedSelection:0,
       recoveryCapReached:0,shadowRoots:0};
     if(!document.body){lastScanStats=stats;return entries;}
     const index=ensureTextIndex();
@@ -794,6 +843,8 @@
       return entries;
     }
     const controlledPanels=controlledCollapsedArticlePanels();
+    const manualIncremental=!automatic&&!includeOwned&&!ranges&&typeof manualSettingsStamp==='string'&&manualSettingsStamp.length>0;
+    const contextCache=manualIncremental?createManualContextCache():null;
     const visibilityCache=new WeakMap();
     const visibilityReason=element=>{
       if(!element||element.nodeType!==1)return '';
@@ -860,11 +911,20 @@
         // global string. Two recommendation cards may have identical text.
         if(automatic&&(analyzedNodeVersions.get(node)===node.data||
            isKnownRecoverySource(node))){stats.skippedProcessed++;continue;}
+        if(manualIncremental&&analyzedNodeVersions.get(node)===node.data){
+          const previous=analyzedManualContexts.get(node);
+          if(previous?.text===node.data&&previous.settingsStamp===manualSettingsStamp&&
+             sameManualContext(previous.context,manualAnalysisContext(node,contextCache))){
+            stats.skippedProcessed++;stats.skippedIncremental++;continue;
+          }
+        }
         stats.selectedNodes++;
         const anchor=trackRecovery?recoveryAnchor(node,cache):null;
         if(trackRecovery&&!anchor)stats.recoveryCapReached++;
         entries.set(node,{node,text:node.data,annotations:[],selected,
-          recoveryAnchor:anchor,id:String(entries.size)});
+          recoveryAnchor:anchor,
+          ...(manualIncremental?{manualScanContext:manualAnalysisContext(node,contextCache)}:{}),
+          id:String(entries.size)});
       }
       if(includeOwned)for(const node of root.querySelectorAll(OWN_RUBY)){
         if(visibilityReason(node.parentElement))continue;
@@ -1244,7 +1304,7 @@
       if(!fence)return false;
       source=fence[1].trim();
     }
-    try{JSON.parse(source);return true;}catch{return false;}
+    try{JSON.parse(source);return true;}catch{return source.endsWith('}')&&/"results"\s*:\s*\[/.test(source)&&/"t"\s*:\s*"/.test(source);}
   }
 
   function manualPanel(){
@@ -1432,7 +1492,23 @@
     let json=text.trim();
     const fenced=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(json);
     if(fenced)json=fenced[1].trim();
-    let response;try{response=JSON.parse(json);}catch{throw Error('JSON 格式无效。');}
+    let response;try{response=JSON.parse(json);}
+    catch{try{response=(await import(chrome.runtime.getURL('partial-review-json.js'))).parsePartialReviewJson(json).response;}
+      catch{if(backup?.discardInvalidReviewResults===true&&json.trim()){
+        const claimed=/"batch_id"\s*:\s*"([^"\\]*)"/.exec(json);
+        if(claimed&&claimed[1]!==requestId)throw Error('batch_id 与当前批次不一致。');
+        response={batch_id:requestId,results:[]};
+      }else throw Error('JSON 格式无效，且无法安全提取完整 t/c 选择。');}}
+    if(backup.discardInvalidReviewResults===true){
+      const expected=backup.bindings.map(b=>b.target_id);
+      const known=new Set(expected);
+      const raw=Array.isArray(response)?{results:response}:response;
+      if(raw&&typeof raw==='object'&&!Array.isArray(raw)&&
+         Object.hasOwn(raw,'batch_id')&&raw.batch_id!==requestId)
+        throw Error('batch_id 与当前批次不一致。');
+      response={...(raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{}),
+        batch_id:requestId,results:Array.isArray(raw?.results)?raw.results.filter(row=>known.has(row?.t)):[]};
+    }
     // Also normalize malformed nonconversion property names in replies that
     // already carry the right batch_id; otherwise offline recovery diverges
     // from the background validator on the same answer.
@@ -1443,17 +1519,39 @@
     if(Array.isArray(response)||!response||typeof response!=='object'||
        !Object.hasOwn(response,'batch_id')||hasNPropertySlip){
       const normalize=await (task.manualAnswerNormalizer||import(chrome.runtime.getURL('manual-answer-format.js')).then(m=>m.normalizeManualAnswer));
-      response=normalize(response,{requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id))});
+      response=normalize(response,{requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id)),discardInvalidReviewResults:backup.discardInvalidReviewResults===true});
     }
     if(response?.batch_id!==requestId||!Array.isArray(response?.results))
       throw Error('batch_id 不符或缺少 results 数组。');
     const result=await chrome.runtime.sendMessage({
       type:'KRA_MANUAL_OFFLINE_APPLY',groupId:task.mergeGroupId,
-      frameRouting:task.manualFrameRouting,backup,originalPrompt:task.manualOriginalPrompt,response
+      frameRouting:task.manualFrameRouting,backup,originalPrompt:task.manualOriginalPrompt,response,
+      partial:backup.retryInvalidDictionaryChoices===true&&backup.discardInvalidReviewResults!==true
     });
     if(currentTask!==task||task.finished||task.manualRequest!==requestId)
       throw Error('审核时页面已改变，不能写入过期的答案。');
     if(!result?.ok)throw Error(result?.error||'无法连接仍在页面中的原始框架。');
+    if(result.partial===true){
+      const missingIds=new Set(result.missingTargetIds||[]);
+      const missing=backup.bindings.filter(b=>missingIds.has(b.target_id));
+      if(!missing.length)throw Error('各框架报告仍有未完成目标，但缺少可安全识别的目标编号。');
+      const prompt=manualRetryPrompt(task,missing,new Map(Object.entries(result.missingReasons||{})),
+        Number.isInteger(result.acceptedCount)?result.acceptedCount:0);
+      const panel=document.querySelector('.kra-manual-review');
+      if(panel){
+        panel.querySelector('.kra-manual-prompt').value=prompt;
+        panel.querySelector('.kra-manual-apply').disabled=false;
+        panel.querySelector('.kra-manual-import').disabled=false;
+        panel.querySelector('.kra-manual-status').textContent=
+          '已将各框架通过安全校验的 '+(result.acceptedCount||0)+
+          ' 个目标正式应用到网页；剩余 '+missing.length+
+          ' 个目标尚未完成，只需补交新提示词中的目标。';
+      }
+      task.manualPreviewCount=[...task.entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
+      note('已正式应用有效结果；仅 '+missing.length+' 个目标待补交，当前批次和原始定位快照均保留。');
+      status('有效标注已应用，仍有 '+missing.length+' 个目标待补交');
+      return;
+    }
     (task.manualApplied ||= new Set()).add(requestId);
     const count=[...task.entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
     const next=task.manualPlan?.find(batch=>!task.manualApplied.has(batch.requestId));
@@ -1493,10 +1591,12 @@
     if(isNew)task.manualRecoveryAccepted=new Map();
     try{
       const checked=await applyManualRecovery(task,frame.answer,{
-        advance:false,paint:false,dryRun:phase==='validate'
+        advance:false,paint:false,dryRun:phase==='validate',
+        allowPartial:message.partial===true,quietPartial:message.partial===true,
+        trustedValidated:message.trustedValidated===true
       });
       if(phase==='commit'){
-        (task.manualOfflineCommitted ||= new Set()).add(requestId);
+        if(message.partial!==true||checked?.partial!==true)(task.manualOfflineCommitted ||= new Set()).add(requestId);
         task.manualRecoveryBatchId=requestId;
         task.paint();
       }
@@ -1506,7 +1606,7 @@
       task.manualBackup=previous.backup;
       task.manualRequest=previous.request;
       task.manualOriginalPrompt=previous.prompt;
-      if(phase==='validate'||isNew&&!task.manualOfflineCommitted?.has(requestId))
+      if(phase==='validate'||isNew&&message.partial!==true&&!task.manualOfflineCommitted?.has(requestId))
         task.manualRecoveryAccepted=previous.accepted;
     }
   }
@@ -1525,6 +1625,28 @@
        choiceId!==choiceId.trim()||/[<>\x00-\x1f\x7f]/u.test(choiceId)||
        /^[cnxp]\d+$/i.test(choiceId)||choiceId.toLowerCase()==='null'||
        Object.keys(row).sort().join(',')!=='c,t')return null;
+    // Offline recovery must apply the same exact-source mixed-literal
+    // geometry checks as the worker, without trusting invented Hangul.
+    if(/[가-힣]/u.test(choiceId)&&/[\p{Script=Han}\p{Script=Latin}]/u.test(choiceId)){
+      const config={experimentalHanja:meta.hanja===true&&task.modes.hanja===true&&meta.hanjaEligible!==false,
+       experimentalLoanword:meta.loanword===true&&task.modes.loanword===true&&meta.loanwordEligible!==false};
+      const aligner=await import(chrome.runtime.getURL('mixed-origin-alignment.js'))
+       .then(m=>m.alignMixedLiteralOrigin).catch(()=>null);
+      const aligned=aligner?.(binding.surface,choiceId,config);
+      if(!aligned||entry.text.slice(binding.start,binding.end)!==binding.surface)return null;
+      const annotations=aligned.segments.map(part=>({
+       start:binding.start+part.start,end:binding.start+part.end,
+       surface:part.surface,replacement:part.replacement,type:part.type,
+       entry_id:'experimental:'+part.type,origin_source:'model-unverified',confidence:1
+      }));
+      if(annotations.some(a=>a.type==='hanja')&&task.manualBackup?.hanjaReadingCheck===true){
+       const verify=await (task.manualReadingCheck||
+        import(chrome.runtime.getURL('hanja-reading-check.js')).then(m=>m.validateModelHanjaReadings).catch(()=>null));
+       if(typeof verify!=='function'||
+          verify(entry.text,annotations.filter(a=>a.type==='hanja')).status==='mismatch')return null;
+      }
+      return {choice_id:choiceId,annotations};
+    }
     const hanja=/^[\p{Script=Han}]+$/u.test(choiceId)&&meta.hanja===true&&task.modes.hanja===true;
     const loanword=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u.test(choiceId)&&
       /\p{Script=Latin}/u.test(choiceId)&&meta.loanword===true&&task.modes.loanword===true;
@@ -1586,7 +1708,7 @@
       }
     }
     if(!annotations.length)return null;
-    if(hanja&&task.manualBackup?.hanjaReadingCheck!==false){
+    if(hanja&&task.manualBackup?.hanjaReadingCheck===true){
       // Load the EXISTING pronunciation verifier only for an offline Hanja
       // proposal. Its data is local to the extension; no background is needed.
       const validateModelHanjaReadings=await (task.manualReadingCheck ||
@@ -1627,7 +1749,7 @@
     }
     flush(dst.length);
     if(!annotations.length)return null;
-    if(task.manualBackup?.hanjaReadingCheck!==false){
+    if(task.manualBackup?.hanjaReadingCheck===true){
       const validator=await (task.manualReadingCheck||
         import(chrome.runtime.getURL('hanja-reading-check.js')).then(m=>m.validateModelHanjaReadings).catch(()=>null));
       if(typeof validator!=='function'||validator(sentence.text,annotations).status==='mismatch')return null;
@@ -1638,7 +1760,7 @@
   async function validatePageManualRepairs(task,response){
     const backup=task.manualBackup;
     if(!backup?.smartSegmentation)return {accepted:[],rejected:[]};
-    const original=task.manualOriginalPrompt||'',begin=original.indexOf('{"format":"shared-pools-v4"');
+    const original=task.manualOriginalPrompt||'',begin=original.indexOf('{"format":"shared-pools-v5"');
     if(!backup.repairValidation||begin<0)return {accepted:[],rejected:[{reason:'页面缺少分词修复安全快照',old_target_ids:[]}]};
     let payload;
     try{payload=JSON.parse(original.slice(begin));}
@@ -1662,7 +1784,7 @@
     }
     const verified=new Map();
     for(const repair of rows){
-      if(!repair||repair.choice_id==='KEEP'||repair.op==='delete'||typeof repair.choice_id!=='string')continue;
+      if(!repair||repair.choice_id===null||repair.op==='delete'||typeof repair.choice_id!=='string')continue;
       const sentence=payload.sentences?.find(s=>s.sentence_id===repair.sentence_id);
       if(!sentence)continue;
       let start=repair.start,end=repair.end;
@@ -1755,38 +1877,67 @@
 
   // Construct a retry prompt from the original shared pool, keeping the
   // same batch ID and only the sentences/candidates the missing targets need.
-  function manualRetryPrompt(task,missing,reasons){
+  function manualRetryPrompt(task,missing,reasons,acceptedCount=task.manualRecoveryAccepted?.size||0){
     const batch=task.manualBackup?.requestId||task.manualRequest;
-    const intro='本批其他 '+(task.manualRecoveryAccepted?.size||0)+' 个目标已通过校验并保留。'+
+    const intro='本批其他 '+acceptedCount+' 个目标已通过校验并保留。'+
       '只回答以下 '+missing.length+' 个目标（用 t 字段指定），不要重发已经完成的目标。'+
-      '请逐条核对词义、词性、词源；不能确定时 c 使用 JSON null。'+
-      '保持 batch_id='+batch+' 不变；输出只含 batch_id、results（必要时 repairs），不要复制 format、sentences、candidates、targets。'+
+      '先核对原句、词义、词性与真实词源；绝不能勉强选择不匹配的词典候选。'+
+      '词典选项在 c 中填写当前目标 options 数组中的 pooled p 编号。候选不匹配时遵照原请求的实验性词源权限；不能可靠确认词源则 c 使用 JSON null。'+
+      '保持 batch_id='+batch+' 不变；不提交分词 repairs。输出只含 batch_id、results，不要复制 format、sentences、candidates、targets。'+
       '\n错误原因：\n'+missing.map(b=>b.target_id+'：'+(reasons.get(b.target_id)||'缺少有效答案')).join('\n')+'\n\n';
     const original=task.manualOriginalPrompt||'';
-    const begin=original.indexOf('{"format":"shared-pools-v4"');
+    const begin=original.indexOf('{"format":"shared-pools-v5"');
     if(begin>=0)try{
       const old=JSON.parse(original.slice(begin)),ids=new Set(missing.map(b=>b.target_id));
       const targets=(old.targets||[]).filter(t=>ids.has(t.target_id));
       if(targets.length===missing.length){
-        const candidateIds=new Set(targets.flatMap(t=>Object.values(t.options||{})).filter(x=>typeof x==='string'));
+        const candidateIds=new Set(targets.flatMap(t=>(Array.isArray(t.options)?t.options:[])).filter(x=>typeof x==='string'));
         const sentenceIds=new Set(targets.map(t=>t.sentence_id));
-        return intro+original.slice(0,begin)+JSON.stringify({...old,
-          targets,sentences:(old.sentences||[]).filter(a=>sentenceIds.has(a.sentence_id)),
+        const originTypes=old.origin_mode==='open-origin'&&Array.isArray(old.allowed_origin_types)?old.allowed_origin_types:[];
+        const originRules=originTypes.length?
+          'OPEN-ENDED ORIGIN AUDIT remains enabled for '+originTypes.join(' and ')+
+          '. Prefer a genuinely matching pooled p ID listed in the current target options array. If no offered sense matches, a reliably known authentic source spelling of an ENABLED type can be written directly in c. '+
+          'For Hanja verify Korean readings and word boundaries; never translate the meaning into Chinese characters. Do not guess personal-name Hanja. For loanwords use authentic Latin source spellings, not invented romanizations. '+
+          'Return actual JSON null for native words, unknown identities or uncertain origins. Only the original enabled types are allowed.\n':
+          'DICTIONARY-ONLY CORRECTION: c must be a pooled p ID listed in the current target options array with matching meaning, or actual JSON null. Never write a direct Hanja/Latin spelling.\n';
+        return intro+originRules+JSON.stringify({...old,
+          targets:targets.map(({scan_only,repair_sentence_key,repair_context,...target})=>target),
+          sentences:(old.sentences||[]).filter(a=>sentenceIds.has(a.sentence_id)).map(({kiwi_tokens,protected_ranges,...sentence})=>sentence),
           candidates:(old.candidates||[]).filter(a=>candidateIds.has(a.candidate_id)),batch_id:batch});
       }
     }catch{}
+    // Keep the original review instructions when reconstructing a retry from
+    // a disconnected session; they contain the applicable origin permissions.
     return intro+'请参照原批提示词，只回答这些目标：'+JSON.stringify({
       batch_id:batch,targets:missing.map(b=>({target_id:b.target_id,surface:b.surface,
-        options:(b.choices||[]).filter(o=>o.choice_id!=='KEEP').map(o=>o.choice_id)}))});
+        options:[]}))})+
+      (original?'\n原始提示词中的词源权限供参考：\n'+original:'');
   }
 
-  async function applyManualRecovery(task,text,{advance=true,paint=true,dryRun=false}={}){
-    const backup=task.manualBackup;
+  async function applyManualRecovery(task,text,{advance=true,paint=true,dryRun=false,allowPartial=task.manualBackup?.retryInvalidDictionaryChoices===true,quietPartial=false,trustedValidated=false}={}){
+    const backup=task.manualBackup,dropInvalid=backup?.discardInvalidReviewResults===true,
+      commitPartial=allowPartial&&backup?.retryInvalidDictionaryChoices===true&&!dropInvalid;
     if(!backup?.bindings?.length||task.manualRequest!==backup.requestId)throw Error('没有当前批次的恢复数据，请保留答案并重新标注。');
     if(typeof text!=='string'||text.length>16*1024*1024)throw Error('请提供不超过 16 MiB 的完整 JSON 结果。');
     let source=text.trim();const fence=/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(source);if(fence)source=fence[1].trim();
-    let response;try{response=JSON.parse(source);}catch{throw Error('JSON 格式无效，请粘贴或导入完整 JSON 或 json 代码块。');}
+    let response;try{response=JSON.parse(source);}
+    catch{try{response=(await import(chrome.runtime.getURL('partial-review-json.js'))).parsePartialReviewJson(source).response;}
+      catch{if(backup?.discardInvalidReviewResults===true&&source.trim()){
+        const claimed=/"batch_id"\s*:\s*"([^"\\]*)"/.exec(source);
+        if(claimed&&claimed[1]!==backup.requestId)throw Error('batch_id 与当前批次不一致。');
+        response={batch_id:backup.requestId,results:[]};
+      }else throw Error('JSON 格式无效，且无法安全提取完整 t/c 选择。');}}
     // A missing wrapper is unambiguous only if every t is in the active batch.
+    if(backup.discardInvalidReviewResults===true){
+      const expected=backup.bindings.map(b=>b.target_id);
+      const known=new Set(expected);
+      const raw=Array.isArray(response)?{results:response}:response;
+      if(raw&&typeof raw==='object'&&!Array.isArray(raw)&&
+         Object.hasOwn(raw,'batch_id')&&raw.batch_id!==backup.requestId)
+        throw Error('batch_id 与当前批次不一致。');
+      response={...(raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{}),
+        batch_id:backup.requestId,results:Array.isArray(raw?.results)?raw.results.filter(row=>known.has(row?.t)):[]};
+    }
     // Also normalize malformed nonconversion property names in replies that
     // already carry the right batch_id; otherwise offline recovery diverges
     // from the background validator on the same answer.
@@ -1797,7 +1948,23 @@
     if(Array.isArray(response)||!response||typeof response!=='object'||
        !Object.hasOwn(response,'batch_id')||hasNPropertySlip){
       const normalize=await (task.manualAnswerNormalizer||import(chrome.runtime.getURL('manual-answer-format.js')).then(m=>m.normalizeManualAnswer));
-      response=normalize(response,{requestId:backup.requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id))});
+      response=normalize(response,{requestId:backup.requestId,knownTargetIds:new Set(backup.bindings.map(b=>b.target_id)),discardInvalidReviewResults:backup.discardInvalidReviewResults===true});
+    }
+    if(Array.isArray(response?.results)&&trustedValidated!==true){
+      // Same strict p-only model protocol as the background and manual
+      // validators. This fallback stays usable without importing modules into
+      // website frames; it trusts only the exact prompt issued for this batch.
+      const choiceIndex=backup.choiceIndex||{};
+      response={...response,results:response.results.map(row=>{
+        if(typeof row?.c!=='string')return row;
+        if(/^[cn]\d+$/u.test(row.c))return {...row,c:'invalid_local_key:'+row.c};
+        if(!/^p\d+$/u.test(row.c))return row;
+        const keys=choiceIndex[row.t]?.[row.c]||[];
+        if(keys.length===1)return {...row,c:keys[0]};
+        if(choiceIndex[row.t]&&choiceIndex.__noOpPoolIds?.includes(row.c))
+          return {...row,c:null};
+        return row;
+      })};
     }
     if(response?.batch_id!==backup.requestId)
       throw Error('batch_id 与当前批次不一致，未应用任何答案。');
@@ -1805,6 +1972,15 @@
     if(response.repairs!==undefined&&!Array.isArray(response.repairs))
       throw Error('repairs 必须是数组。');
     const bindings=new Map(backup.bindings.map(b=>[b.target_id,b]));
+    // The disconnected page uses the original immutable target snapshot.
+    // Normalize exact Hangul echoes before duplicate detection, including
+    // direct offline input and two-phase multi-frame rescue.
+    response={...response,results:response.results.map(row=>{
+      const binding=bindings.get(row?.t),value=row?.c;
+      return typeof value==='string'&&binding&&value===binding.surface&&
+        /^[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7a3\ud7b0-\ud7ff]+$/u.test(value)?
+        {...row,c:null}:row;
+    })};
     const entries=new Map([...task.entries.values()].map(entry=>[entry.id,entry]));
     // Manual bindings use paragraph/chunk IDs (p0, p1c0...), NOT DOM
     // text-node IDs (0, 1...). Resolve literal origins against the original
@@ -1822,13 +1998,19 @@
       start:r.start,end:r.end,surface:r.surface,choice_id:r.choice_id
     }));
     const incoming=new Map();
+    const presented=new Set(response.results.filter(row=>bindings.has(row?.t)).map(row=>row.t));
+    // Filter malformed rows before deciding whether t has duplicates.
+    // A single well-formed answer wins even if malformed entries share its t.
+    const implicitNullIds=new Set(),blankIds=new Set();
     for(const row of response.results){
-      if(!row||typeof row!=='object'||Array.isArray(row)||
-         Object.keys(row).sort().join(',')!=='c,t'||
-         !bindings.has(row.t)||
-         !(row.c===null||(typeof row.c==='string'&&row.c.length>0))){
-        if(typeof row?.t==='string'&&bindings.has(row.t))
-          reasons.set(row.t,'答案字段不符合 t/c 格式或 c 类型无效');
+      const structural=row&&typeof row==='object'&&!Array.isArray(row)&&bindings.has(row.t);
+      if(structural&&Object.keys(row).every(key=>key==='t'||key==='c')&&
+         (!Object.hasOwn(row,'c')||typeof row.c==='string'&&!row.c.trim()))
+        blankIds.add(row.t);
+      if(!structural||Object.keys(row).sort().join(',')!=='c,t'||
+         typeof row.t!=='string'||
+         !(row.c===null||(typeof row.c==='string'&&row.c.trim().length>0))){
+        if(structural)reasons.set(row.t,'答案字段不符合 t/c 格式或 c 类型无效');
         unknown.push(String(row?.t??'(无效)'));continue;
       }
       if(!incoming.has(row.t))incoming.set(row.t,[]);
@@ -1837,42 +2019,48 @@
     const saved=new Map(task.manualRecoveryAccepted||[]);
     for(const [id,rows] of incoming){
       if(saved.has(id))continue; // Never overwrite a previously verified choice.
-      if(rows.length!==1){
-        reasons.set(id,'重复 target_id（本次出现 '+rows.length+' 条）');continue;
+      // Identical t/c rows are harmless copies; conflicting c values
+      // invalidate all well-formed answers for the same target.
+      if(rows.some(row=>row.c!==rows[0].c)){
+        reasons.set(id,'重复 target_id（本次出现 '+rows.length+' 条不同答案）；全部作废');continue;
       }
       const row=rows[0],binding=bindings.get(id);
-      let choice=row.c===null?binding.choices.find(o=>o.choice_id==='KEEP'):
-        binding.choices.find(o=>o.choice_id!=='KEEP'&&o.choice_id===row.c);
-      // Use the same nonexistent numbered-key fallback as background review;
-      // never apply an unrelated dictionary entry or skip a valid repair.
+      const explicitNull=row.c===null||typeof row.c==='string'&&row.c.toLowerCase()==='null';
+      let choice=explicitNull?binding.choices.find(o=>o.choice_id===null):
+        binding.choices.find(o=>o.choice_id!==null&&o.choice_id===row.c);
+      // A wrongly indexed answer cannot become KEEP in strict recovery.
+      // This backup path must obey the same rules as live model validation.
       if(!choice&&typeof row.c==='string'&&binding.dictionaryPersonHanja?.includes(row.c))
-        choice=binding.choices.find(o=>o.choice_id!=='KEEP'&&
+        choice=binding.choices.find(o=>o.choice_id!==null&&
           o.annotations?.length===1&&o.annotations[0].type==='hanja'&&
           o.annotations[0].start===binding.start&&o.annotations[0].end===binding.end&&
           o.annotations[0].replacement===row.c);
-      if(!choice&&typeof row.c==='string'&&/^[cn]\d+$/u.test(row.c))
-        choice=binding.choices.find(o=>o.choice_id==='KEEP');
+      if(!choice&&typeof row.c==='string'&&/^[cnxp]\d+$/iu.test(row.c)){
+        reasons.set(id,'无效的选项编号 '+row.c+'；只允许当前目标对应的 pooled p 编号、明确的 JSON null 或已授权的实验性词源');
+        continue;
+      }
       const sentence=sourceSentences.get(binding.sentenceId)||entries.get(binding.sentenceId);
       if(!choice&&sentence)
         try{choice=await manualLiteralChoice(binding,row.c,sentence,task,row);}
         catch{choice=null;}
-      // An identified row with an unusable origin is not a structural
-      // failure: preserve the Korean source. A genuine approved literal was
-      // already checked by manualLiteralChoice above (including Latin KEEP).
-      // Disconnected recovery must enforce the same reading veto as the
-      // model-review worker, including ordinary dictionary choices.
-      if(choice?.choice_id!=='KEEP'&&choice?.annotations?.some(a=>a.type==='hanja')&&
-         task.manualBackup?.hanjaReadingCheck===true&&sentence?.text){
-        const verify=await (task.manualReadingCheck ||
-          import(chrome.runtime.getURL('hanja-reading-check.js')).then(m=>m.validateModelHanjaReadings).catch(()=>null));
-        if(typeof verify==='function'&&verify(sentence.text,choice.annotations).status==='mismatch')
-          choice=binding.choices.find(o=>o.choice_id==='KEEP');
-      }
-      if(!choice)choice=binding.choices.find(o=>o.choice_id==='KEEP');
+      // Pooled IDs have been resolved to one local option using the exact prompt.
+      // Dictionary-backed options retain the existing source-boundary checks. Optional phonetic verification applies
+      // only to model-written Hanja inside manualLiteralChoice.
       if(!choice){
-        reasons.set(id,'当前目标缺少可用的原文保留选项');continue;
+        reasons.set(id,'无效或未经验证的选项/词源，未自动转换成 null');
+        continue;
       }
       saved.set(id,{binding,choice});
+    }
+    // Only duplicate structurally valid rows invalidate each other.
+    // In discard mode every otherwise unaccepted target resolves to JSON null.
+    if(dropInvalid){
+      const scanOnly=new Set((backup.repairValidation?.targets||[]).filter(t=>t.scan_only).map(t=>t.target_id));
+      for(const [id,binding] of bindings){
+        if(saved.has(id)||retired.has(id)||scanOnly.has(id))continue;
+        const keep=binding.choices.find(o=>o.choice_id===null);
+        if(keep){saved.set(id,{binding,choice:keep});if(!presented.has(id)||blankIds.has(id)&&!incoming.has(id))implicitNullIds.add(id);}
+      }
     }
     if(task.finished||currentTask!==task||task.manualBackup!==backup||task.manualRequest!==backup.requestId)
       throw Error('当前审核批次已取消或改变，未应用过期答案。');
@@ -1919,7 +2107,40 @@
     const completedCount=actionable.filter(b=>verified.has(b.target_id)||retired.has(b.target_id)).length;
     const missing=backup.bindings.filter(b=>!verified.has(b.target_id)&&
       !retired.has(b.target_id)&&!scanOnly.has(b.target_id));
-    if(missing.length){
+    const checkedSummary={accepted:verified.size,retired:retired.size,
+      partial:missing.length>0,missing:missing.length,
+      missingIds:missing.map(b=>b.target_id),
+      missingReasons:Object.fromEntries(missing.map(b=>[
+       b.target_id,String(reasons.get(b.target_id)||'本批答案中未找到有效结果').slice(0,180)
+      ]))};
+    if(missing.length&&!dropInvalid){
+      if(commitPartial){
+        // Validated choices are committed, not temporary previews. The
+        // pending request and its target IDs remain stable for the correction.
+        if(dryRun)return checkedSummary;
+        for(const [entry,group] of groups){
+          const model=[...(entry.committedModelAnnotations||entry.modelAnnotations||[]).filter(a=>
+            !group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...group.annotations];
+          entry.modelAnnotations=model;entry.committedModelAnnotations=model;
+          entry.modelReviewed=true;entry.committedModelReviewed=true;entry.hasPreview=false;
+          entry.annotations=[...(entry.localAnnotations||[]).filter(a=>
+            !group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...model];
+        }
+        const count=paint?task.paint():0;
+        task.manualPreviewCount=count;
+        const panel=document.querySelector('.kra-manual-review');
+        if(panel){
+          panel.querySelector('.kra-manual-prompt').value=manualRetryPrompt(task,missing,reasons);
+          panel.querySelector('.kra-manual-summary').textContent+=
+            '\n已实际应用 '+completedCount+'/'+actionable.length+' 条；仅补交 '+missing.length+' 条词典选择。';
+        }
+        const info='已正式应用 '+completedCount+'/'+actionable.length+
+          ' 条有效结果（当前页面 '+count+' 处标注）；剩余 '+missing.length+
+          ' 条词典候选待补交：'+manualMissingTargetDetails(missing,reasons);
+        if(count)status('已应用 '+count+' 处标注，尚有 '+missing.length+' 个词典目标待补交');
+        if(quietPartial)return checkedSummary;
+        throw Error(info);
+      }
       if(dryRun)throw Error('尚有 '+missing.length+' 个目标未通过安全校验：'+
          manualMissingTargetDetails(missing,reasons));
       // Preview only, never commit or finish until all targets are verified.
@@ -1951,7 +2172,7 @@
       throw Error(message);
     }
     // Validation has not written a single annotation to the DOM.
-    if(dryRun)return {accepted:verified.size,retired:retired.size};
+    if(dryRun)return checkedSummary;
     // All IDs, choices and source spans are verified before changing any entry.
     for(const [entry,group] of groups){
       const model=[...(entry.committedModelAnnotations||entry.modelAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...group.annotations];
@@ -1959,7 +2180,7 @@
       entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!group.reviewed.some(r=>r.start<a.end&&a.start<r.end)),...model];
     }
     (task.manualApplied ||= new Set()).add(backup.requestId);
-    if(!advance)return;
+    if(!advance)return checkedSummary;
     const count=paint?task.paint():0;
     const next=task.manualPlan?.find(batch=>!task.manualApplied.has(batch.requestId));
     if(next){
@@ -1989,9 +2210,9 @@
     }
     const panel=manualPanel();
     if(event.type==='MANUAL_REVIEW_REQUEST'){
-      clearTimeout(task.manualTimer);task.manualLocalOnly=false;task.manualRecoveryAccepted=new Map();task.manualOriginalPrompt=event.text;task.manualBackup={requestId:event.requestId,bindings:event.bindings,
-        repairValidation:event.repairValidation,smartSegmentation:event.smartSegmentation===true,
-        hanjaReadingCheck:event.hanjaReadingCheck!==false,experimentalPhase:event.experimentalPhase,
+      clearTimeout(task.manualTimer);task.manualLocalOnly=false;task.manualRecoveryAccepted=new Map();task.manualOriginalPrompt=event.text;task.manualBackup={requestId:event.requestId,bindings:event.bindings,choiceIndex:event.choiceIndex,
+        repairValidation:event.repairValidation,retryInvalidDictionaryChoices:event.retryInvalidDictionaryChoices!==false&&event.discardInvalidReviewResults!==true,discardInvalidReviewResults:event.discardInvalidReviewResults===true,smartSegmentation:event.smartSegmentation===true,
+        hanjaReadingCheck:event.hanjaReadingCheck===true,experimentalPhase:event.experimentalPhase,
         batchNumber:event.batchNumber,batchTotal:event.batchTotal};task.manualRecoveryRepairs=[];
       if(event.experimentalPhase)task.experimentalRecoveryIncomplete=true;
       task.manualAcceptedAwaitingDone=null;
@@ -2022,7 +2243,7 @@
         const answer=JSON.stringify({batch_id:event.requestId,results:event.acceptedRows,
           ...(event.acceptedRepairs?{repairs:event.acceptedRepairs}:{})});
         panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;
-        void applyManualRecovery(task,answer).catch(error=>{
+        void applyManualRecovery(task,answer,{trustedValidated:true}).catch(error=>{
           addDiagnostic({level:'info',message:'部分审核结果：'+error.message});
         }).finally(()=>{
           if(currentTask!==task||task.finished||task.manualRequest!==event.requestId)return;
@@ -2032,17 +2253,42 @@
           }
           const preview=task.manualPreviewCount||0;
           panel.querySelector('.kra-manual-status').textContent=event.error+
-            (preview?'\n已在当前网页显示 '+preview+' 个标注；未完成目标不影响已显示结果。':
+            (preview?'\n已在当前网页正式应用 '+preview+' 个标注；待补交目标不影响已应用结果。':
              '\n本批有效选择尚未生成可显示标注；请检查审核目标及页面结构。');
           panel.querySelector('.kra-manual-apply').disabled=false;panel.querySelector('.kra-manual-import').disabled=false;
         });
+      }else if(task.mergedGroup&&task.manualBackup?.retryInvalidDictionaryChoices&&
+        Array.isArray(event.acceptedRows)&&event.acceptedRows.length){
+        const response={batch_id:event.requestId,results:event.acceptedRows,
+          ...(event.acceptedRepairs?{repairs:event.acceptedRepairs}:{})};
+        panel.querySelector('.kra-manual-apply').disabled=true;
+        panel.querySelector('.kra-manual-import').disabled=true;
+        void chrome.runtime.sendMessage({
+          type:'KRA_MANUAL_OFFLINE_APPLY',groupId:task.mergeGroupId,
+          frameRouting:task.manualFrameRouting,backup:task.manualBackup,
+          originalPrompt:task.manualOriginalPrompt,response,partial:true,
+          trustedValidated:true
+        }).then(result=>{
+          if(!result?.ok)throw Error(result?.error||'无法写入子框架');
+          addDiagnostic({level:'info',message:'各框架已经分别提交已通过验证的标注，尚未完成的词典目标不影响已有标注。'});
+        }).catch(error=>addDiagnostic({level:'warning',message:'跨框架部分结果提交失败：'+String(error.message||error)}))
+          .finally(()=>{
+            if(currentTask!==task||task.finished||task.manualRequest!==event.requestId)return;
+            if(event.repairPrompt){
+              panel.querySelector('.kra-manual-prompt').value=event.repairPrompt;
+              panel.querySelector('.kra-manual-response').value='';
+            }
+            panel.querySelector('.kra-manual-status').textContent=event.error+
+              '\n已尝试把有效选择写入原始框架，未完成目标仍可按新提示词补交。';
+            panel.querySelector('.kra-manual-apply').disabled=false;
+            panel.querySelector('.kra-manual-import').disabled=false;
+          });
       }else{
         if(event.repairPrompt){
           panel.querySelector('.kra-manual-prompt').value=event.repairPrompt;
           panel.querySelector('.kra-manual-response').value='';
         }
-        panel.querySelector('.kra-manual-status').textContent=event.error+
-         (task.mergedGroup?'\n各框架有效结果仍由后台分别处理；请按当前补交提示继续。':'');
+        panel.querySelector('.kra-manual-status').textContent=event.error;
         panel.querySelector('.kra-manual-apply').disabled=false;
         panel.querySelector('.kra-manual-import').disabled=false;
       }
@@ -2065,13 +2311,14 @@
         requiresBackground=parsed.repairs!==undefined&&(!Array.isArray(parsed.repairs)||parsed.repairs.length>0)||
          parsed.results?.some(row=>{
           const binding=known.get(row?.t);
-          return binding&&!((row.c===null&&binding.choices.some(o=>o.choice_id==='KEEP'))||
-            binding.choices.some(o=>o.choice_id!=='KEEP'&&o.choice_id===row.c));
+          return binding&&!((row.c===null&&binding.choices.some(o=>o.choice_id===null))||
+            binding.choices.some(o=>o.choice_id!==null&&o.choice_id===row.c));
         })===true;
       }catch{}
       if(!task.mergedGroup&&!requiresBackground){
         const requestId=event.requestId;
-        const pending=applyManualRecovery(task,submitted,{advance:false,paint:false})
+        const pending=applyManualRecovery(task,submitted,{advance:false,paint:false,
+          trustedValidated:Array.isArray(event.acceptedRows)})
           .catch(error=>addDiagnostic({level:'warning',message:'页面批次备份未确认：'+error.message}));
         task.pendingAcceptedRecovery=pending;
         void pending.finally(()=>{
@@ -2090,7 +2337,7 @@
             recoverManualConnection(task,'批次已通过校验，但后续写入回报迟迟未到。');
         },90000);
       }else task.manualRequest=null;
-      panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
+      panel.querySelector('.kra-manual-apply').disabled=true;panel.querySelector('.kra-manual-import').disabled=true;panel.querySelector('.kra-manual-status').textContent=event.discardedCount||event.implicitNullCount?`本批 ${event.targetCount} 项：${event.implicitNullCount||0} 项遗漏或空 c 已按 null 保留韩文，${event.discardedCount||0} 项非法结果已按 null 保留韩文；正在写入…`:`本批 ${event.targetCount} 个结果已通过校验，正在写入并准备下一步…`;
     }
   }
 
@@ -2192,6 +2439,7 @@
 
   function finishTask(task,reason='本次任务已结束。答案仍保留可复制；重新标注会生成新批次。',completed=false,preserveValidatedPreviews=false) {
     if (task.finished) return;
+    document.querySelector('.kra-review-continuation')?.remove();
     task.reconcile?.(preserveValidatedPreviews);
     task.finished = true;
     clearTimeout(task.manualTimer);task.manualSubmission=null;task.manualBackup=null;
@@ -2367,6 +2615,47 @@
       `正在准备自动续跑第 ${attempt}/${MAX_AUTO_RESUMES} 次：${reason}。已提交的结果不会清除。`});
     return true;
   }
+  // A paused review retains its original DOM-bound worker session. Do not
+  // restart the page scan just to offer another API/manual attempt.
+  function showReviewContinuation(task,event){
+    if(task.mergedGroup&&!task.mergedHost)return;
+    if(!document.body)return;
+    let panel=document.querySelector('.kra-review-continuation');
+    if(panel)panel.remove();
+    panel=document.createElement('section');
+    panel.className='kra-review-continuation';
+    panel.setAttribute('role','dialog');
+    panel.setAttribute('aria-label','未完成审核的处理方式');
+    panel.style.cssText='position:fixed;z-index:2147483647;top:18px;right:18px;width:min(390px,calc(100vw - 36px));max-height:80vh;overflow:auto;box-sizing:border-box;border:1px solid #9aa5b1;border-radius:12px;background:#fff;color:#17202b;padding:15px;box-shadow:0 7px 30px #0004;font:14px/1.6 system-ui,sans-serif;text-align:left';
+    const heading=document.createElement('strong');
+    heading.textContent='模型审核暂停：剩余 '+(Number(event?.unansweredTargets)||0)+' 个目标';
+    const intro=document.createElement('p');
+    intro.textContent='已通过校验的答案均已保留。请选择继续尝试，或将尚未完成的目标按 null 保留原文。';
+    intro.style.cssText='margin:9px 0;color:#364152';
+    const buttons=document.createElement('div');
+    buttons.style.cssText='display:flex;flex-wrap:wrap;gap:8px';
+    for(const [mode,label] of [
+      ['api','继续 API 审核'],['manual','切换手动审核'],
+      ['null','剩余按 null 完成']
+    ]){
+      const button=document.createElement('button');
+      button.type='button';button.textContent=label;
+      button.style.cssText='cursor:pointer;border:1px solid #a8b0bf;border-radius:7px;padding:8px 11px;background:#eef3f9;color:#14283f;font:inherit';
+      button.onclick=()=>{
+        if(task.finished||currentTask!==task||panel!==document.querySelector('.kra-review-continuation'))return;
+        try{
+          task.port.postMessage({type:'CONTINUE_REVIEW',operationId:task.operationId,mode});
+          panel.remove();status(mode==='null'?'正在保留未完成目标的韩文原文':mode==='api'?'正在继续 API 审核':'正在准备剩余目标的手动提示词');
+        }catch(error){status('继续审核失败：'+String(error.message||error));}
+      };
+      buttons.appendChild(button);
+    }
+    const note=document.createElement('small');
+    note.textContent='按 null 只处理剩余目标；原本已确认的标注不受影响。';
+    note.style.cssText='display:block;margin-top:9px;color:#59677a';
+    panel.append(heading,intro,buttons,note);
+    document.body.appendChild(panel);
+  }
   function startAnnotation(message) {
     if(!createParagraphPlan){
       paragraphModule ||= import(chrome.runtime.getURL('paragraph-plan.js'));
@@ -2375,6 +2664,7 @@
     const modes = { hanja: message.modes?.hanja ?? true, loanword: message.modes?.loanword ?? true };
     if (!modes.hanja && !modes.loanword) return { ok: false, error: '请至少启用一种标注模式。' };
     const previousAutoResume=autoResumeAttempts;
+    document.querySelector('.kra-review-continuation')?.remove();
     cancelTask();
     if(message.autoResume===true)autoResumeAttempts=previousAutoResume;
     const oldManual=document.querySelector('.kra-manual-review');if(oldManual){oldManual.hidden=true;delete oldManual.dataset.operationId;}
@@ -2385,14 +2675,18 @@
     // Explicit user scans are authoritative: rebuild the index to catch
     // shadow roots attached to existing hosts without a DOM childList event.
     if(!message.automatic&&typeof ensureTextIndex==='function')ensureTextIndex(true);
-    const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),Boolean(message.automatic),true);
+    const analysisSettingsStamp=!ranges&&!message.automatic&&
+      typeof message.analysisSettingsStamp==='string'&&message.analysisSettingsStamp?
+      JSON.stringify([message.analysisSettingsStamp,modes.hanja,modes.loanword]):null;
+    const entries = collectTextNodes(ranges,Boolean(ranges||message.forceRegenerate),
+      Boolean(message.automatic),true,analysisSettingsStamp);
     const domScanMs=Date.now()-domScanStarted;
     const scan={...(lastScanStats||{}),collected:entries.size};
     if(entries.size||message.mergeHost===true)pageHasHangul=true;
     if(!message.automatic||entries.size||scan.skippedHidden||scan.skippedProcessed){
       addDiagnostic({stage:'scan',level:scan.recoveryCapReached?'warning':'info',
-        message:`网页文本扫描：检测 ${scan.textNodes} 个文本节点，含韩文 ${scan.hangulNodes}，进入分析 ${entries.size}；隐藏跳过 ${scan.skippedHidden}，已有标注/已处理跳过 ${scan.skippedProcessed}，开放式 Shadow DOM ${scan.shadowRoots}。`,
-        detail:JSON.stringify({...scan,source:'DOM',mode:message.automatic?'incremental':'initial'})});
+        message:`网页文本扫描：检测 ${scan.textNodes} 个文本节点，含韩文 ${scan.hangulNodes}，进入分析 ${entries.size}；隐藏跳过 ${scan.skippedHidden}，已有标注/已处理跳过 ${scan.skippedProcessed}（手动增量 ${scan.skippedIncremental}），开放式 Shadow DOM ${scan.shadowRoots}。`,
+        detail:JSON.stringify({...scan,source:'DOM',mode:message.automatic?'incremental':analysisSettingsStamp?'manual-incremental':'initial'})});
     }
     if (!entries.size&&!message.mergeGroupId) {
       if(message.automatic)acknowledgeIndexedAutoScan(entries.indexSnapshot);
@@ -2403,7 +2697,7 @@
     const paragraphPlanStarted=Date.now();
     try{
       paragraphPlan=entries.size?
-        createParagraphPlan(entries,sourceOf,BLOCK_TAGS):
+        createParagraphPlan(entries,sourceOf,BLOCK_TAGS,{includeAdjacentSourceContext:Boolean(analysisSettingsStamp&&scan.skippedIncremental)}):
         {sentences:[],context:'',projectBinding:()=>[],idByNode:new WeakMap()};
     }catch(error){return {ok:false,error:error.message};}
     const paragraphPlanMs=Date.now()-paragraphPlanStarted;
@@ -2416,7 +2710,7 @@
     let port;
     try { port = chrome.runtime.connect({ name: 'KRA_SENTENCE_STREAM_V1' }); }
     catch (error) { status('扩展已更新，请刷新网页后重试', 0); return { ok: false, error: error.message }; }
-    const task = { operationId, port, entries, paragraphPlan, modes, scan,
+    const task = { operationId, port, entries, paragraphPlan, modes, scan, analysisSettingsStamp,
       mergeGroupId:message.mergeGroupId,
       mergedGroup:typeof message.mergeGroupId==='string'&&message.mergeGroupId.length>0,
       mergedHost:message.mergeHost===true,startedAutomatically:message.automatic===true,
@@ -2442,9 +2736,11 @@
       // Explicit cancel still rolls back unfinished previews as before.
       if(preserveValidatedPreviews){
         entry.committedModelAnnotations=[...(entry.modelAnnotations||[])];
+        entry.committedModelReviewedRanges=[...(entry.modelReviewedRanges||[])];
         entry.committedModelReviewed=entry.modelReviewed===true;
       }else{
         entry.modelAnnotations=entry.committedModelAnnotations||[];
+        entry.modelReviewedRanges=entry.committedModelReviewedRanges||[];
         entry.modelReviewed=entry.committedModelReviewed||false;
       }
       entry.hasPreview=false;const model=entry.modelAnnotations||[];
@@ -2520,6 +2816,18 @@
         await task.pendingAcceptedRecovery;
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
       if(task.manualLocalOnly)return;
+      if(result.type==='REVIEW_PAUSED'){
+        addDiagnostic({stage:'review-paused',level:'warning',
+          message:'模型自动补交已结束；仍有 '+(result.unansweredTargets||0)+' 个目标等待用户选择继续 API、手动或 null。'});
+        status('自动补交结束：等待用户选择继续处理剩余词源');
+        showReviewContinuation(task,result);return;
+      }
+      if(result.type==='REVIEW_CONTINUATION_STARTED'){
+        document.querySelector('.kra-review-continuation')?.remove();
+        addDiagnostic({stage:'review-continuation',level:'info',
+          message:'用户选择'+(result.mode==='api'?'继续 API':'手动')+'审核；仍有 '+result.unansweredTargets+' 个目标。'});
+        return;
+      }
       if(result.type==='MANUAL_REVIEW_STANDBY'){
         task.manualFrameStandby=true;return;
       }
@@ -2652,14 +2960,22 @@
         }
         if(result.source==='model'){
           entry.modelAnnotations=incoming;
-          entry.modelReviewedRanges=result.smartSegmentation===true?(item.reviewed||[]):[];
-          entry.modelReviewed=Boolean(item.reviewed?.length||incoming.length);
+          // A verified null/nonconversion is authoritative even without
+          // a replacement annotation, but only for its exact selected source.
+          const validReview=r=>Number.isInteger(r.start)&&Number.isInteger(r.end)&&
+            r.start>=0&&r.end>r.start&&r.end<=entry.text.length&&
+            entry.text.slice(r.start,r.end)===r.surface&&
+            entry.selected.some(sel=>r.start>=sel.start&&r.end<=sel.end);
+          entry.modelReviewedRanges=(item.reviewed||[]).filter(validReview);
+          entry.modelReviewed=Boolean(entry.modelReviewedRanges.length||incoming.length);
           entry.hasPreview=item.hasPreview??result.provisional===true;
           entry.committedModelAnnotations=item.committedAnnotations??incoming;
+          entry.committedModelReviewedRanges=(item.committedReviewedRanges??entry.modelReviewedRanges).filter(validReview);
           entry.committedModelReviewed=item.committedReviewed??entry.modelReviewed;
         }else entry.localAnnotations=incoming;
         const model=entry.modelAnnotations||[];
-        entry.annotations=[...(entry.localAnnotations||[]).filter(a=>!model.some(b=>b.start<a.end&&b.end>a.start)),...model];
+        entry.annotations=[...(entry.localAnnotations||[]).filter(a=>
+          ![...model,...(entry.modelReviewedRanges||[])].some(b=>b.start<a.end&&b.end>a.start)),...model];
       }
       if (result.type === 'RESULTS') {
         if(result.source==='local'){
@@ -2728,6 +3044,8 @@
       }
       const pending=Number(result.unansweredTargets)||0;
       const incomplete=result.reviewIncomplete===true&&pending>0;
+      // Never treat an incomplete review as complete for incremental skips.
+      if(!incomplete)rememberCompletedManualAnalysis(entries,task.analysisSettingsStamp);
       if(incomplete)status(`部分完成：已显示 ${count} 个标注，仍有 ${pending} 个目标待审核`);
       else status(`完成：${count} 个标注（模型选中转换 ${display.model_conversion_choices}，生成片段 ${display.model_projected_fragments}）`,100);
       if(task.startedAutomatically&&!incomplete)acknowledgeIndexedAutoScan(task.indexSnapshot);
@@ -2762,6 +3080,8 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    // An older script listener must not answer PING after a new version is injected.
+    if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ !== VERSION) return false;
     switch (message?.type) {
       case 'KRA_PING': respond({ ok: true, version: VERSION }); break;
       case 'KRA_CONTEXT_STATE': respond(contextState()); break;

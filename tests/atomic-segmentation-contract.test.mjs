@@ -9,7 +9,7 @@ import {runSentencePipeline} from '../annotation-pipeline.js';
 const word=(id,text,start,end)=>({target_id:id,original_target_id:id,
  repair_sentence_key:'paragraphA',start,end,surface:text.slice(start,end),context:text,
  repair_context:{kiwi_tokens:[],protected_ranges:[]},options:[
-  {choice_id:'KEEP',type:'keep',replacement:text.slice(start,end),entry_id:null,definitions:[]},
+  {choice_id:null,type:'keep',replacement:text.slice(start,end),entry_id:null,definitions:[]},
   {choice_id:'c0',type:'hanja',replacement:'科學',entry_id:1,definitions:['science']}
  ]});
 const fixture=(text,targets)=>{const config={context:text,smartSegmentation:true,reviewPosFilter:false,
@@ -22,7 +22,7 @@ const fixture=(text,targets)=>{const config={context:text,smartSegmentation:true
 const replace=(sid,id,start,end,surface,choice_id)=>({
  sentence_id:sid,op:'replace',old_target_ids:[id],start,end,surface,choice_id
 });
-test('atomic repair does not require KEEP for unchanged native suffix',()=>{
+test('atomic repair does not require a placeholder for unchanged native suffix',()=>{
  const text='과학이야기',t=word('t0',text,0,text.length),f=fixture(text,[t]);
  const output={results:[],repairs:[replace(f.sid,'t0',0,2,'과학','科學')]};
  const valid=validateSegmentationRepairs([t],output,f.config);
@@ -41,7 +41,7 @@ test('review validation requires only unreplaced originals, not retired target o
  assert.equal(r.accepted.length,0);
  assert.equal(repairs.length,1);
  const scan={...word('scan',text,0,text.length),scan_only:true,
-  options:[{choice_id:'KEEP',type:'keep',replacement:text,entry_id:null,definitions:[]}]};
+  options:[{choice_id:null,type:'keep',replacement:text,entry_id:null,definitions:[]}]};
  const sf=fixture(text,[scan]);
  const scanned=await reviewTargets({...sf.config,enableModelReview:true,request:async()=>({results:[]})},[scan]);
  assert.equal(scanned.unresolved.length,0);
@@ -59,16 +59,16 @@ test('failed repair never retires original target; a normal old result remains v
  assert.equal(withFallback.accepted.length,1);
  assert.equal(withFallback.accepted[0].option.choice_id,'c0');
 });
-test('add excludes KEEP; delete can omit choice_id and suppress old result safely',()=>{
+test('add excludes null; delete can omit choice_id and suppress old result safely',()=>{
  const text='과학이야기',t=word('t0',text,0,text.length),f=fixture(text,[t]);
  assert.equal(validateSegmentationRepairs([t],{repairs:[{
-  sentence_id:f.sid,op:'add',old_target_ids:[],start:2,end:5,surface:'이야기',choice_id:'KEEP'
+  sentence_id:f.sid,op:'add',old_target_ids:[],start:2,end:5,surface:'이야기',choice_id:null
  }]},f.config).accepted.length,0);
  const deletion={sentence_id:f.sid,op:'delete',old_target_ids:['t0'],
   start:0,end:text.length,surface:text};
  const v=validateSegmentationRepairs([t],{results:[],repairs:[deletion]},f.config);
  assert.equal(v.accepted.length,1,JSON.stringify(v.rejected));
- assert.equal(v.accepted[0].choice_id,'KEEP');
+ assert.equal(v.accepted[0].choice_id,null);
  assert.deepEqual(v.accepted[0].annotations,[]);
 });
 test('manual submit accepts missing superseded target answer and forwards only valid repair',async()=>{

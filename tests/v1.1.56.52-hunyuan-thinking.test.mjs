@@ -7,7 +7,7 @@ import {reviewTargets,thinkingSettings} from '../choice-review.js';
 const catalog=globalThis.KRA_MODEL_CATALOG;
 const validAnswer=JSON.stringify({results:[{t:'t0',c:null}]});
 const target={target_id:'t0',start:0,end:2,surface:'경제',context:'경제',
- options:[{choice_id:'KEEP',type:'keep',replacement:'경제',definitions:[]}]};
+ options:[{choice_id:null,type:'keep',replacement:'경제',definitions:[]}]};
 
 test('TokenHub Hy4 family and Hy3 all expose an explicit thinking toggle',()=>{
  const models=['hy4-flash','hy4','hy4-preview','hy3'];

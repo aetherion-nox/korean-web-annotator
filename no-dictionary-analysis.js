@@ -3,7 +3,7 @@
 // dictionary entries or automatically converts any text.
 export const NO_DICTIONARY_IDENTITY=Object.freeze({
  ready:true,dictionary_free:true,
- engine_version:'kiwi-wasm-no-dictionary-v1',
+ engine_version:'kiwi-wasm-no-dictionary-v2-null-origin',
  dictionary_fingerprint:'no-external-dictionary-v1',
  dictionary_metadata:{source_filename:'未提供外部词典（Kiwi + 实验性 LLM）',
   data_version:'no-external-dictionary-v1',total_entries:0,total_senses:0}
@@ -53,7 +53,7 @@ export function analyzeWithoutDictionary(text,tokens,modes={}){
    // only one of the tokenizer's nonlexical spans.
    if(/[<>\r\n]/u.test(surface))continue;
    targets.push({target_id:'nodict'+targets.length,start,end,surface,context:text,
-     options:[{choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]}],
+     options:[{choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]}],
      morphology:group.map(t=>({form:t.form,tag:t.tag,start:t.start,end:t.end}))});
    selected.push({start,end});
  }

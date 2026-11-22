@@ -39,9 +39,9 @@
    model('muse-ember-1.0','required',['minimal','low','medium','high','xhigh','max'],'https://dev.meta.ai/docs/overview')
   ]},
   {id:'hunyuan',label:'腾讯混元 (TokenHub)',endpoint:'https://tokenhub.tencentmaas.com/v1/chat/completions',models:[
+   model('hy4-flash','toggle',['high'],'https://cloud.tencent.com/document/product/1823/131208'),
    model('hy4','toggle',['high'],'https://cloud.tencent.com/document/product/1823/132252'),
    model('hy4-preview','toggle',['high'],'https://cloud.tencent.com/document/product/1823/131208'),
-   model('hy4-flash','toggle',['high'],'https://cloud.tencent.com/document/product/1823/131208'),
    model('hy3','toggle',['low','high'],'https://cloud.tencent.com/document/product/1823/131208')
   ]},
   {id:'custom',label:'自定义 / Custom',endpoint:'',models:[]}

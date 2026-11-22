@@ -12,7 +12,7 @@ const target={
   {form:'가나다라',tag:'NNG',start:0,end:4},
   {form:'마바사',tag:'NNG',start:5,end:8}
  ],protected_ranges:[]},
- options:[{choice_id:'KEEP',type:'keep',replacement:'가나다라',entry_id:null,definitions:[]},
+ options:[{choice_id:null,type:'keep',replacement:'가나다라',entry_id:null,definitions:[]},
   {choice_id:'c0',type:'hanja',replacement:'可那多羅',entry_id:1,definitions:['dictionary definition']}]
 };
 
@@ -21,7 +21,8 @@ test('smart payload uses compact Kiwi arrays, does not duplicate top-level full 
  const off=buildReviewPayload(phrase,[target],{}).payload;
  assert.deepEqual(on.sentences[0].kiwi_tokens,[['가나다라','NNG',0,4],['마바사','NNG',5,8]]);
  assert.equal(on.context,undefined);
- assert.equal(off.context,phrase);
+ assert.equal(off.context,undefined,'ordinary review also carries original text in sentences, without top-level duplication');
+ assert.equal(off.sentences[0].text,phrase);
  assert.equal(off.sentences[0].kiwi_tokens,undefined);
  assert.equal(on.targets[0].surface,target.surface);
  const scan={...target,scan_only:true,options:[target.options[0]],surface:phrase,end:phrase.length};

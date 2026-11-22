@@ -16,7 +16,7 @@ def classify_origin(origin):
     return 'loanword' if any(c.isalpha() for c in origin) else 'unsupported'
 
 def is_nonconversion_origin(origin, *, hanja=True, loanword=True):
-    """Missing/native-only origins explain KEEP; foreign/CJK origins cannot.
+    """Missing/native-only origins explain a null/no-conversion decision; foreign/CJK origins cannot.
 
     Missing origin metadata is not positive proof of native etymology.
     """
@@ -41,7 +41,7 @@ def nonconversion_options(surface, records, *, definitions_by_entry=None, **mode
             options.append(dict(choice_id=f'n{len(options)}',type='nonconversion',replacement=surface,entry_id=entry,definitions=[definition] if definition else []))
     return options
 
-def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True, review_ranges=()) -> dict:
+def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True, review_ranges=(), pos_filter=True) -> dict:
     """Return UTF-16 annotations/targets; input token and occupied offsets are Python indices.
 
     Mixed origins belong to the validated whole-entry segmentation path.
@@ -89,7 +89,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
             elif any(start<b and a<end for a,b in occupied_added):
                 # Retain the original result for custom, unsorted tokenizers.
                 continue
-        records=[r for r in entries.get(form,[]) if DisambiguationService()._pos_matches(token.tag,r.get('part_of_speech')) is not False]
+        records=[r for r in entries.get(form,[]) if not pos_filter or DisambiguationService()._pos_matches(token.tag,r.get('part_of_speech')) is not False]
         # Every mixed origin requires validated segmentation; never revive a
         # failed mixed spelling as one undifferentiated foreign replacement.
         loans=[r for r in records if classify_origin(r.get('origin_raw'))=='loanword' and not CJK.search(r.get('origin_raw') or '')]
@@ -100,7 +100,7 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
         if not force_review and not partial and not indexed_overlap(proper_starts,proper_prefix,start,end) and len(origins)==1 and len(loans)==len(records):
             annotations.append(dict(span,type='loanword',replacement=loans[0]['origin_raw'],entry_id=loans[0].get('id'),definitions=[loans[0]['definition_preview']] if loans[0].get('definition_preview') else []))
         else:
-            options=[dict(choice_id='KEEP',type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)
+            options=[dict(choice_id=None,type='keep',replacement=form,entry_id=None,definitions=[])]+nonconversion_options(form,records,hanja=hanja_enabled,loanword=True)
             for i,record in enumerate(loans):
                 options.append(dict(choice_id=f'c{i}',type='loanword',replacement=record['origin_raw'],entry_id=record.get('id'),definitions=[record['definition_preview']] if record.get('definition_preview') else []))
             targets.append(dict(span,target_id=f'loan{len(targets)}',context=text,options=options))
@@ -119,7 +119,7 @@ def merge_targets(text,targets):
     for i,group in enumerate(groups):
         start=min(t['start'] for t in group);end=max(t['end'] for t in group)
         surface=slice16(start,end)
-        options=[dict(choice_id='KEEP',type='keep',replacement=surface,entry_id=None,definitions=[])]
+        options=[dict(choice_id=None,type='keep',replacement=surface,entry_id=None,definitions=[])]
         for target in group:
             for option in target['options'][1:]:
                 if option['type']=='nonconversion' and (target['start']!=start or target['end']!=end):continue

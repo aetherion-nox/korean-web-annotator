@@ -7,7 +7,7 @@ const identity={engine_version:'selective-test',dictionary_fingerprint:'dict-1'}
 const conversion={start:0,end:2,surface:'경제',replacement:'經濟',type:'hanja'};
 const target={target_id:'t0',start:0,end:2,surface:'경제',context:sentence,
  options:[
-  {choice_id:'KEEP',type:'keep',replacement:'경제',entry_id:null,definitions:[]},
+  {choice_id:null,type:'keep',replacement:'경제',entry_id:null,definitions:[]},
   {choice_id:'n0',type:'nonconversion',replacement:'경제',entry_id:3,definitions:['native sense']},
   {choice_id:'c0',type:'hanja',replacement:'經濟',entry_id:4,definitions:['economy']}
  ]};
@@ -37,8 +37,8 @@ test('default-on selective review sends positive local conversions to model with
  assert.equal(s.modelEvents().at(-1).results[0].annotations[0].replacement,'經濟');
 });
 
-test('model may reject a local conversion by KEEP or explicit nonconversion',async()=>{
- for(const answer of ['KEEP','n0']){
+test('model may reject a local conversion by JSON null or explicit nonconversion',async()=>{
+ for(const answer of [null,'n0']){
   const s=setup({answer});await s.call();
   assert.deepEqual(s.modelEvents().at(-1).results[0].annotations,[]);
  }

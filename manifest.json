@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Korean Hanja & Loanword Annotator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Dictionary-based Korean Hanja and loanword annotations entirely in your browser, with optional model review.",
   "permissions": [
     "activeTab",
@@ -58,11 +58,13 @@
     {
       "resources": [
         "paragraph-plan.js",
+        "mixed-origin-alignment.js",
         "text-chunks.js",
         "hanja-reading-check.js",
         "hanja-reading-data.js",
         "repair-validation-core.js",
-        "manual-answer-format.js"
+        "manual-answer-format.js",
+        "partial-review-json.js"
       ],
       "matches": [
         "<all_urls>"

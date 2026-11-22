@@ -10,7 +10,7 @@ import {engineConfig,projectAnnotation} from '../local-engine.js';
 
 const hanja=(surface,replacement)=>[{start:0,end:surface.length,surface,replacement,type:'hanja'}];
 const target=(surface,morphology=[])=>({target_id:'t0',start:0,end:surface.length,surface,context:surface,morphology,
- options:[{choice_id:'KEEP',type:'keep',replacement:surface,entry_id:null,definitions:[]}]});
+ options:[{choice_id:null,type:'keep',replacement:surface,entry_id:null,definitions:[]}]});
 const cfg={experimentalHanja:true,hanjaReadingCheck:true};
 test('reading verifier admits legitimate lexical readings and noninitial initial-sound reversals',()=>{
  for(const [surface,origin] of [
@@ -22,23 +22,23 @@ test('reading verifier admits legitimate lexical readings and noninitial initial
  }
  assert.equal(validateModelHanjaReadings('가',hanja('가','韓')).status,'mismatch');
 });
-test('reading check defaults on but can be turned off without bypassing boundary/name guards',async()=>{
+test('reading check defaults OFF and can be opted into without bypassing boundary/name guards',async()=>{
  globalThis.chrome={storage:{local:{get:async()=>({})}}};
  try{
   const normal=await engineConfig();
-  assert.equal(normal.hanjaReadingCheck,true);
-  chrome.storage.local.get=async()=>({hanjaReadingCheck:false});
-  assert.equal((await engineConfig()).hanjaReadingCheck,false);
+  assert.equal(normal.hanjaReadingCheck,false);
+  chrome.storage.local.get=async()=>({hanjaReadingCheck:true});
+  assert.equal((await engineConfig()).hanjaReadingCheck,true);
  }finally{delete globalThis.chrome;}
  const t=target('가');
- assert.equal(literalOriginOption(t,'韓',{experimentalHanja:true}),null);
- assert.equal(literalOriginOption(t,'韓',{experimentalHanja:true,hanjaReadingCheck:false})?.type,'hanja');
- assert.equal(explainLiteralOriginRejection(t,'韓',{experimentalHanja:true}),'hanja_reading_conflict');
+ assert.equal(literalOriginOption(t,'韓',{experimentalHanja:true})?.type,'hanja');
+ assert.equal(literalOriginOption(t,'韓',{experimentalHanja:true,hanjaReadingCheck:true}),null);
+ assert.equal(explainLiteralOriginRejection(t,'韓',{experimentalHanja:true,hanjaReadingCheck:true}),'hanja_reading_conflict');
  assert.equal(literalOriginOption({...t,proper_noun:true},'韓',{experimentalHanja:true,hanjaReadingCheck:false})?.type,'hanja');
  assert.equal(literalOriginOption({...t,proper_noun:true,dictionary_person_name:true},'韓',{experimentalHanja:true,hanjaReadingCheck:false}),null);
  assert.equal(literalOriginOption(t,'韓字',{experimentalHanja:true,hanjaReadingCheck:false}),null);
  const html=await readFile(new URL('../options.html',import.meta.url),'utf8');
- assert.match(html,/<input id="hanjaReadingCheck" type="checkbox" checked/);
+ assert.match(html,/<input id="hanjaReadingCheck" type="checkbox" aria-describedby/);
  const settings=await readFile(new URL('../engine-settings.js',import.meta.url),'utf8');
  assert.ok(settings.includes("hanjaReadingCheck:$('hanjaReadingCheck').checked"));
 });
@@ -76,7 +76,7 @@ test('invalid literal-origin choices report separate alignment, reading, mixed-s
   ['韓','hanja_reading_conflict'],['韓字','hanja_alignment_or_boundary'],
   ['携帶phone','mixed_script_requires_segments'],['http://foo','loanword_mode_disabled']
  ]){
-  assert.equal(explainLiteralOriginRejection(t,choice_id,{experimentalHanja:true}),reason,choice_id);
+  assert.equal(explainLiteralOriginRejection(t,choice_id,{experimentalHanja:true,hanjaReadingCheck:true}),reason,choice_id);
  }
  const res=validateExperimentalChoices([t],{results:[{t:'t0',c:'韓'}]},cfg);
  assert.equal(res.rejectionCounts.hanja_reading_conflict,1);

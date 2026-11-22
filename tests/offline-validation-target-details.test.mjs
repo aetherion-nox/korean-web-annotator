@@ -15,7 +15,7 @@ assert.ok(mergedStart>0&&mergedEnd>mergedStart);
 
 function setup({rows=[],binding,projectBinding}={}){
  const sourceBinding=binding||{target_id:'t42',sentenceId:'p3',start:2,end:4,
-  surface:'원잠',choices:[{choice_id:'c0',annotations:[]},{choice_id:'KEEP',annotations:[]}]};
+  surface:'원잠',choices:[{choice_id:'c0',annotations:[]},{choice_id:null,annotations:[]}]};
  const backup={requestId:'batch-7',bindings:[sourceBinding]};
  const text=JSON.stringify({batch_id:backup.requestId,results:rows});
  const entry={id:'e0',text:'이 원잠학교',selected:[{start:0,end:6}],annotations:[]};
@@ -52,9 +52,13 @@ test('offline validation identifies the exact missing target and its original so
  assert.equal(task.manualRecoveryAccepted.size,0,'a dry run cannot commit state');
 });
 
-test('unusable per-target origin is a valid null fallback in dry-run validation',async()=>{
+test('strict dry-run identifies unusable per-target origin instead of silently turning it into null',async()=>{
  const {ctx,task,text}=setup({rows:[{t:'t42',c:'not-a-choice'}]});
- await ctx.applyManualRecovery(task,text,{dryRun:true});
+ await assert.rejects(ctx.applyManualRecovery(task,text,{dryRun:true}),error=>{
+  assert.match(error.message,/t42「원잠」/);
+  assert.match(error.message,/无效或未经验证/);
+  return true;
+ });
  assert.equal(task.manualRecoveryAccepted.size,0,'dry-run still must not mutate state');
 });
 
@@ -68,10 +72,10 @@ test('wrong field type reports the specific offending target while retaining str
 });
 
 test('duplicate target response reports original spelling and duplication reason',async()=>{
- const {ctx,task,text}=setup({rows:[{t:'t42',c:'c0'},{t:'t42',c:'c0'}]});
+ const {ctx,task,text}=setup({rows:[{t:'t42',c:'c0'},{t:'t42',c:'c1'}]});
  await assert.rejects(ctx.applyManualRecovery(task,text,{dryRun:true}),e=>{
   assert.match(e.message,/t42「원잠」/);
-  assert.match(e.message,/重复 target_id（本次出现 2 条）/);
+  assert.match(e.message,/重复 target_id（本次出现 2 条不同答案）/);
   return true;
  });
 });

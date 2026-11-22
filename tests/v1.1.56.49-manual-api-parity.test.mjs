@@ -9,7 +9,7 @@ const paragraph=phrase.repeat(260); // >7K chars in one DOM paragraph
 const targets=[...paragraph.matchAll(/학교/g)].map((m,i)=>({
  target_id:'target-'+i,start:m.index,end:m.index+2,surface:'학교',context:paragraph,
  options:[
-  {choice_id:'KEEP',type:'keep',replacement:'학교',definitions:[],entry_id:null},
+  {choice_id:null,type:'keep',replacement:'학교',definitions:[],entry_id:null},
   {choice_id:'c0',type:'hanja',replacement:'學校',definitions:['school'],entry_id:1}
  ]
 }));
