@@ -177,6 +177,7 @@ test('partial merged offline response keeps accepted results and shows only miss
  const {c,task,panel}=idleFixture(true);
  task.manualBackup={...backup,retryInvalidDictionaryChoices:true};
  task.entries=new Map([['frame0',{renderCount:1}]]);
+ c.manualRetryPrompt=(_task,missing)=>'只回答 '+missing.map(b=>b.target_id).join(',');
  let request;
  c.chrome.runtime.sendMessage=async payload=>{
   request=payload;
