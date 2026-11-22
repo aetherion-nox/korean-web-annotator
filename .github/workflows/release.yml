@@ -46,8 +46,8 @@ jobs:
             tests/long-text-context-wire.test.mjs \
             tests/v1.2.3-pooled-output-protocol.test.mjs \
             tests/v1.2.8-pos-filter-independent-pool-recovery.test.mjs \
-            tests/manual-continuation.test.mjs \
-            tests/nonexistent-indexed-choices.test.mjs \
+            tests/manual-merged-idle-recovery.test.mjs \
+            tests/v1.2.0-strict-invalid-review.test.mjs \
             tests/pos-local-switch.test.mjs
       - name: Restore and verify bundled runtime
         env:
