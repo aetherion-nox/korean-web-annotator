@@ -172,3 +172,21 @@ test('merged host normalizes missing-ID response before routing it to original f
  assert.equal(submitted?.response?.batch_id,backup.requestId);
  assert.equal(submitted?.response?.results.length,2);
 });
+
+test('partial merged offline response keeps accepted results and shows only missing targets',async()=>{
+ const {c,task,panel}=idleFixture(true);
+ task.manualBackup={...backup,retryInvalidDictionaryChoices:true};
+ task.entries=new Map([['frame0',{renderCount:1}]]);
+ let request;
+ c.chrome.runtime.sendMessage=async payload=>{
+  request=payload;
+  return {ok:true,partial:true,missingTargetIds:['t1'],missingReasons:{t1:'missing answer'},acceptedCount:1};
+ };
+ await c.recoverMergedManual(task,JSON.stringify(originalResponse));
+ assert.equal(request.type,'KRA_MANUAL_OFFLINE_APPLY');
+ assert.match(panel.querySelector('.kra-manual-status').textContent,/已将各框架通过安全校验的 1 个目标正式应用到网页/);
+ assert.match(panel.querySelector('.kra-manual-status').textContent,/剩余 1 个目标尚未完成/);
+ assert.match(panel.querySelector('.kra-manual-prompt').value,/t1/);
+ assert.equal(task.manualPreviewCount,1);
+ assert.equal(panel.querySelector('.kra-manual-apply').disabled,false);
+});

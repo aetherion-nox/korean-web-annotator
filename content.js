@@ -1548,7 +1548,6 @@
           ' 个目标尚未完成，只需补交新提示词中的目标。';
       }
       task.manualPreviewCount=[...task.entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
-      note('已正式应用有效结果；仅 '+missing.length+' 个目标待补交，当前批次和原始定位快照均保留。');
       status('有效标注已应用，仍有 '+missing.length+' 个目标待补交');
       return;
     }
