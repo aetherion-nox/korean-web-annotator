@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - manifest.json
+      - content.js
+      - popup.js
+      - service-worker.js
+      - tests/manual-merged-idle-recovery.test.mjs
+      - tests/web-v1.2.12-content-startup.test.mjs
       - .github/workflows/release.yml
   workflow_dispatch:
 
