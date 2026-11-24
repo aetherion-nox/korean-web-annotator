@@ -1,4 +1,5 @@
 import {createEnginePreloader} from './engine-preload.js';
+import {APPEARANCE_KEY,normalizeAnnotationAppearance} from './annotation-appearance.js';
 import {menuAction} from './context-menu-state.js';
 import {callBrowserEngine,copyTextToClipboard} from './browser-engine-host.js';
 import {configureBrowserEngineHost} from './browser-engine.js';
@@ -18,7 +19,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.1-web-content-startup-handshake';
+const CONTENT_SCRIPT_VERSION='1.1.2-popup-appearance';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -73,8 +74,8 @@ chrome.storage.onChanged.addListener((changes,area)=>{
   const position=sanitizeFloatingBallPosition(changes.floatingBallPosition.newValue);
   if(position)chrome.tabs.query({}).then(tabs=>Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.tabs.sendMessage(tab.id,{type:'APPLY_FLOATING_BALL_POSITION',position})))).catch(()=>{});
  }
- if(area!=='local'||(!changes.progressiveAnnotation&&!changes.uiSettings))return;
- const uiSettings={...(changes.uiSettings?sanitizeUiSettings(changes.uiSettings.newValue):{}),...(changes.progressiveAnnotation?{progressiveAnnotation:changes.progressiveAnnotation.newValue===true}:{})};
+ if(area!=='local'||(!changes.progressiveAnnotation&&!changes.uiSettings&&!changes[APPEARANCE_KEY]))return;
+ const uiSettings={...(changes.uiSettings?sanitizeUiSettings(changes.uiSettings.newValue):{}),...(changes.progressiveAnnotation?{progressiveAnnotation:changes.progressiveAnnotation.newValue===true}:{}),...(changes[APPEARANCE_KEY]?{annotationAppearance:normalizeAnnotationAppearance(changes[APPEARANCE_KEY].newValue)}:{})};
  chrome.tabs.query({}).then(tabs=>Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.tabs.sendMessage(tab.id,{type:'APPLY_UI_SETTINGS',uiSettings})))).catch(()=>{});
 });
 
@@ -167,8 +168,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === 'GET_UI_SETTINGS') {
-    chrome.storage.local.get(['uiSettings','progressiveAnnotation','floatingBallPosition'])
-      .then(({ uiSettings = {}, progressiveAnnotation = false, floatingBallPosition }) => sendResponse({ ok: true, uiSettings: {...sanitizeUiSettings(uiSettings),progressiveAnnotation:progressiveAnnotation===true,floatingBallPosition:sanitizeFloatingBallPosition(floatingBallPosition)} }))
+    chrome.storage.local.get(['uiSettings','progressiveAnnotation','floatingBallPosition',APPEARANCE_KEY])
+      .then(({ uiSettings = {}, progressiveAnnotation = false, floatingBallPosition, annotationAppearance }) => sendResponse({ ok: true, uiSettings: {...sanitizeUiSettings(uiSettings),progressiveAnnotation:progressiveAnnotation===true,floatingBallPosition:sanitizeFloatingBallPosition(floatingBallPosition),annotationAppearance:normalizeAnnotationAppearance(annotationAppearance)} }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }

@@ -1,5 +1,9 @@
-/* Furiganator default: browser-native ruby layout, rt excluded from selection.
-   Deliberately no ruby/rt sizing, display, line-height or page-container rules. */
+/* Native ruby layout; adjust only our rt text, never body or website ruby. */
+ruby.kra-ruby > rt.kra-annotation {
+  font-size: var(--kra-annotation-size, 75%) !important;
+  color: inherit !important;
+  opacity: var(--kra-annotation-opacity, 1) !important;
+}
 .kra-unselectable { user-select: none; }
 
 /* Control UI is separate from the annotated document's layout. */

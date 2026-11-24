@@ -25,6 +25,18 @@
     <label class="choice"><input id="hanjaMode" type="checkbox" checked><span data-i18n="hanjaMode">汉字词：用汉字替换正文中的对应韩文</span></label>
     <label class="choice"><input id="loanwordMode" type="checkbox" checked><span data-i18n="loanwordMode">外来语：在韩文正上方显示原词</span></label>
 
+    <fieldset id="annotationAppearancePanel" class="annotation-appearance">
+      <legend data-appearance-i18n="heading">标注样式</legend>
+        <label for="annotationSize"><span data-appearance-i18n="size">标注大小（相对正文）</span> <output id="annotationSizeValue">75%</output></label>
+        <input id="annotationSize" type="range" min="25" max="150" step="1" value="75">
+        <label for="annotationOpacity"><span data-appearance-i18n="opacity">标注深浅（不透明度）</span> <output id="annotationOpacityValue">100%</output></label>
+        <input id="annotationOpacity" type="range" min="0" max="100" step="1" value="100">
+        <div id="annotationAppearancePreview" class="annotation-appearance-preview" aria-label="Preview"><ruby>韓國<rt>한국</rt></ruby>의 <ruby>文化<rt>문화</rt></ruby>와 <ruby>커피<rt>coffee</rt></ruby></div>
+        <button id="resetAnnotationAppearance" type="button" data-appearance-i18n="reset">恢复默认</button>
+        <p class="appearance-hint" data-appearance-i18n="hint">仅调整上方标注文字，正文不变。已有标注立即生效，无需重新分析。</p>
+        <p id="annotationAppearanceStatus" role="status"></p>
+    </fieldset>
+
     <fieldset class="copy-settings">
       <legend>选择与复制文字时</legend>
       <label class="choice"><input type="radio" name="copyMode" value="base"><span data-i18n="copyBase">只复制当前显示的正文</span></label>
@@ -62,5 +74,6 @@
     <p id="status" role="status"></p>
   </main>
   <script src="popup.js"></script>
+  <script type="module" src="annotation-appearance-settings.js"></script>
 </body>
 </html>

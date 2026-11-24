@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.1-web-content-startup-handshake';
+  const VERSION = '1.1.2-popup-appearance';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -263,6 +263,12 @@
   function applySettings(settings) {
     const wasBallOnly=uiSettings.toolbarBallOnly===true;
     uiSettings={...uiSettings,...settings};
+    if(Object.hasOwn(settings,'annotationAppearance')){
+      const a=settings.annotationAppearance;
+      const percent=(v,min,max,fallback)=>typeof v==='number'&&Number.isFinite(v)?Math.min(max,Math.max(min,Math.round(v))):fallback;
+      document.documentElement.style.setProperty('--kra-annotation-size',percent(a?.size,25,150,75)+'%');
+      document.documentElement.style.setProperty('--kra-annotation-opacity',String(percent(a?.opacity,0,100,100)/100));
+    }
     if(settings.floatingBallEnabled===false||settings.mobileSelectionToolbar===false)uiSettings.toolbarBallOnly=false;
     else if(uiSettings.toolbarBallOnly===true){
       uiSettings.floatingBallEnabled=true;uiSettings.mobileSelectionToolbar=true;
@@ -1548,6 +1554,7 @@
           ' 个目标尚未完成，只需补交新提示词中的目标。';
       }
       task.manualPreviewCount=[...task.entries.values()].reduce((n,entry)=>n+(entry.renderCount||0),0);
+      note('已正式应用有效结果；仅 '+missing.length+' 个目标待补交，当前批次和原始定位快照均保留。');
       status('有效标注已应用，仍有 '+missing.length+' 个目标待补交');
       return;
     }
@@ -2730,8 +2737,8 @@
     task.paint=paint;
     task.reconcile=(preserveValidatedPreviews=false)=>{for(const entry of entries.values())if(entry.hasPreview){
       // The stream parser emits ONLY complete, locally validated t/c rows.
-      // On an unexpected API/background disconnect, promote these visible
-      // decisions to durable partial annotations instead of erasing them.
+      // Lazy recovery: complete ordinary rows survive a transport failure in
+      // both modes. Missing smart repairs can be addressed on a later review.
       // Explicit cancel still rolls back unfinished previews as before.
       if(preserveValidatedPreviews){
         entry.committedModelAnnotations=[...(entry.modelAnnotations||[])];
@@ -2815,6 +2822,7 @@
         await task.pendingAcceptedRecovery;
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
       if(task.manualLocalOnly)return;
+      if(result.smartSegmentation===true)task.smartSegmentation=true;
       if(result.type==='REVIEW_PAUSED'){
         addDiagnostic({stage:'review-paused',level:'warning',
           message:'模型自动补交已结束；仍有 '+(result.unansweredTargets||0)+' 个目标等待用户选择继续 API、手动或 null。'});

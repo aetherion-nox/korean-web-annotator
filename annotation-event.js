@@ -17,6 +17,7 @@ export function compactDomAnnotations(annotations){
 // A final validated commit is ALWAYS emitted without throttling.
 export function shouldPublishPreview({sentenceChars=0,targetCount=0,lastCount=0,nextCount=0,hasPublished=false}={}){
  if(nextCount<=0)return hasPublished;
+ if(nextCount<lastCount)return true; // A conflicting duplicate must retract immediately.
  const heavy=sentenceChars>2048||targetCount>120;
  return !heavy||!hasPublished||nextCount-lastCount>=48;
 }

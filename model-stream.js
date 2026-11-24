@@ -2,14 +2,54 @@ import {literalOriginOption} from './experimental-options.js';
 // Protocol-specific SSE envelopes share one byte/framing reader. Reasoning is
 // retained only in the opt-in log, never parsed as dictionary choices.
 function streamError(message,detail=''){const e=Error(message);e.detail=detail;return e;}
+// Incrementally locate the root results array, even after other root fields.
+function rootResultsLocator(){
+ let pos=0,root=false,phase='key',key='',depth=0,inString=false,escaped=false;
+ return text=>{
+  if(!root){
+   const prefix=/^\s*(?:\x60\x60\x60(?:json)?\s*)?\{/i.exec(text);
+   if(!prefix)return -1;
+   root=true;pos=prefix[0].length;
+  }
+  while(pos<text.length){
+   const ch=text[pos];
+   if(phase==='key'){
+    if(/\s/.test(ch)||ch===','){pos++;continue;}
+    if(ch!=='"')return -1;
+    const match=/^"(?:[^"\\]|\\.)*"/.exec(text.slice(pos));
+    if(!match)return -1;
+    try{key=JSON.parse(match[0]);}catch{return -1;}
+    pos+=match[0].length;phase='colon';continue;
+   }
+   if(phase==='colon'){
+    if(/\s/.test(ch)){pos++;continue;}
+    if(ch!==':')return -1;
+    pos++;phase='value';continue;
+   }
+   if(phase==='value'){
+    if(/\s/.test(ch)){pos++;continue;}
+    if(key==='results'&&ch==='[')return pos+1;
+    phase='skip';depth=0;inString=false;escaped=false;
+   }
+   if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;}
+   else if(ch==='"')inString=true;
+   else if(ch==='{'||ch==='[')depth++;
+   else if(ch===']'||ch==='}'){if(depth===0)return -1;depth--;}
+   else if(ch===','&&depth===0)phase='key';
+   pos++;
+  }
+  return -1;
+ };
+}
 export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null,config={}){
  const known=new Map(targets.map(t=>[t.target_id,t]));
  const choiceIndex=config.choiceIndex||{};
- let text='',position=0,array=false,start=-1,depth=0,string=false,escape=false;
- const rows=[];
+ let text='',position=0,array=false,closed=false,start=-1,depth=0,string=false,escape=false;
+ const rows=[],locateResults=rootResultsLocator();
  return chunk=>{
+  if(closed)return;
   text+=chunk;
-  if(!array){const prefix=/^\s*(?:```(?:json)?\s*)?\{\s*"results"\s*:\s*\[/i.exec(text);if(!prefix)return;position=prefix[0].length;array=true;}
+  if(!array){const offset=locateResults(text);if(offset<0)return;position=offset;array=true;}
   let changed=false;
   for(;position<text.length;position++){
    const ch=text[position];
@@ -26,7 +66,7 @@ export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null,conf
        (row.c===null||typeof row.c==='string'&&row.c.trim().length>0)){
      rows.push(row);changed=true;
     }
-   }}else if(ch===']'&&depth===0){position=text.length;break;}
+   }}else if(ch===']'&&depth===0){closed=true;break;}
   }
   if(changed){
    const unique=new Map(),ambiguous=new Set();
@@ -54,7 +94,7 @@ export function choicePreviewParser(targets,onPreview,resolveExtra=()=>null,conf
      selected||resolveExtra(target,row.c)||null;
    // Preview and final application must agree; an invalid origin is a
    // no-conversion result, never a speculative annotation.
-   return option?[{target,option}]:[];
+   return option&&!target.scan_only?[{target,option}]:[];
   });onPreview(accepted);}
  };
 }
@@ -66,7 +106,7 @@ export function experimentalChoicePreviewParser(targets,config,onPreview){
 
 export async function readModelContent(response,{protocol='chat',signal,onStarted=()=>{},onDelta=()=>{},onRaw=()=>{},onMetadata=()=>{},maxContentChars=2_000_000}={}){
  const contentCap=Number.isSafeInteger(maxContentChars)?Math.min(16_000_000,Math.max(2_000_000,maxContentChars)):2_000_000;
- if(!response.headers.get('content-type')?.includes('text/event-stream')){
+ if(!response.headers.get('content-type')?.toLowerCase().includes('text/event-stream')){
   const raw=await response.text();onRaw(raw);
   let data;try{data=JSON.parse(raw);}catch{throw streamError('模型响应不是有效 JSON',raw);}
   onMetadata(data);
@@ -91,7 +131,7 @@ export async function readModelContent(response,{protocol='chat',signal,onStarte
   if(!lines.length)return;const data=lines.join('\n');lines=[];
   if(data.trim()==='[DONE]'){done=true;return;}
   let event;try{event=JSON.parse(data);}catch{throw streamError('模型流式响应包含无效 JSON');}
-  if(event.error||event.type==='error')throw streamError('模型返回流式 API 错误',JSON.stringify(event.error||event));
+  if(event.error||event.type==='error'){const error=streamError('模型返回流式 API 错误',JSON.stringify(event.error||event));error.discardPartial=true;throw error;}
   if(!started){started=true;onStarted();}
   if(protocol==='responses'){
    if(event.type==='response.output_text.delta')append(event.delta);
@@ -104,7 +144,7 @@ export async function readModelContent(response,{protocol='chat',signal,onStarte
    if(event.type==='message_delta'){finish=event.delta?.stop_reason||finish;onMetadata(event);}
    if(event.type==='message_stop')done=true;
   }else{
-   const choice=event.choices?.find(c=>c.index===0);if(choice){append(choice.delta?.content);if(choice.finish_reason)finish=choice.finish_reason;}
+   const choice=event.choices?.find(c=>c.index===0)??(event.choices?.length===1&&event.choices[0]?.index==null?event.choices[0]:undefined);if(choice){append(choice.delta?.content);if(choice.finish_reason)finish=choice.finish_reason;}
    if(event.usage||event.id)onMetadata(event);
   }
  }
@@ -117,7 +157,13 @@ export async function readModelContent(response,{protocol='chat',signal,onStarte
    if(chunk.done){if(buffer)line(buffer.replace(/\r$/,''));dispatch();break;}
   }
   const valid=protocol==='responses'?finish==='completed':protocol==='anthropic'?done&&['end_turn','stop_sequence'].includes(finish):finish==='stop';
-  if(!valid)throw streamError('模型流式回复中断或未正常结束，已保留原文',String(finish||'missing finish_reason'));
+  if(!valid){
+   const error=streamError('模型流式回复中断或未正常结束，已保留原文',String(finish||'missing finish_reason'));
+   // Only truncation or a lost transport may salvage complete rows. Explicit
+   // refusal/moderation/tool termination must roll back provisional results.
+   if(finish&&!['length','max_tokens'].includes(finish))error.discardPartial=true;
+   throw error;
+  }
   return content;
  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }

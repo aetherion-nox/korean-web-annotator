@@ -50,7 +50,7 @@ export function buildReviewInstructions(config={}){
  ].join('\n'):'';
  return [experimental?CORE_REVIEW_INSTRUCTIONS:REVIEW_INSTRUCTIONS,
   ...(generated?[generated]:[]),...(noDictionary?[noDictionary]:[]),
-  ...(config.smartSegmentation===true?[SMART_SEGMENTATION_INSTRUCTIONS]:[])].join('\n');
+  ...(config.smartSegmentation===true?[SMART_SEGMENTATION_INSTRUCTIONS,'API output order: emit the root results array first, then repairs. Decide repairs before writing results; the field order affects only provisional streaming display.']:[])].join('\n');
 }
 export function buildManualPrompt(context,targets,batchId,config={}){
  const {payload}=buildReviewPayload(context||'',targets,config);
@@ -256,7 +256,7 @@ export function buildReviewPayload(context,targets,config={}){
   origin_mode:'open-origin',
   allowed_origin_types:[...(config.experimentalHanja===true?['hanja']:[]),...(config.experimentalLoanword===true?['loanword']:[])],
   ...(config.dictionaryFree===true?{null_is_fallback_only:true}:{dictionary_options_are_not_exhaustive:true})
- }:{}),sentences,candidates,targets:packedTargets};
+ }:{}),...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
  const userBytes=bytes(payload);
  // The legacy-size diagnostic is an estimate. Serializing the old,

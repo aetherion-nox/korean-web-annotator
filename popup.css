@@ -18,3 +18,13 @@ button.danger-subtle { color:#a50e0e; }
 #status { min-height:20px; margin:10px 0 0; color:#4a4d52; white-space:pre-wrap; }
 
 .setting-hint { margin:-4px 0 12px 24px; color:#5f6368; font-size:12px; line-height:1.5; }
+
+.annotation-appearance {min-width:0;}
+.annotation-appearance label {display:block;font-size:12px;}
+.annotation-appearance input[type=range] {display:block;width:100%;margin:4px 0 8px;box-sizing:border-box;}
+.annotation-appearance output {float:right;font-variant-numeric:tabular-nums;}
+.annotation-appearance-preview {text-align:center;padding:7px 0;margin:4px 0;font-size:19px;line-height:1.65;}
+.annotation-appearance-preview rt {font-size:var(--kra-annotation-size,75%);opacity:var(--kra-annotation-opacity,1);color:inherit;}
+#resetAnnotationAppearance {min-height:28px;padding:0 10px;font-size:12px;}
+.appearance-hint,#annotationAppearanceStatus {font-size:11px;color:#5f6368;margin:5px 0 0;}
+#annotationAppearanceStatus:empty {display:none;}
