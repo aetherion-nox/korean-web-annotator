@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {prepareCacheSession,AnnotationCache,trimAnnotationCache,cacheCounts} from '../session-cache.js';
+import {prepareCacheSession,AnnotationCache,trimAnnotationCache,cacheCounts,stableCacheStringify,canonicalStoredCacheKey} from '../session-cache.js';
 const key='cache';
 function storage(clear){
  const local={uiSettings:{clearCacheOnExit:clear},[key]:[['a',1]]};
@@ -34,9 +34,21 @@ test('background settings preserve false, persist before run and isolate old map
  const snippet=src.slice(src.indexOf('function sanitizeUiSettings('),src.indexOf('function normalizeUiLocale('));
  const ctx={normalizeUiLocale:x=>x};
  vm.runInNewContext(snippet,ctx);
- assert.equal(ctx.sanitizeUiSettings({}).clearCacheOnExit,true);
+ assert.equal(ctx.sanitizeUiSettings({}).clearCacheOnExit,false);
+ assert.equal(ctx.sanitizeUiSettings({clearCacheOnExit:true}).clearCacheOnExit,true);
  assert.equal(ctx.sanitizeUiSettings({clearCacheOnExit:false}).clearCacheOnExit,false);
  assert.match(src,/await chrome\.storage\.local\.set\(\{uiSettings:\{\.\.\.stored,\.\.\.uiSettings\}\}\);\s*return await startWholePageForTab/);
  assert.match(src,/cache=new AnnotationCache\(\);\s*await serializeCacheStorage/);
  assert.match(src,/if\(map!==cache\)return;/);
+});
+
+test('missing exit-cleanup preference retains cache by default',async()=>{
+ const s=storage(undefined);
+ assert.equal(await prepareCacheSession(s,key),'retained-on-session-start');
+ assert.equal(s.data[key].length,1);
+});
+test('legacy paragraph cache key matches canonical key regardless of field order',()=>{
+ const old=['paragraph-review-v1','local','model',[{z:1,a:{y:2,b:3}}]];
+ const reordered=['paragraph-review-v1','local','model',[{a:{b:3,y:2},z:1}]];
+ assert.equal(canonicalStoredCacheKey(JSON.stringify(old)),stableCacheStringify(reordered));
 });

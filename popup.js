@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.10-cache-persistence';
+const CONTENT_SCRIPT_VERSION = '1.1.11-stable-cache-persistence';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -109,7 +109,7 @@ async function init() {
   stopAutoAfterPageComplete.checked=uiSettings.stopAutoAfterPageComplete ?? true;
   restoreExistingAnnotations.checked=uiSettings.restoreExistingAnnotations ?? true;
   hideToolbarOnFirstManual.checked=uiSettings.hideToolbarOnFirstManual !== false;
-  clearCacheOnExit.checked=uiSettings.clearCacheOnExit ?? true;
+  clearCacheOnExit.checked=uiSettings.clearCacheOnExit===true;
   toolbarHangulOnly.checked=uiSettings.toolbarHangulOnly ?? true;
   toolbarDisplay.value=uiSettings.toolbarDisplay==='always'?'always':'selection';
   syncToolbarOptions();

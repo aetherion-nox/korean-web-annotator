@@ -1,6 +1,7 @@
 import {validateChoices,validateExperimentalChoices} from './choice-review.js';
 import {validateSegmentationRepairsCore} from './repair-validation-core.js';
 import {verifySegmentationOrigin} from './segmentation-repairs.js';
+import {stableCacheStringify} from './session-cache.js';
 
 // Paragraph-local identity: do not depend on transient frame/sentence IDs,
 // batch layout or the rest of the page. Keep exact source and candidate data.
@@ -8,7 +9,7 @@ export function paragraphReviewKey(work,index,fingerprint,restrictToSelection=fa
  const item=work[index],sentence=item.sentence;
  const neighbors=[work[index-1]?.sentence.text??null,work[index+1]?.sentence.text??null];
  const targets=item.analysis.targets.map(({context,repair_context,repair_sentence_key,...target})=>target);
- return JSON.stringify(['paragraph-review-v1',item.localKey,fingerprint,targets,
+ return stableCacheStringify(['paragraph-review-v1',item.localKey,fingerprint,targets,
   item.analysis.annotations,item.analysis.repair_context??null,neighbors,
   sentence.adjacentContext??null,restrictToSelection?sentence.selected??[]:null]);
 }

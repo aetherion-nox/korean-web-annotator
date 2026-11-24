@@ -9,7 +9,7 @@ import {engineConfig,engineStatus,analyzeLocal,analyzeLocalBatch} from './local-
 import {reviewTargets} from './choice-review.js';
 import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
-import {prepareCacheSession,AnnotationCache,cacheCounts} from './session-cache.js';
+import {prepareCacheSession,AnnotationCache,cacheCounts,canonicalStoredCacheKey,trimAnnotationCache} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {
@@ -19,7 +19,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.10-cache-persistence';
+const CONTENT_SCRIPT_VERSION='1.1.11-stable-cache-persistence';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -40,6 +40,7 @@ function serializeCacheStorage(work){
 }
 let cacheLoaded=false;
 let cacheLoadPromise;
+let cacheLoadReport=null;
 const enginePreloader=createEnginePreloader();
 const preloadEngine=()=>enginePreloader.run().catch(error=>console.warn('[KRA preload]',error.message));
 // Also covers extension reload/enabling and browsers that resume the worker.
@@ -282,7 +283,7 @@ function sanitizeUiSettings(value) {
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
     restoreExistingAnnotations:source.restoreExistingAnnotations ?? true,
-    clearCacheOnExit:source.clearCacheOnExit!==false,
+    clearCacheOnExit:source.clearCacheOnExit===true,
     hideToolbarOnFirstManual:source.hideToolbarOnFirstManual !== false,
     toolbarHangulOnly:source.toolbarHangulOnly ?? true,
     toolbarDisplay:source.toolbarDisplay==='always'?'always':'selection',
@@ -699,6 +700,7 @@ async function clearAnnotationCache(){
  // Running tasks retain their old map; they cannot repopulate the new cache.
  cache=new AnnotationCache();
  await serializeCacheStorage(()=>chrome.storage.local.remove(CACHE_KEY));
+ cacheLoadReport={reason:'manual-clear',loaded:{local:0,model:0,legacy:0}};
 }
 async function markCurrentProviderStreamUnstable(){return;}
 async function testApi(){
@@ -710,14 +712,28 @@ async function testApi(){
 }
 async function loadCache(){
  if(cacheLoaded)return;
- if(!cacheLoadPromise)cacheLoadPromise=(async()=>{await prepareCacheSession(chrome.storage,CACHE_KEY);await chrome.storage.local.remove('kraDictionaryReviewCacheV1Alignment3');const saved=(await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];if(Array.isArray(saved))for(const [key,value] of saved)cache.set(key,value);cacheLoaded=true;})().finally(()=>{cacheLoadPromise=null;});
+ if(!cacheLoadPromise)cacheLoadPromise=(async()=>{
+  const reason=await prepareCacheSession(chrome.storage,CACHE_KEY);
+  const saved=(await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];
+  if(Array.isArray(saved))for(const row of saved){
+   if(!Array.isArray(row)||row.length!==2||typeof row[0]!=='string'||!row[1])continue;
+   cache.set(canonicalStoredCacheKey(row[0]),row[1]);
+  }
+  const loaded=cacheCounts(cache);
+  trimAnnotationCache(cache);
+  cacheLoadReport={reason,storedEntries:Array.isArray(saved)?saved.length:0,loaded};
+  cacheLoaded=true;
+ })().finally(()=>{cacheLoadPromise=null;});
  await cacheLoadPromise;
 }
 async function runModern(message,post,signal,manualSession,waitForUnfinishedReview=null){
  await loadCache();const config=await engineConfig();
  const {uiSettings:cacheSettings={}}=await chrome.storage.local.get('uiSettings');
  const counts=cacheCounts(cache);
- post({type:'DIAGNOSTIC',operationId:message.operationId,diagnostic:{stage:'cache',level:'info',message:'任务开始前缓存：本地 '+counts.local+' 条、模型 '+counts.model+' 条；退出浏览器后'+(cacheSettings.clearCacheOnExit===false?'保留':'清除')+'缓存。'+(message.forceRegenerate?'本次强制忽略缓存。':'')}});
+ const cacheDiagnostic=(message,detail,level='info')=>post({type:'DIAGNOSTIC',operationId:operationIdForCache,diagnostic:{stage:'cache',level,message,detail:JSON.stringify(detail)}});
+ const operationIdForCache=message.operationId;
+ const loadReason={'existing-session':'后台重新加载缓存','cleared-on-session-start':'按设置清除上次会话缓存','retained-on-session-start':'保留上次会话缓存','manual-clear':'本会话手动清除'}[cacheLoadReport?.reason]||'未知';
+ cacheDiagnostic('任务开始前缓存：本地 '+counts.local+' 条、模型 '+counts.model+' 条；退出浏览器后'+(cacheSettings.clearCacheOnExit===true?'清除':'保留')+'缓存。启动记录：'+loadReason+'。'+(message.forceRegenerate?'本次强制忽略缓存。':''),{...cacheLoadReport,current:counts});
  if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
  const reviewConfiguration=async manual=>({...((manual)?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit,matchManualOutputBudget:config.matchManualOutputBudget,reviewPosFilter:config.reviewPosFilter,retryInvalidDictionaryChoices:config.retryInvalidDictionaryChoices,discardInvalidReviewResults:config.discardInvalidReviewResults,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,hanjaReadingCheck:config.hanjaReadingCheck,smartSegmentation:config.smartSegmentation});
  const modelConfig=()=>reviewConfiguration(config.manualModelReview===true);
@@ -737,7 +753,11 @@ async function runModern(message,post,signal,manualSession,waitForUnfinishedRevi
     const compact=Array.from(map,([key,value])=>[key,
      value&&Array.isArray(value.targets)?{...value,
        targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
-    await chrome.storage.local.set({[CACHE_KEY]:compact});
+    try{
+     await chrome.storage.local.set({[CACHE_KEY]:compact});
+    }catch(error){
+     cacheDiagnostic('缓存持久化写入失败；本次已分析结果仍可显示，但重启后可能不能复用。',{error:String(error?.message||error),counts:cacheCounts(map)},'warning');
+    }
    });
   }});
 }

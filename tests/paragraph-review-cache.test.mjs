@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runSentencePipeline} from '../annotation-pipeline.js';
 import {paragraphReviewKey,snapshotParagraphReview,restoreParagraphReview} from '../review-cache.js';
+import {AnnotationCache,canonicalStoredCacheKey,stableCacheStringify} from '../session-cache.js';
 const identity={engine_version:'fixture',dictionary_fingerprint:'fixture'};
 const word={target_id:'local',surface:'과학',start:0,end:2,context:'과학',options:[
  {choice_id:null,type:'keep',replacement:'과학',entry_id:null,definitions:[]},
@@ -44,7 +45,7 @@ test('experimental literal origin cache is revalidated, not an invented dictiona
  assert.equal(restoreParagraphReview(x,{...saved,results:[{t:'local',c:'p999'}]},{experimentalHanja:true}),null);
 });
 test('pipeline does not resubmit stable paragraph after a remote recommendation changes',async()=>{
- const cache=new Map(),requests=[];
+ let cache=new Map();const requests=[];
  const config={provider:'fixture',model:'fixture',endpoint:'https://example.test',reviewPosFilter:false,
   request:async(_cfg,targets)=>{
    requests.push(targets.map(t=>t.context));
@@ -62,4 +63,8 @@ test('pipeline does not resubmit stable paragraph after a remote recommendation 
  });
  const first=await run('추천 A');assert.equal(first.model_accepted,1);assert.equal(first.model_conversion_choices,1);assert.equal(requests.length,1);
  const second=await run('추천 B');assert.equal(requests.length,1);assert.equal(second.modelCacheHits,1);assert.equal(second.model_conversion_choices,1);
+ // Simulate Chrome storage serialization and a completely fresh background worker.
+ const stored=Array.from(cache,([key,value])=>[key,value?.targets?{...value,targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
+ cache=new AnnotationCache(JSON.parse(stableCacheStringify(stored)).map(([key,value])=>[canonicalStoredCacheKey(key),value]));
+ const restarted=await run('추천 B');assert.equal(requests.length,1);assert.equal(restarted.localCacheHits,4);assert.equal(restarted.modelCacheHits,1);assert.equal(restarted.model_conversion_choices,1);
 });

@@ -1,10 +1,23 @@
 // Browser session storage survives service-worker suspension, not browser restart.
 export async function prepareCacheSession(storage,key){
  const marker='kraCacheSession';
- if((await storage.session.get(marker))[marker])return;
+ if((await storage.session.get(marker))[marker])return 'existing-session';
  const {uiSettings={}}=await storage.local.get('uiSettings');
- if(uiSettings.clearCacheOnExit!==false)await storage.local.remove(key);
+ const clear=uiSettings.clearCacheOnExit===true;
+ if(clear)await storage.local.remove(key);
  await storage.session.set({[marker]:true});
+ return clear?'cleared-on-session-start':'retained-on-session-start';
+}
+// JSON property order is not a semantic part of a stored candidate.
+export function stableCacheStringify(value){
+ return JSON.stringify(value,(_key,v)=>{
+  if(!v||typeof v!=='object'||Array.isArray(v))return v;
+  return Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]]));
+ });
+}
+export function canonicalStoredCacheKey(key){
+ if(typeof key!=='string'||!key.startsWith('["paragraph-review-v1",'))return key;
+ try{return stableCacheStringify(JSON.parse(key));}catch{return key;}
 }
 export const CACHE_LIMIT_PER_KIND=1000;
 function kind(key){
