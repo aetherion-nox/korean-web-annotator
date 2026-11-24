@@ -19,7 +19,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.4-collapsed-content';
+const CONTENT_SCRIPT_VERSION='1.1.4-frame-render-stats';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -823,6 +823,10 @@ function handleStreamingPort(port){
   if(groupId)mergedFrameReviews.detach(groupId,participant());
  });
  port.onMessage.addListener(message=>{
+  if(message?.type==='FRAME_RENDER_REPORT'&&message.operationId===operationId){
+   if(groupId)mergedFrameReviews.reportRender(groupId,participant(),message);
+   return;
+  }
   if(message?.type==='CONTINUE_REVIEW'&&message.operationId===operationId){
    if(['api','manual','null'].includes(message.mode)){
     if(groupId)mergedFrameReviews.continueReview(groupId,participant(),message.mode);

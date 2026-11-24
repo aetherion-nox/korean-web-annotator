@@ -2,7 +2,7 @@ import {modelCheckpointWriter} from './stream-result-journal.js';
 // Assemble a single dictionary/LLM run across independent frame sources.
 // Each frame keeps its original DOM and operationId; only the worker sees the
 // merged sentence IDs, origin context and shared manual/model batches.
-export function createMergedFrameReviewCoordinator({run,createSession}){
+export function createMergedFrameReviewCoordinator({run,createSession,renderReportTimeoutMs=5000}){
  const groups=new Map();
  const key=(part,id)=>'f'+part.frameId+'_s'+id;
  function open(id,tabId){
@@ -46,7 +46,48 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   }
   deliver();
  }
+ // DONE is a model-pipeline completion, not a DOM completion. Each
+ // participant returns one source-bound render receipt before the host
+ // displays a tab-wide count. Unknown frames are never counted as zero.
+ const renderFields=['projected_annotations','rendered_annotations',
+  'connected_visible_annotations','invalidated_dom_entries',
+  'article_body_projected','article_body_rendered','article_body_connected',
+  'article_body_failed_nodes','dom_write_failure_count'];
+ function finishRenderSummary(group,force=false){
+  const state=group.renderSummary;
+  if(!state||state.finished)return;
+  const missing=group.parts.filter(p=>!state.reports.has(p.frameId));
+  if(!force&&missing.some(p=>!group.detachedPorts.has(p.port)))return;
+  state.finished=true;clearTimeout(state.timer);
+  const frames=[...state.reports.values()].sort((a,b)=>a.frameId-b.frameId);
+  const totals=Object.fromEntries(renderFields.map(k=>[k,frames.reduce((n,r)=>n+r[k],0)]));
+  const summary={frames,totals,expectedFrames:group.parts.length,
+   reportedFrames:frames.length,missingFrameIds:missing.map(p=>p.frameId)};
+  if(group.host)send(group.host,{type:'FRAME_RENDER_SUMMARY',summary});
+  state.resolve();
+ }
+ function beginRenderSummary(group,event){
+  if(group.renderSummary)return group.renderSummary.promise;
+  let resolve;const promise=new Promise(r=>{resolve=r;});
+  const state=group.renderSummary={reports:new Map(),promise,resolve,finished:false,timer:null};
+  state.timer=setTimeout(()=>finishRenderSummary(group,true),renderReportTimeoutMs);
+  for(const part of group.parts)send(part,event);
+  finishRenderSummary(group);
+  return promise;
+ }
+ function reportRender(id,participant,message){
+  const group=groups.get(id),state=group?.renderSummary;
+  if(!state||state.finished||group.controller.signal.aborted)return false;
+  const part=group.parts.find(p=>p.port===participant.port&&p.frameId===participant.frameId&&
+   p.operationId===message.operationId);
+  if(!part||state.reports.has(part.frameId)||group.detachedPorts.has(part.port))return false;
+  const data=message.display;
+  if(!data||renderFields.some(k=>!Number.isSafeInteger(data[k])||data[k]<0))return false;
+  state.reports.set(part.frameId,{frameId:part.frameId,...Object.fromEntries(renderFields.map(k=>[k,data[k]]))});
+  finishRenderSummary(group);return true;
+ }
  function broadcast(group,event){
+  if(event.type==='DONE')return beginRenderSummary(group,event);
   if(event.type==='RESULTS'){
    const byPart=new Map();
    for(const result of event.results||[]){
@@ -116,8 +157,9 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
    groups.delete(id);return Promise.resolve({error:error.message});
   }
   if(!message.sentences.length){
-   broadcast(group,{type:'DONE',operationId:id,stats:{},completedSentences:0,totalSentences:0,percent:100});
-   groups.delete(id);return Promise.resolve({empty:true});
+   group.runPromise=broadcast(group,{type:'DONE',operationId:id,stats:{},completedSentences:0,totalSentences:0,percent:100})
+    .then(()=>({empty:true})).finally(()=>{group.finished=true;groups.delete(id);});
+   return group.runPromise;
   }
   group.session=createSession({operationId:id,post:event=>broadcast(group,event),
    signal:group.controller.signal});
@@ -156,6 +198,13 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   const group=groups.get(id);if(!group||group.finished)return;
   const leaving=group.parts.find(p=>p.port===part.port&&p.frameId===part.frameId);
   if(!leaving||group.detachedPorts.has(part.port))return;
+  // A receipt followed by normal content-port closure is not navigation loss.
+  if(group.renderSummary?.reports.has(leaving.frameId)){
+   if(leaving===group.host&&!group.renderSummary.finished){
+    group.detachedPorts.add(part.port);finishRenderSummary(group,true);
+   }
+   return;
+  }
   // The top-level frame owns the manual editor. Losing that document means
   // every answer would be applied against an untrusted/new page: abort.
   if(leaving.frameId===0||group.host?.port===leaving.port){
@@ -167,6 +216,7 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   // pending batch. Skip results for that detached frame; other live frames
   // retain their own DOM-bound validation and can finish the review.
   group.detachedPorts.add(part.port);
+  if(group.renderSummary)finishRenderSummary(group);
   if(!group.closed)group.parts=group.parts.filter(p=>p!==leaving);
   const host=group.host||group.parts.find(p=>p.frameId===0);
   if(host)send(host,{type:'DIAGNOSTIC',operationId:id,diagnostic:{
@@ -179,10 +229,13 @@ export function createMergedFrameReviewCoordinator({run,createSession}){
   const group=groups.get(id);
   if(!group)return;
   group.controller.abort(reason);
+  if(group.renderSummary&&!group.renderSummary.finished){
+   group.renderSummary.finished=true;clearTimeout(group.renderSummary.timer);group.renderSummary.resolve();
+  }
   for(const part of group.parts)send(part,{type:'ERROR',operationId:id,error:reason});
   groups.delete(id);
  }
- return {open,join,finalize,respond,continueReview,detach,abort,
+ return {open,join,finalize,respond,continueReview,reportRender,detach,abort,
   state:id=>{const g=groups.get(id);return g?{joined:g.parts.length,closed:g.closed,
    frames:g.parts.map(p=>p.frameId),host:g.host?.frameId}:null;}};
 }

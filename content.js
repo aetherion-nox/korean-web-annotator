@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.4-collapsed-content';
+  const VERSION = '1.1.4-frame-render-stats';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -2802,6 +2802,10 @@
         await task.pendingAcceptedRecovery;
       if (task.finished || currentTask !== task || result.operationId !== operationId) return;
       if(task.manualLocalOnly)return;
+      if(result.type==='FRAME_RENDER_SUMMARY'){
+        if(task.mergedHost)task.resolveFrameRenderSummary?.(result.summary);
+        return;
+      }
       if(result.smartSegmentation===true)task.smartSegmentation=true;
       if(result.type==='REVIEW_PAUSED'){
         addDiagnostic({stage:'review-paused',level:'warning',
@@ -3002,6 +3006,7 @@
         article_body_rendered:articleEntries.reduce((n,e)=>n+(e.renderCount||0),0),
         article_body_connected:articleConnected,
         article_body_failed_nodes:articleEntries.filter(e=>e.invalidated||e.renderFailure).length,
+        dom_write_failure_count:writeFailures.length,
         dom_write_failure_samples:writeFailures.slice(0,8).map(e=>({
           text:e.text.slice(0,48),error:e.renderFailure
         })),dom_scanned_nodes:task.scan?.textNodes||0,
@@ -3021,8 +3026,8 @@
         projected_annotations:expected,rendered_annotations:count,
         connected_visible_annotations:actual,invalidated_dom_entries:invalidated};
       globalThis.__KRA_PIPELINE_STATUS__={...globalThis.__KRA_PIPELINE_STATUS__,display};
-      addDiagnostic({stage:'render',level:expected>actual||display.model_zero_projection>0||display.model_projected_fragments>expected||display.article_body_projected>display.article_body_connected||writeFailures.length?'warning':'info',
-        message:`模型审核 ${display.model_accepted} 项：选中转换 ${display.model_conversion_choices}、非转换词典义项 ${display.model_nonconversion}、保留原文 ${display.model_keep}（无效项降级 ${display.model_invalid_choice_fallback}）、直接词源 ${display.model_literal_origins}；实际生成 ${display.model_projected_fragments} 个转换片段（无可标注片段 ${display.model_zero_projection}）、括注直标 ${display.inline_hanja_local_converted} 处；DOM 当前拥有 ${expected} 个标注，实际写入 ${count} 个、仍连接 ${actual} 个；正文区域预计 ${display.article_body_projected}、已连接 ${display.article_body_connected}、异常节点 ${display.article_body_failed_nodes}。选中转换数不等于最终 DOM 标注数；请结合模型投射和 DOM 丢失差额定位。`,
+      addDiagnostic({stage:'render',level:expected>actual||display.model_zero_projection>0||(!task.mergedGroup&&display.model_projected_fragments>expected)||display.article_body_projected>display.article_body_connected||writeFailures.length?'warning':'info',
+        message:`${task.mergedGroup?'跨框架合并模型审核（全部参与框架）':'模型审核'} ${display.model_accepted} 项：选中转换 ${display.model_conversion_choices}、非转换词典义项 ${display.model_nonconversion}、保留原文 ${display.model_keep}（无效项降级 ${display.model_invalid_choice_fallback}）、直接词源 ${display.model_literal_origins}；实际生成 ${display.model_projected_fragments} 个转换片段（无可标注片段 ${display.model_zero_projection}）、括注直标 ${display.inline_hanja_local_converted} 处；${task.mergedGroup?'当前框架':'DOM'} 预计 ${expected} 个标注，渲染计数 ${count} 个、仍连接 ${actual} 个；正文区域预计 ${display.article_body_projected}、已连接 ${display.article_body_connected}、异常节点 ${display.article_body_failed_nodes}。选中转换数不等于最终 DOM 标注数；请结合模型投射和 DOM 丢失差额定位。`,
         detail:JSON.stringify(display)});
       for(const entry of entries.values()){
         seenSources.add(entry.text);
@@ -3033,11 +3038,44 @@
       const incomplete=result.reviewIncomplete===true&&pending>0;
       // Never treat an incomplete review as complete for incremental skips.
       if(!incomplete)rememberCompletedManualAnalysis(entries,task.analysisSettingsStamp);
-      if(incomplete)status(`部分完成：已显示 ${count} 个标注，仍有 ${pending} 个目标待审核`);
-      else status(`完成：${count} 个标注（模型选中转换 ${display.model_conversion_choices}，生成片段 ${display.model_projected_fragments}）`,100);
+      let shown=actual,scopeLabel=task.mergedGroup?'当前框架':'',missingFrames=false;
+      if(task.mergedGroup){
+        // Establish the host listener before posting its receipt. Children
+        // can finish immediately; only the host needs to wait for totals.
+        let summaryPromise;
+        if(task.mergedHost){
+          summaryPromise=new Promise(resolve=>{
+            const timer=setTimeout(()=>{task.resolveFrameRenderSummary=null;resolve(null);},7000);
+            task.resolveFrameRenderSummary=value=>{clearTimeout(timer);task.resolveFrameRenderSummary=null;resolve(value);};
+          });
+          status('模型审核已结束，正在汇总各网页框架的实际标注…');
+        }
+        try{port.postMessage({type:'FRAME_RENDER_REPORT',operationId,display});}
+        catch{task.resolveFrameRenderSummary?.(null);}
+        if(summaryPromise){
+          const summary=await summaryPromise;
+          if(task.finished||currentTask!==task)return;
+          if(summary?.totals){
+            const t=summary.totals;
+            shown=t.connected_visible_annotations;scopeLabel='全部已回执框架';
+            missingFrames=summary.missingFrameIds.length>0;
+            globalThis.__KRA_PIPELINE_STATUS__={...globalThis.__KRA_PIPELINE_STATUS__,frameRenderSummary:summary};
+            addDiagnostic({stage:'frame-render-summary',level:missingFrames||t.projected_annotations>shown||t.dom_write_failure_count?'warning':'info',
+              message:`跨框架写入汇总：已收到 ${summary.reportedFrames}/${summary.expectedFrames} 个框架回执；预计 ${t.projected_annotations} 个，渲染计数 ${t.rendered_annotations} 个，仍连接 ${shown} 个，失效节点 ${t.invalidated_dom_entries} 个，写入异常 ${t.dom_write_failure_count} 个。${missingFrames?'未回执框架不计入总数：'+summary.missingFrameIds.join('、')+'。':''}`,
+              detail:JSON.stringify({...summary,model_stats:result.stats||{}})});
+          }else{
+            missingFrames=true;
+            addDiagnostic({stage:'frame-render-summary',level:'warning',message:'未收到跨框架写入汇总；仅显示当前框架的已确认标注，不与全部框架的模型数字直接比较。'});
+          }
+        }
+      }
+      const suffix=missingFrames?'（框架回执不全，数量仅为已确认值）':`（模型选中转换 ${display.model_conversion_choices}，生成片段 ${display.model_projected_fragments}）`;
+      if(incomplete)status(`部分完成：已显示 ${shown} 个标注，仍有 ${pending} 个目标待审核${missingFrames?'；框架回执不全':''}`);
+      else if(task.mergedGroup&&!task.mergedHost)status(`完成：当前框架 ${shown} 个标注`,100);
+      else status(`完成：${shown} 个标注${suffix}`,100);
       if(task.startedAutomatically&&!incomplete)acknowledgeIndexedAutoScan(task.indexSnapshot);
       finishTask(task,incomplete?`部分完成：仍有 ${pending} 个目标待审核。`:
-        `本次标注已完成，当前显示 ${count} 个标注。`,!incomplete);
+        `本次标注已完成，${scopeLabel}当前显示 ${shown} 个已确认标注。`,!incomplete);
       void send({type:'KRA_CLEAR_MODEL_CHECKPOINT',operationId});
       configureRecovery();
       if(!ranges&&!incomplete){pageCompleted=true;autoResumeAttempts=0;}
@@ -3051,7 +3089,7 @@
       // Runs for normal AND merged multi-frame page operations. Manual
       // reviews do not open unexpected extra prompts; continuous monitoring
       // remains governed by its separate opt-in setting.
-      addDiagnostic({message:`完成：${count} 个标注`,detail:JSON.stringify(result.stats||{})});
+      addDiagnostic({message:`${incomplete?'部分完成':'完成'}：${scopeLabel}${shown} 个已确认标注${missingFrames?'（框架回执不全）':''}`,detail:JSON.stringify({scope:scopeLabel||'当前任务',model_stats:result.stats||{}})});
       publishState();
     };
     port.onMessage.addListener(consumePortResult);
