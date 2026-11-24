@@ -4,7 +4,13 @@ import {createMergedFrameReviewCoordinator} from '../merged-frame-review.js';
 
 function createFixture({manual=false}={}){
  const sent=[],calls=[],submits=[],pending=[];
- const port=frameId=>({sent:[],postMessage(event){this.sent.push(event)}});
+ const port=frameId=>({sent:[],postMessage(event){this.sent.push(event);
+  if(event.type==='DONE')coordinator.reportRender('shared-1',{port:this,frameId},{
+   operationId:event.operationId,display:{projected_annotations:0,rendered_annotations:0,
+    connected_visible_annotations:0,invalidated_dom_entries:0,article_body_projected:0,
+    article_body_rendered:0,article_body_connected:0,article_body_failed_nodes:0,dom_write_failure_count:0}
+  });
+ }});
  const root=port(0),side=port(3),extra=port(5);
  const frame=(frameId,p,operationId,document,extraFields={})=>({
   tabId:41,frameId,port:p,operationId,
@@ -53,7 +59,8 @@ test('all frames share one analysis, unique sentence IDs and one context envelop
   const result=port.sent.find(x=>x.type==='RESULTS');
   assert.equal(result.operationId,operationId);
   assert.deepEqual(result.results.map(x=>x.id),['p0']);
-  assert.equal(port.sent.at(-1).type,'DONE');
+  assert.ok(port.sent.some(x=>x.type==='DONE'));
+  if(port===f.root)assert.equal(port.sent.at(-1).type,'FRAME_RENDER_SUMMARY');
  }
 });
 test('empty main frame still hosts one manual batch containing texts from subframes',async()=>{

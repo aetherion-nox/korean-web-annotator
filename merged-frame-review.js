@@ -174,7 +174,7 @@ export function createMergedFrameReviewCoordinator({run,createSession,renderRepo
   });
   group.runPromise=Promise.resolve().then(()=>
    run(message,event=>broadcast(group,event),group.controller.signal,group.session,waitForUnfinishedReview)
-  ).catch(error=>{
+  ).then(async result=>{if(group.renderSummary)await group.renderSummary.promise;return result;}).catch(error=>{
    if(!group.controller.signal.aborted)
     broadcast(group,{type:'ERROR',operationId:id,error:error.message});
    return {error:error.message};
