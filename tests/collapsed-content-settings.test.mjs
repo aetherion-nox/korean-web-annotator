@@ -71,3 +71,45 @@ test('ordinary hidden elements and script/style remain excluded',()=>{
  assert.deepEqual(all(),['공개된 본문.']);
  dom.window.close();
 });
+test('preloaded accordion and tab bodies enter the scan while closed',()=>{
+ const {dom,c,all}=setup('<section data-state="closed" hidden><p>학교 소개</p></section>'+
+  '<button role="tab" aria-selected="false" aria-controls="reading">Open</button>'+
+  '<div id="reading" role="tabpanel" hidden="until-found" style="content-visibility:hidden">'+
+  '<p>국어 교과서</p></div>'+
+  '<aside><div data-state="closed" hidden>광고 문구</div></aside>'+
+  '<div role="dialog" data-state="closed" hidden>숨겨진 안내창</div>');
+ const before=dom.window.document.body.innerHTML;
+ assert.deepEqual(all(),['학교 소개','국어 교과서']);
+ assert.equal(c.probeKoreanFrame().eligible,true);
+ assert.equal(dom.window.document.body.innerHTML,before);
+ dom.window.close();
+});
+test('inherited visibility of a controlled panel permits only its readable content',()=>{
+ const {dom,c,all}=setup('<button aria-expanded="false" aria-controls="article">Open</button>'+
+  '<section id="article" style="visibility:hidden"><div><p>학교 소개</p></div>'+
+  '<p style="visibility:hidden">비공개 텍스트</p>'+
+  '<div hidden>숨겨진 템플릿</div><div inert>비활성 텍스트</div>'+
+  '<div style="display:none">숨겨진 광고</div></section>');
+ assert.deepEqual(all(),['학교 소개']);
+ assert.equal(c.probeKoreanFrame().eligible,true);
+ dom.window.document.querySelector('#article').parentElement.hidden=true;
+ assert.deepEqual(all(),[]);
+ assert.equal(c.probeKoreanFrame().eligible,false);
+ dom.window.close();
+});
+test('ruby is written into a preloaded panel without expanding it',()=>{
+ const {dom,c}=setup('<section data-state="closed" hidden><p>학교</p></section>');
+ Object.assign(c,{ownDomChanges:new WeakSet(),rememberRecovery(){}});
+ vm.runInContext(code.slice(code.indexOf('  function loanwordDisplay('),
+  code.indexOf('  // Cheap, read-only child-frame preflight.')),c);
+ const entries=c.collectTextNodes();
+ const [entry]=entries.values();
+ entry.annotations=[{start:0,end:2,surface:'학교',replacement:'學校',type:'hanja'}];
+ assert.equal(c.insertConversions(entries,[]),1);
+ const panel=dom.window.document.querySelector('section');
+ assert.equal(panel.hidden,true);
+ assert.equal(panel.dataset.state,'closed');
+ assert.equal(panel.querySelector('ruby[kra-annotated="true"]').firstChild.data,'學校');
+ assert.equal(panel.querySelector('rt').textContent,'학교');
+ dom.window.close();
+});
