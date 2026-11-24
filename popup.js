@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.6-auto-collapse-toolbar';
+const CONTENT_SCRIPT_VERSION = '1.1.7-independent-toolbar-collapse';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -73,11 +73,11 @@ for(const [lang,labels] of Object.entries({
 }))Object.assign(STRINGS[lang],{toolbarBallOnly:labels[0],toolbarBallOnlyHint:labels[1]});
 
 for(const [lang,labels] of Object.entries({
- 'zh-CN':['标注完成后自动收起工具条','正常完成后收起，可点击悬浮球重新打开；关闭悬浮球时不自动收起。'],
- 'zh-TW':['標註完成後自動收起工具列','正常完成後收起，可點擊浮動球重新開啟；關閉浮動球時不自動收起。'],
- en:['Collapse toolbar after annotation completes','On successful completion, hide the toolbar; reopen it with the floating button. Requires the floating button.'],
- ja:['注釈完了後にツールバーを自動で閉じる','正常終了時に閉じ、フローティングボタンで再表示できます。ボタンが無効な場合は閉じません。'],
- ko:['주석 완료 후 도구 모음 자동 접기','정상 완료 후 접으며 플로팅 버튼으로 다시 열 수 있습니다. 버튼을 끄면 자동으로 접지 않습니다.']
+ 'zh-CN':['标注完成后自动收起工具条','正常完成后收起；可按工具条显示设置重新选中文字，或点击已启用的悬浮球重新打开。'],
+ 'zh-TW':['標註完成後自動收起工具列','正常完成後收起；可依工具列顯示設定重新選取文字，或點擊已啟用的浮動球重新開啟。'],
+ en:['Collapse toolbar after annotation completes','On successful completion, hide the toolbar. Reopen by selecting text according to the toolbar display settings or clicking the floating button if enabled.'],
+ ja:['注釈完了後にツールバーを自動で閉じる','正常終了時に閉じます。表示設定に従って文字を選択するか、有効なフローティングボタンを押すと再表示できます。'],
+ ko:['주석 완료 후 도구 모음 자동 접기','정상 완료 후 접습니다. 표시 설정에 따라 텍스트를 선택하거나 활성화된 플로팅 버튼을 눌러 다시 열 수 있습니다.']
 }))Object.assign(STRINGS[lang],{hideToolbarOnCompletion:labels[0],hideToolbarOnCompletionHint:labels[1]});
 
 function syncToolbarOptions(changed){

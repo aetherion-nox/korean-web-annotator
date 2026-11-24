@@ -22,8 +22,15 @@ test('incomplete review, missing receipts and explicit off retain toolbar',()=>{
  const f=fixture();f.run(false);f.run(true,true);assert.equal(f.hidden(),0);
  const off=fixture({hideToolbarOnCompletion:false});off.run(true);assert.equal(off.hidden(),0);
 });
-test('do not collapse when there is no usable floating button or in a child frame',()=>{
- for(const f of [fixture({floatingBallEnabled:false}),fixture({mobileSelectionToolbar:false}),fixture({},false),fixture({},true,true)]){
+test('collapse independently of floating button, for both toolbar display modes',()=>{
+ for(const toolbarDisplay of ['selection','always']){
+  const f=fixture({floatingBallEnabled:false,toolbarDisplay});f.run(true);assert.equal(f.hidden(),1);
+ }
+ const off=fixture({floatingBallEnabled:false,hideToolbarOnCompletion:false});off.run(true);assert.equal(off.hidden(),0);
+ const partial=fixture({floatingBallEnabled:false});partial.run(false);partial.run(true,true);assert.equal(partial.hidden(),0);
+});
+test('do not collapse when toolbar is disabled or in a child frame',()=>{
+ for(const f of [fixture({mobileSelectionToolbar:false}),fixture({},false),fixture({},true,true)]){
   f.run(true);assert.equal(f.hidden(),0);
  }
 });

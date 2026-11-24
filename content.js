@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.6-auto-collapse-toolbar';
+  const VERSION = '1.1.7-independent-toolbar-collapse';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -433,10 +433,10 @@
   }
 
   function collapseCompletedToolbar(completed,missingFrames=false) {
-    // Keep diagnostics visible for incomplete or failed runs and preserve
-    // a way to reopen the toolbar when the floating button is disabled.
+    // Keep diagnostics visible for incomplete or failed runs. Collapse is
+    // independent of the floating button; selection can reopen the toolbar.
     if(!completed||missingFrames||uiSettings.hideToolbarOnCompletion===false||
-       uiSettings.mobileSelectionToolbar===false||uiSettings.floatingBallEnabled===false||
+       uiSettings.mobileSelectionToolbar===false||
        (uiSettings.toolbarHangulOnly!==false&&!pageHasHangul)||
        (typeof window!=='undefined'&&window!==window.top))return;
     dismissToolbar();
