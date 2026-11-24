@@ -256,7 +256,7 @@ export function buildReviewPayload(context,targets,config={}){
   origin_mode:'open-origin',
   allowed_origin_types:[...(config.experimentalHanja===true?['hanja']:[]),...(config.experimentalLoanword===true?['loanword']:[])],
   ...(config.dictionaryFree===true?{null_is_fallback_only:true}:{dictionary_options_are_not_exhaustive:true})
- }:{}),...(config.smartSegmentation===true?{}:{context}),sentences,candidates,targets:packedTargets};
+ }:{}),sentences,candidates,targets:packedTargets};
  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
  const userBytes=bytes(payload);
  // The legacy-size diagnostic is an estimate. Serializing the old,
