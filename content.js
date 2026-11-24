@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.5-frame-render-stats';
+  const VERSION = '1.1.6-auto-collapse-toolbar';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -9,7 +9,7 @@
   const MAX_RECOVERY_BLOCKS = 12000;
   let currentTask = null;
   let sequence = 0;
-  let uiSettings = { toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
+  let uiSettings = { hideToolbarOnCompletion:true, toolbarBallOnly:false, mobileSelectionToolbar: true, hanjaMode: true, loanwordMode: true, copyMode: 'hangul' };
   let toolbar = null;
   let toolbarDismissed = false;
   let toolbarForcedOpen = false;
@@ -430,6 +430,16 @@
     floatingBall?.setAttribute('aria-expanded',String(Boolean(show)));
     refreshManualReopen();
     for(const button of bar.querySelectorAll('.kra-mobile-primary,.kra-mobile-review'))button.disabled=!selected&&!selectionSnapshot;
+  }
+
+  function collapseCompletedToolbar(completed,missingFrames=false) {
+    // Keep diagnostics visible for incomplete or failed runs and preserve
+    // a way to reopen the toolbar when the floating button is disabled.
+    if(!completed||missingFrames||uiSettings.hideToolbarOnCompletion===false||
+       uiSettings.mobileSelectionToolbar===false||uiSettings.floatingBallEnabled===false||
+       (uiSettings.toolbarHangulOnly!==false&&!pageHasHangul)||
+       (typeof window!=='undefined'&&window!==window.top))return;
+    dismissToolbar();
   }
 
   function dismissToolbar() {
@@ -3059,6 +3069,7 @@
             const t=summary.totals;
             shown=t.connected_visible_annotations;scopeLabel='全部已回执框架';
             missingFrames=summary.missingFrameIds.length>0;
+            task.frameRenderHasFailures=t.projected_annotations>shown||t.dom_write_failure_count>0;
             globalThis.__KRA_PIPELINE_STATUS__={...globalThis.__KRA_PIPELINE_STATUS__,frameRenderSummary:summary};
             addDiagnostic({stage:'frame-render-summary',level:missingFrames||t.projected_annotations>shown||t.dom_write_failure_count?'warning':'info',
               message:`跨框架写入汇总：已收到 ${summary.reportedFrames}/${summary.expectedFrames} 个框架回执；预计 ${t.projected_annotations} 个，渲染计数 ${t.rendered_annotations} 个，仍连接 ${shown} 个，失效节点 ${t.invalidated_dom_entries} 个，写入异常 ${t.dom_write_failure_count} 个。${missingFrames?'未回执框架不计入总数：'+summary.missingFrameIds.join('、')+'。':''}`,
@@ -3086,6 +3097,7 @@
         }else status(`部分完成：还有 ${pending} 个待审核目标，自动续跑不可用，请检查 API 设置或诊断`);
       }
       configureAutomaticAnnotation();
+      collapseCompletedToolbar(!incomplete,missingFrames||expected>actual||writeFailures.length>0||Boolean(task.frameRenderHasFailures));
       // Runs for normal AND merged multi-frame page operations. Manual
       // reviews do not open unexpected extra prompts; continuous monitoring
       // remains governed by its separate opt-in setting.

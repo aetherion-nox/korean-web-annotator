@@ -19,7 +19,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.5-frame-render-stats';
+const CONTENT_SCRIPT_VERSION='1.1.6-auto-collapse-toolbar';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -271,6 +271,7 @@ function sanitizeUiSettings(value) {
     loanwordMode: source.loanwordMode ?? true,
     mobileSelectionToolbar: source.mobileSelectionToolbar ?? true,
     floatingBallEnabled: source.floatingBallEnabled !== false,
+    hideToolbarOnCompletion:source.hideToolbarOnCompletion!==false,
     toolbarBallOnly:source.toolbarBallOnly===true&&source.floatingBallEnabled!==false&&source.mobileSelectionToolbar!==false,
     selectAnnotations:source.selectAnnotations ?? false,
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
