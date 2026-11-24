@@ -9,6 +9,9 @@ on:
       - popup.js
       - service-worker.js
       - merged-frame-review.js
+      - annotation-pipeline.js
+      - review-cache.js
+      - tests/paragraph-review-cache.test.mjs
       - tests/frame-render-summary.test.mjs
       - tests/toolbar-completion.test.mjs
       - popup.html
@@ -22,7 +25,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: korean-web-annotator-v1.1.8
+  group: korean-web-annotator-v1.1.9
   cancel-in-progress: false
 
 jobs:
@@ -39,8 +42,8 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          assert json.loads(Path('manifest.json').read_text())['version'] == '1.1.8'
-          assert json.loads(Path('package.json').read_text())['version'] == '1.1.8'
+          assert json.loads(Path('manifest.json').read_text())['version'] == '1.1.9'
+          assert json.loads(Path('package.json').read_text())['version'] == '1.1.9'
           assert 'mixed-origin-alignment.js' in json.loads(Path('manifest.json').read_text())['web_accessible_resources'][0]['resources']
           assert 'partial-review-json.js' in json.loads(Path('manifest.json').read_text())['web_accessible_resources'][0]['resources']
           PY
@@ -48,6 +51,8 @@ jobs:
           node --check service-worker.js
           node --check merged-frame-review.js
           node --check choice-review.js
+          node --check annotation-pipeline.js
+          node --check review-cache.js
           node --check review-payload.js
           node --check feature-settings.js
           node --check annotation-appearance.js
@@ -67,6 +72,7 @@ jobs:
             tests/pos-local-switch.test.mjs \
             tests/hunyuan-stream-audit.test.mjs \
             tests/smart-stream-preview.test.mjs \
+            tests/paragraph-review-cache.test.mjs \
             tests/collapsed-content-settings.test.mjs \
             tests/frame-render-summary.test.mjs \
             tests/toolbar-completion.test.mjs \
@@ -111,15 +117,15 @@ jobs:
           for folder in ('runtime','icons'):
               files.update(p.relative_to(root) for p in (root/folder).rglob('*') if p.is_file())
           Path('dist').mkdir(exist_ok=True)
-          archive=root/'dist/Korean-Web-Annotator-v1.1.8.zip'
+          archive=root/'dist/Korean-Web-Annotator-v1.1.9.zip'
           with zipfile.ZipFile(archive,'w',allowZip64=True) as z:
               for path in sorted(files):
                   z.write(root/path,'Korean-Web-Annotator/'+path.as_posix(),
                           compress_type=zipfile.ZIP_DEFLATED,compresslevel=9 if path.suffix=='.mdl' else 6)
           with zipfile.ZipFile(archive) as z:
               assert z.testzip() is None
-              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.8'
-              for path in ['content.js','service-worker.js','mixed-origin-alignment.js','partial-review-json.js','runtime/models/cong.mdl']:
+              assert json.loads(z.read('Korean-Web-Annotator/manifest.json'))['version']=='1.1.9'
+              for path in ['content.js','service-worker.js','mixed-origin-alignment.js','partial-review-json.js','review-cache.js','runtime/models/cong.mdl']:
                   assert 'Korean-Web-Annotator/'+path in z.namelist(), path
               assert z.getinfo('Korean-Web-Annotator/runtime/models/cong.mdl').file_size==75854705
           assert archive.stat().st_size>80_000_000
@@ -133,23 +139,23 @@ jobs:
           cd dist
           echo 'd41b9ac1fb9119d9fe5cd2db7c7e6bf77a4563240e75c2f5ea0ccf85c490fb6d  hanja_dict.zip' | sha256sum --check -
           cat > RELEASE_NOTES.md <<'EOF'
-          ## Korean Web Annotator 1.1.8
+          ## Korean Web Annotator 1.1.9
 
-          - Do not block automatic toolbar collapse solely because DOM annotation counts differ after page redraws.
-          - Apply the same completion policy to streaming and non-streaming annotation.
-          - Record the reason for skipped toolbar collapse in diagnostics; keep incomplete reviews, missing frame receipts, and actual DOM write exceptions visible.
+          - Reuse verified paragraph review results when only distant page text changes.
+          - Revalidate cached experimental origins and segmentation repairs against current source, candidates and protection rules.
+          - Exclude incomplete, interrupted or user-forced results from durable review caching; report local and model cache hits separately.
 
-          Download Korean-Web-Annotator-v1.1.8.zip and unpack it before loading the Chrome extension.
+          Download Korean-Web-Annotator-v1.1.9.zip and unpack it before loading the Chrome extension.
           Download hanja_dict.zip separately if you want the prebuilt dictionary.
           EOF
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view v1.1.8 >/dev/null 2>&1; then
-            gh release upload v1.1.8 dist/Korean-Web-Annotator-v1.1.8.zip dist/hanja_dict.zip --clobber
+          if gh release view v1.1.9 >/dev/null 2>&1; then
+            gh release upload v1.1.9 dist/Korean-Web-Annotator-v1.1.9.zip dist/hanja_dict.zip --clobber
           else
-            gh release create v1.1.8 dist/Korean-Web-Annotator-v1.1.8.zip dist/hanja_dict.zip \
-              --target "$GITHUB_SHA" --title 'Korean Web Annotator 1.1.8' \
+            gh release create v1.1.9 dist/Korean-Web-Annotator-v1.1.9.zip dist/hanja_dict.zip \
+              --target "$GITHUB_SHA" --title 'Korean Web Annotator 1.1.9' \
               --notes-file dist/RELEASE_NOTES.md --latest
           fi

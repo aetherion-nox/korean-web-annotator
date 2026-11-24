@@ -4,12 +4,12 @@ import {createSessionHanjaGlossary,learnSessionHanjaGlossary,applySessionHanjaGl
 import {protectRepeatedArticleNames} from './article-name-consistency.js';
 import {filterReviewTarget} from './review-pos.js';
 import {canProposeExperimentalOption} from './experimental-options.js';
-import {reviewTargets,validateChoices,safeDetail} from './choice-review.js';
+import {reviewTargets,safeDetail} from './choice-review.js';
+import {paragraphReviewKey,snapshotParagraphReview,restoreParagraphReview} from './review-cache.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
 import {compactDomAnnotations,shouldPublishPreview,createOrderedResultRelay} from './annotation-event.js';
 export const CACHE_KEY='kraDictionaryReviewCacheV1Alignment4';
-const compactReviewTargets=targets=>targets.map(({context,repair_context,...target})=>target);
 export async function runSentencePipeline(message,post,{signal,analyze=analyzeLocal,analyzeBatch=null,status=engineStatus,modelConfig,enabled=false,cache=new Map(),persist=async()=>{},waitForUnfinishedReview=null,continuationModelConfig=null}={}){
  const sentences=message.sentences;
  const selectionReview=message.reviewAll===true;
@@ -22,7 +22,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const modes={hanja:!!message.modes?.hanja,loanword:!!message.modes?.loanword,nameProtection:message.nameProtection!==false,filterDictionaryPeople:message.filterDictionaryPeople!==false,reviewPosFilter:message.reviewPosFilter!==false,experimentalLoanwordAudit:message.experimentalLoanwordAudit===true&&enabled&&!!message.modes?.loanword,experimentalHanjaAudit:message.experimentalHanjaAudit===true&&enabled&&!!message.modes?.hanja};if(!modes.hanja&&!modes.loanword)throw Error('Enable an annotation mode');
  const outcomeSamples={nonconversion:[],invalidChoiceFallback:[],zeroProjection:[]};
  const hanjaRejectionReasons={},hanjaRejectionSamples=[],hanjaSentIds=new Set();
- const stats={model_accepted:0,model_keep:0,model_nonconversion:0,model_invalid_choice_fallback:0,model_conversion_choices:0,model_projected_fragments:0,model_zero_projection:0,session_hanja_glossary_terms:0,session_hanja_glossary_variants:0,session_hanja_glossary_conflicts:0,session_hanja_new_targets:0,session_hanja_new_choices:0,session_hanja_enhanced_choices:0,session_hanja_skipped:0,inline_hanja_pairs_found:0,inline_hanja_local_converted:0,inline_hanja_reused:0,inline_hanja_removed_targets:0,inline_hanja_pairs_skipped:0,model_literal_origins:0,experimental_hanja_audit_generated:0,experimental_hanja_audit_retained:0,experimental_hanja_audit_filtered:0,experimental_loanword_audit_generated:0,experimental_loanword_audit_retained:0,experimental_hanja_audit_reviewable:0,experimental_hanja_audit_sent:0,experimental_hanja_audit_request_occurrences:0,model_direct_hanja_proposed:0,model_direct_hanja_accepted:0,model_direct_hanja_rejected:0,model_direct_hanja_reading_rejected:0,model_direct_hanja_boundary_rejected:0,model_direct_hanja_name_rejected:0,model_direct_hanja_conflict_rejected:0,repair_applied:0,repair_rejected:0,repair_offset_corrected:0,local_determined:0,pending:0,model_resolved:0,unresolved:0,model_unanswered:0,structural_rejections:0,rejected_options:0,upstream_alignment_pruned:0,skipped_mixed:0,protected_names:0,cacheHits:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
+ const stats={model_accepted:0,model_keep:0,model_nonconversion:0,model_invalid_choice_fallback:0,model_conversion_choices:0,model_projected_fragments:0,model_zero_projection:0,session_hanja_glossary_terms:0,session_hanja_glossary_variants:0,session_hanja_glossary_conflicts:0,session_hanja_new_targets:0,session_hanja_new_choices:0,session_hanja_enhanced_choices:0,session_hanja_skipped:0,inline_hanja_pairs_found:0,inline_hanja_local_converted:0,inline_hanja_reused:0,inline_hanja_removed_targets:0,inline_hanja_pairs_skipped:0,model_literal_origins:0,experimental_hanja_audit_generated:0,experimental_hanja_audit_retained:0,experimental_hanja_audit_filtered:0,experimental_loanword_audit_generated:0,experimental_loanword_audit_retained:0,experimental_hanja_audit_reviewable:0,experimental_hanja_audit_sent:0,experimental_hanja_audit_request_occurrences:0,model_direct_hanja_proposed:0,model_direct_hanja_accepted:0,model_direct_hanja_rejected:0,model_direct_hanja_reading_rejected:0,model_direct_hanja_boundary_rejected:0,model_direct_hanja_name_rejected:0,model_direct_hanja_conflict_rejected:0,repair_applied:0,repair_rejected:0,repair_offset_corrected:0,local_determined:0,pending:0,model_resolved:0,unresolved:0,model_unanswered:0,structural_rejections:0,rejected_options:0,upstream_alignment_pruned:0,skipped_mixed:0,protected_names:0,cacheHits:0,localCacheHits:0,modelCacheHits:0,modelCachedTargets:0,upstream_converted:0,upstream_ambiguous:0,upstream_no_match:0,upstream_kept:0};
  const totalSentences=sentences.length;let completedSentences=0;let identity;
  const sendResult=createOrderedResultRelay(post);
  const emit=(type,extra={})=>{signal?.throwIfAborted();return sendResult({type,operationId:message.operationId,...(smartSegmentation?{smartSegmentation:true}:{}),engine_version:identity?.engine_version,dictionary_fingerprint:identity?.dictionary_fingerprint,dictionary_metadata:identity?.dictionary_metadata,...extra,stats:{...stats},completedSentences,totalSentences,percent:Math.round(completedSentences/totalSentences*100)});};
@@ -104,7 +104,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const localKey=cacheKeyFor(sentence.text);
   let analysis=!bypassCache&&cache.get(localKey);
   let prefetchElapsed=0,analyzedNow=false;
-  if(analysis){prefetched.delete(sentence.id);analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;}
+  if(analysis){prefetched.delete(sentence.id);analysis=validateAnalysis(sentence.text,analysis);stats.cacheHits++;stats.localCacheHits++;}
   else {
    if(!prefetched.has(sentence.id)){
     const prefetchStarted=Date.now();
@@ -307,8 +307,10 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const pending=[];
  const progress={modelCompleted:0,modelTotal:0};
  const reportProgress=()=>emit('MODEL_PROGRESS',{...progress,modelPercent:progress.modelTotal?Math.round(100*progress.modelCompleted/progress.modelTotal):100});
- for(const item of work){
-  const {analysis,localKey}=item;
+ const initialConfig=config;
+ let mixedContinuation=false;
+ for(const [index,item] of work.entries()){
+  const {analysis}=item;
   // Do not ask an ordinary (non-experimental) model to choose among null/no-conversion
   // and only native/nonconversion senses. Such targets cannot annotate
   // anything; they sometimes survive as original homograph review targets.
@@ -321,10 +323,22 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   item.result={accepted:[],unresolved:item.reviewableTargets};
   if(config && item.reviewableTargets.length){
    const fingerprint=JSON.stringify([config.hanjaReadingCheck===true,smartSegmentation?'id-review-v21-single-pass-segmentation-repair':experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,config.retryInvalidDictionaryChoices!==false,config.discardInvalidReviewResults===true,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
-   item.reviewFingerprint=fingerprint;
-   item.reviewKey=JSON.stringify([localKey,fingerprint,compactReviewTargets(analysis.targets),context]);
-   const cached=!item.sessionHanjaUsed&&!experimental&&!smartSegmentation&&!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
-   if(cached){item.result=validateChoices(item.reviewableTargets,cached,config);if(progressive)publishModel(item);stats.cacheHits++;diagnostic({stage:'cache',level:'info',message:'使用已验证的模型审核缓存；无需重复请求。'});}
+   item.reviewKey=paragraphReviewKey(work,index,fingerprint,message.restrictToSelection===true);
+   const cached=!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
+   const restored=cached&&restoreParagraphReview(item,cached,config,message.restrictToSelection===true);
+   if(restored){
+    item.result=restored.result;item.repairs=restored.repairs;item.cacheRestored=true;
+    const accepted=item.result.accepted;
+    stats.cacheHits++;stats.modelCacheHits++;stats.modelCachedTargets+=accepted.length;
+    stats.model_accepted+=accepted.length;
+    stats.model_keep+=accepted.filter(a=>a.option.type==='keep').length;
+    stats.model_nonconversion+=accepted.filter(a=>a.option.type==='nonconversion').length;
+    stats.model_conversion_choices+=accepted.filter(a=>['hanja','loanword','mixed'].includes(a.option.type)).length;
+    stats.model_literal_origins+=accepted.filter(a=>String(a.option.entry_id||'').startsWith('experimental:')).length;
+    stats.repair_applied+=item.repairs.length;
+    if(progressive)publishModel(item);
+    diagnostic({stage:'cache',level:'info',message:'段落审核缓存命中：已重新校验 '+accepted.length+' 条词源及 '+item.repairs.length+' 项分词修复，无需重复请求。'});
+   }
    if(item.result.unresolved.length){pending.push(item);progress.modelTotal+=item.result.unresolved.length;}
   }
  }
@@ -415,8 +429,11 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    onAccepted:(accepted,{interrupted=false}={})=>{
     for(const a of accepted){
      const owner=owners.get(a.target.target_id);
-     if(owner)owner.item.result.accepted.push({target:owner.target,option:a.option,
-      ...(a.invalidChoiceFallback?{invalidChoiceFallback:true}:{})});
+     if(owner){
+      if(a.invalidChoiceFallback||a.implicitNull||a.discardedInvalid||interrupted)owner.item.cacheUnsafe=true;
+      owner.item.result.accepted.push({target:owner.target,option:a.option,
+       ...(a.invalidChoiceFallback?{invalidChoiceFallback:true}:{})});
+     }
     }
     stats.model_accepted+=accepted.length;
     stats.model_keep+=accepted.filter(a=>a.option.type==='keep').length;
@@ -442,7 +459,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     if(!config.manualReview&&(!smartSegmentation||interrupted))
      return Promise.all(batch.items.map(item=>publishModel(item)));
    },
-   ...(smartSegmentation?{onRepairRejected:count=>{stats.repair_rejected+=count;},onRepairOffsetCorrected:count=>{stats.repair_offset_corrected+=count;},onRepairs:repairs=>{
+   ...(smartSegmentation?{onRepairRejected:count=>{stats.repair_rejected+=count;if(count)for(const item of batch.items)item.cacheUnsafe=true;},onRepairOffsetCorrected:count=>{stats.repair_offset_corrected+=count;},onRepairs:repairs=>{
     for(const repair of repairs){
      const owner=[...owners.values()].find(({item})=>item.sentence.id===repair.sentenceKey);
      if(owner){owner.item.repairs.push(repair);stats.repair_applied++;}
@@ -459,8 +476,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    const retired=new Set((item.repairs||[]).flatMap(r=>r.source_target_ids));
    item.result.unresolved=item.reviewableTargets.filter(t=>
      !answered.has(t.target_id)&&!retired.has(t.target_id)&&!t.scan_only);
-   const effectiveReviewKey=JSON.stringify([item.localKey,item.reviewFingerprint,compactReviewTargets(item.analysis.targets),batch.context]);
-   if(!item.sessionHanjaUsed&&!experimental&&!smartSegmentation&&!config.manualReview&&item.result.accepted.length)cache.set(effectiveReviewKey,{results:item.result.accepted.map(a=>({t:a.target.target_id,c:a.option.type==='keep'?null:a.option.choice_id}))});
+   if(firstReview.errors?.length||smartSegmentation&&firstReview.unresolved?.length)item.cacheUnsafe=true;
   }
   await persist(cache);
  }
@@ -542,6 +558,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
       if(!owner||applied.has(a.target.target_id))continue;
       applied.add(a.target.target_id);
       const {item,target}=owner;
+      if(a.invalidChoiceFallback||a.implicitNull||a.discardedInvalid||smartSegmentation)item.cacheUnsafe=true;
       item.result.accepted.push({target,option:a.option});
       changed.add(item);
       stats.model_accepted++;
@@ -559,6 +576,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
      if(changed.size)reportProgress();
     }
    },wire,signal);
+   if(next.errors?.length)for(const item of group.items)item.cacheUnsafe=true;
    if(next.errors?.some(e=>e.permanent===true))modelPermanentFailure=true;
    diagnostic({stage:'pooled-retry',level:next.unresolved.length?'warning':'info',
     message:'合并补交 '+(groupIndex+1)+'/'+pools.length+'：采纳 '+
@@ -584,6 +602,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     continue;
    }
    if(mode==='null'){
+    mixedContinuation=true;
     let kept=0,changed=[];
     for(const item of work){
      const remains=item.result.unresolved.filter(t=>!t.scan_only);
@@ -611,6 +630,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    // A manual provider installs its own request callback. Remove that
    // callback before switching back to API; otherwise old manual requests
    // would silently override the selected real HTTP provider.
+   mixedContinuation=true;
    const {request:previousManualRequest,...cleanConfig}=config;
    config={...cleanConfig,...current,request:mode==='manual'?current.request:undefined,
     experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,
@@ -673,6 +693,17 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  if(stats.model_unanswered)
   diagnostic({stage:'incomplete',level:'warning',
    message:`模型审核仍有 ${stats.model_unanswered} 个目标没有有效答案；本轮只能算部分完成，可继续恢复与重试。`});
+ // Only cache fully verified results from the original API configuration.
+ // Forced nulls, mixed providers, interrupted smart scans and rejected repairs
+ // must never become durable, seemingly complete answers.
+ if(initialConfig&&!initialConfig.manualReview&&!mixedContinuation){
+  for(const item of work){
+   if(!item.reviewKey||item.cacheRestored)continue;
+   const snapshot=snapshotParagraphReview(item,smartSegmentation);
+   if(snapshot)cache.set(item.reviewKey,snapshot);
+  }
+ }
+ diagnostic({stage:'cache',level:'info',message:'缓存汇总：本地分析命中 '+stats.localCacheHits+' 段；模型审核命中 '+stats.modelCacheHits+' 段（'+stats.modelCachedTargets+' 个答案）。'});
  while(cache.size>300)cache.delete(cache.keys().next().value);await persist(cache);
  await emit('DONE',{reviewIncomplete:stats.model_unanswered>0,
   unansweredTargets:stats.model_unanswered,

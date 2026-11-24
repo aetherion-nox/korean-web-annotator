@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.8-toolbar-completion';
+const CONTENT_SCRIPT_VERSION = '1.1.9-paragraph-review-cache';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
