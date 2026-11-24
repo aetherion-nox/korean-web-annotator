@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.4-frame-render-stats';
+  const VERSION = '1.1.5-frame-render-stats';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;

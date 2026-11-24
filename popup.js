@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.4-collapsed-content';
+const CONTENT_SCRIPT_VERSION = '1.1.5-frame-render-stats';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
