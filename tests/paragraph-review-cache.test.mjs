@@ -51,11 +51,15 @@ test('pipeline does not resubmit stable paragraph after a remote recommendation 
    // Custom API requests still use the actual outgoing pooled identifiers.
    const {buildReviewPayload}=await import('../review-payload.js');
    const {payload}=buildReviewPayload(_cfg.context||'',targets,_cfg);
-   return {results:payload.targets.map(t=>({t:t.target_id,c:t.options.find(id=>payload.candidates.some(c=>c.id===id&&c.replacement==='科學'))??null}))};
+   return {results:payload.targets.map(t=>{
+    const choice=t.options.find(id=>payload.candidates.some(c=>c.candidate_id===id&&c.replacement==='科學'));
+    assert.ok(choice,'fixture must actually choose the pooled Hanja conversion');
+    return {t:t.target_id,c:choice};
+   })};
   }};
  const run=async last=>runSentencePipeline({operationId:'cache-test',modes:{hanja:true},sentences:['前','과학','後',last].map((text,i)=>({id:'s'+i,text}))},()=>{},{
   enabled:true,cache,status:async()=>identity,analyze:async text=>({...identity,annotations:[],targets:text==='과학'?[word]:[],stats:{}}),modelConfig:async()=>config
  });
- const first=await run('추천 A');assert.equal(first.model_accepted,1);assert.equal(requests.length,1);
+ const first=await run('추천 A');assert.equal(first.model_accepted,1);assert.equal(first.model_conversion_choices,1);assert.equal(requests.length,1);
  const second=await run('추천 B');assert.equal(requests.length,1);assert.equal(second.modelCacheHits,1);assert.equal(second.model_conversion_choices,1);
 });
