@@ -9,9 +9,10 @@ const html=fs.readFileSync(new URL('../popup.html',import.meta.url),'utf8');
 function fixture(settings={},pageHasHangul=true,child=false){
  const window={};window.top=child?{}:window;
  let hidden=0;
- const ctx={uiSettings:settings,pageHasHangul,window,dismissToolbar(){hidden++;}};
+ const diagnostics=[];
+ const ctx={uiSettings:settings,pageHasHangul,window,dismissToolbar(){hidden++;},addDiagnostic(item){diagnostics.push(item);}};
  vm.runInNewContext(src.slice(src.indexOf('  function collapseCompletedToolbar('),src.indexOf('  function dismissToolbar()')),ctx);
- return {run:ctx.collapseCompletedToolbar,hidden:()=>hidden};
+ return {run:ctx.collapseCompletedToolbar,hidden:()=>hidden,diagnostics};
 }
 test('default successful completion collapses, including explicitly enabled',()=>{
  for(const settings of [{},{hideToolbarOnCompletion:true,toolbarDisplay:'always'}]){
@@ -33,6 +34,15 @@ test('do not collapse when toolbar is disabled or in a child frame',()=>{
  for(const f of [fixture({mobileSelectionToolbar:false}),fixture({},false),fixture({},true,true)]){
   f.run(true);assert.equal(f.hidden(),0);
  }
+});
+test('completed run with ordinary DOM count difference can collapse; actual write failure cannot',()=>{
+ const f=fixture();assert.equal(f.run(true,false,false),'collapsed');
+ assert.equal(f.hidden(),1);
+ const failure=fixture();failure.run(true,false,true);
+ assert.equal(failure.hidden(),0);
+ assert.match(failure.diagnostics[0].message,/DOM 写入异常/);
+ assert.match(src,/task\.frameRenderHasFailures=t\.dom_write_failure_count>0/);
+ assert.match(src,/collapseCompletedToolbar\(!incomplete,missingFrames,writeFailures\.length>0\|\|Boolean\(task\.frameRenderHasFailures\)\)/);
 });
 test('popup control is default-on and persists through all settings paths',()=>{
  assert.match(html,/id="hideToolbarOnCompletion" type="checkbox" checked/);

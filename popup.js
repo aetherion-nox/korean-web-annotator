@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.7-independent-toolbar-collapse';
+const CONTENT_SCRIPT_VERSION = '1.1.8-toolbar-completion';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');

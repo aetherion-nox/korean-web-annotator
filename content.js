@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.7-independent-toolbar-collapse';
+  const VERSION = '1.1.8-toolbar-completion';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -432,14 +432,21 @@
     for(const button of bar.querySelectorAll('.kra-mobile-primary,.kra-mobile-review'))button.disabled=!selected&&!selectionSnapshot;
   }
 
-  function collapseCompletedToolbar(completed,missingFrames=false) {
-    // Keep diagnostics visible for incomplete or failed runs. Collapse is
-    // independent of the floating button; selection can reopen the toolbar.
-    if(!completed||missingFrames||uiSettings.hideToolbarOnCompletion===false||
-       uiSettings.mobileSelectionToolbar===false||
-       (uiSettings.toolbarHangulOnly!==false&&!pageHasHangul)||
-       (typeof window!=='undefined'&&window!==window.top))return;
+  function collapseCompletedToolbar(completed,missingFrames=false,writeFailed=false) {
+    // A site's DOM redraw may invalidate an otherwise completed annotation.
+    // A count difference alone does not mean the review is incomplete.
+    if(typeof window!=='undefined'&&window!==window.top)return 'child-frame';
+    const reason=!completed?'仍有模型审核未完成':missingFrames?'框架回执不完整':
+      writeFailed?'存在 DOM 写入异常':uiSettings.hideToolbarOnCompletion===false?'自动收起已关闭':
+      uiSettings.mobileSelectionToolbar===false?'网页工具条已关闭':
+      (uiSettings.toolbarHangulOnly!==false&&!pageHasHangul)?'当前页面不符合工具条显示条件':null;
+    if(reason){
+      addDiagnostic({stage:'toolbar-completion',level:'info',message:'未自动收起工具条：'+reason+'。'});
+      return reason;
+    }
     dismissToolbar();
+    addDiagnostic({stage:'toolbar-completion',level:'info',message:'标注任务正常完成，已自动收起工具条。'});
+    return 'collapsed';
   }
 
   function dismissToolbar() {
@@ -3069,7 +3076,7 @@
             const t=summary.totals;
             shown=t.connected_visible_annotations;scopeLabel='全部已回执框架';
             missingFrames=summary.missingFrameIds.length>0;
-            task.frameRenderHasFailures=t.projected_annotations>shown||t.dom_write_failure_count>0;
+            task.frameRenderHasFailures=t.dom_write_failure_count>0;
             globalThis.__KRA_PIPELINE_STATUS__={...globalThis.__KRA_PIPELINE_STATUS__,frameRenderSummary:summary};
             addDiagnostic({stage:'frame-render-summary',level:missingFrames||t.projected_annotations>shown||t.dom_write_failure_count?'warning':'info',
               message:`跨框架写入汇总：已收到 ${summary.reportedFrames}/${summary.expectedFrames} 个框架回执；预计 ${t.projected_annotations} 个，渲染计数 ${t.rendered_annotations} 个，仍连接 ${shown} 个，失效节点 ${t.invalidated_dom_entries} 个，写入异常 ${t.dom_write_failure_count} 个。${missingFrames?'未回执框架不计入总数：'+summary.missingFrameIds.join('、')+'。':''}`,
@@ -3097,7 +3104,7 @@
         }else status(`部分完成：还有 ${pending} 个待审核目标，自动续跑不可用，请检查 API 设置或诊断`);
       }
       configureAutomaticAnnotation();
-      collapseCompletedToolbar(!incomplete,missingFrames||expected>actual||writeFailures.length>0||Boolean(task.frameRenderHasFailures));
+      collapseCompletedToolbar(!incomplete,missingFrames,writeFailures.length>0||Boolean(task.frameRenderHasFailures));
       // Runs for normal AND merged multi-frame page operations. Manual
       // reviews do not open unexpected extra prompts; continuous monitoring
       // remains governed by its separate opt-in setting.
