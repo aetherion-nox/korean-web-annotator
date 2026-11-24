@@ -487,7 +487,13 @@
     const parent=record.target.nodeType===1?record.target:record.target.parentElement;
     if(parent?.closest?.('ruby,.kra-mobile-selection-bar,.kra-diagnostics,'+
        '.kra-manual-review,.kra-floating-ball,.kra-manual-reopen,script,style'))return false;
-    if(record.type==='attributes')return hasFreshHangul(record.target);
+    if(record.type==='attributes'){
+      if(hasFreshHangul(record.target))return true;
+      if(!['aria-expanded','aria-controls','aria-selected'].includes(record.attributeName))return false;
+      const root=record.target.getRootNode();
+      return record.target.getAttribute('aria-controls')?.split(/\s+/)
+        .some(id=>id&&hasFreshHangul(root.getElementById(id)))??false;
+    }
     if(record.type==='characterData')return hasFreshHangul(record.target);
     return Array.from(record.addedNodes||[]).some(hasFreshHangul);
   }
@@ -499,7 +505,8 @@
     // Continuous rescanning is opt-in. A page-complete stop remains the
     // default, so updates cannot silently trigger unlimited model calls.
     const observeOptions={subtree:true,childList:true,characterData:true,
-      attributes:true,attributeFilter:['class','style','hidden','aria-hidden','inert','open']};
+      attributes:true,attributeFilter:['class','style','hidden','aria-hidden','inert','open',
+        'data-state','aria-expanded','aria-controls','aria-selected']};
     const observed=new WeakSet();
     const observeOpenShadows=()=>{
       const roots=typeof indexedTextRoots==='function'?indexedTextRoots():null;
@@ -663,9 +670,9 @@
         // A previously hidden subtree can become visible without changing
         // its text. Queue ONLY descendants of the changed container.
         indexTextSubtree(state,record.target,false,true);
-        if(record.attributeName==='aria-expanded'||record.attributeName==='aria-controls'){
+        if(['aria-expanded','aria-controls','aria-selected'].includes(record.attributeName)){
           for(const id of (record.target.getAttribute?.('aria-controls')||'').split(/\s+/)){
-            const panel=id&&document.getElementById(id);
+            const panel=id&&record.target.getRootNode().getElementById(id);
             if(panel)indexTextSubtree(state,panel,false,true);
           }
         }
@@ -686,7 +693,7 @@
         roots:new Set([document.body]),totalTextNodes:0,dirty:true,ordered:[]};
       state.observeOptions={subtree:true,childList:true,characterData:true,
         attributes:true,attributeFilter:['class','style','hidden','aria-hidden',
-          'inert','open','aria-expanded','aria-controls']};
+          'inert','open','data-state','aria-expanded','aria-controls','aria-selected']};
       state.observer=new Observer(records=>updateTextIndex(state,records));
       textIndexState=state;
       // The outer HTML root also sees replacement of <body> in SPA pages.
@@ -740,11 +747,6 @@
     return state?[...state.roots].filter(root=>root===document.body||root.host?.isConnected):null;
   }
 
-  // An explicit collapsed article panel is still a real DOM subtree. Sites often
-  // use aria-controls rather than a recognizable CSS class to hide its text.
-  // Compute targets once per scan, never query selectors for every text node.
-  // Only article/main content qualifies: advertisements, menus and unrelated
-  // hidden templates must keep their ordinary visibility restrictions.
   // Live Minerva's JavaScript rewrites section#mf-section-2 into
   // section#content-collapsible-block-1.mf-section-2.collapsible-block-js
   // and marks it hidden="until-found". The numeric mf-section-N class is
@@ -760,28 +762,70 @@
       (/^mf-section-\d+$/u.test(element.id)||
        /^content-collapsible-block-\d+$/u.test(element.id));
   }
-  function hiddenUntilFoundAllowed(element,css) {
-    return css?.contentVisibility==='hidden'&&
-      element?.getAttribute('hidden')==='until-found'&&
-      isMinervaArticleSection(element);
-  }
-
-  function controlledCollapsedArticlePanels() {
+  // Preloaded folded reading panels can be scanned while they remain closed.
+  function collapsedArticlePanels(roots) {
+    const isArticlePanel=panel=>panel?.matches('section,article,div,[role="region"],[role="group"],[role="tabpanel"]')&&
+      panel.closest('main,article,[role="main"],[itemprop~="articleBody"]')&&
+      !panel.closest('nav,aside,header,footer,dialog,[role="navigation"],[role="complementary"],'+
+        '[role="dialog"],[role="alertdialog"],[role="menu"],[role="button"]');
     const panels=new Set();
-    for(const control of document.querySelectorAll('[aria-expanded="false"][aria-controls]')){
-      const ids=(control.getAttribute('aria-controls')||'').trim().split(/\s+/);
-      for(const id of ids){
-        if(!id)continue;
-        const panel=document.getElementById(id);
-        if(!panel||panel===control||control.contains(panel)||
-           !panel.matches('section,article,div,[role="region"],[role="group"]')||
-           !panel.closest('main,article,[role="main"],[itemprop~="articleBody"]')||
-           panel.closest('nav,aside,header,footer,[role="navigation"],[role="complementary"]'))
-          continue;
-        panels.add(panel);
+    for(const root of roots){
+      for(const panel of root.querySelectorAll('[data-state="closed"],[data-state="collapsed"]')){
+        if(isArticlePanel(panel))panels.add(panel);
+      }
+      const scope=root.getRootNode();
+      for(const control of root.querySelectorAll(
+        '[aria-expanded="false"][aria-controls],[role="tab"][aria-selected="false"][aria-controls]')){
+        for(const id of control.getAttribute('aria-controls').split(/\s+/)){
+          if(!id)continue;
+          const panel=scope.getElementById(id);
+          if(isArticlePanel(panel)&&panel!==control&&!control.contains(panel))panels.add(panel);
+        }
       }
     }
     return panels;
+  }
+
+  function createTextVisibilityFilter(roots) {
+    const collapsedPanels=collapsedArticlePanels(roots);
+    const cache=new WeakMap();
+    const visible={reason:'',foldedVisibility:''};
+    const hidden={reason:'hidden',foldedVisibility:''};
+    const excluded={reason:'excluded',foldedVisibility:''};
+    function classify(element) {
+      if(!element||element.nodeType!==1)return visible;
+      if(cache.has(element))return cache.get(element);
+      const result=inspect(element);
+      cache.set(element,result);
+      return result;
+    }
+    function inspect(element) {
+      if(element.matches('ruby,script,style,noscript,input,textarea,select,option,'+
+         '.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
+         '.kra-floating-ball,.kra-manual-reopen,[contenteditable="true"]'))return excluded;
+      const parent=classify(element.parentElement||element.getRootNode?.().host);
+      if(parent.reason)return parent;
+      if(element.hasAttribute('inert'))return hidden;
+      const vectorTocEntry=(element.matches('.vector-toc-list')||
+        (element.matches('.vector-toc-list-item')&&element.parentElement?.matches('.vector-toc-list')))&&
+        Boolean(element.closest('#vector-toc'));
+      const folded=collapsedPanels.has(element)||element.matches('.mw-collapsible-content')||
+        vectorTocEntry||isMinervaArticleSection(element);
+      if(!folded&&(element.hidden||element.getAttribute('aria-hidden')==='true'))return hidden;
+      const css=document.defaultView?.getComputedStyle?.(element);
+      if(css?.contentVisibility==='hidden'&&
+        !(folded&&element.getAttribute('hidden')==='until-found'))return hidden;
+      if(css?.display==='none'&&!folded)return hidden;
+      if(css?.visibility==='hidden'||css?.visibility==='collapse'){
+        // Children inherit a panel's CSS visibility. Honor independent hiding
+        // signals such as hidden attributes, display:none and inline visibility.
+        if(folded||(parent.foldedVisibility===css.visibility&&!element.style?.visibility))
+          return {reason:'',foldedVisibility:css.visibility};
+        return hidden;
+      }
+      return visible;
+    }
+    return element=>classify(element).reason;
   }
 
   function createManualContextCache(){
@@ -848,48 +892,9 @@
       lastScanStats=stats;
       return entries;
     }
-    const controlledPanels=controlledCollapsedArticlePanels();
     const manualIncremental=!automatic&&!includeOwned&&!ranges&&typeof manualSettingsStamp==='string'&&manualSettingsStamp.length>0;
     const contextCache=manualIncremental?createManualContextCache():null;
-    const visibilityCache=new WeakMap();
-    const visibilityReason=element=>{
-      if(!element||element.nodeType!==1)return '';
-      if(visibilityCache.has(element))return visibilityCache.get(element);
-      let reason='';
-      if(element.matches('ruby,script,style,noscript,input,textarea,select,option,'+
-         '.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
-         '.kra-floating-ball,.kra-manual-reopen,[contenteditable="true"]'))
-        reason='excluded';
-      else {
-        const vectorList=element.matches('.vector-toc-list')&&Boolean(element.closest('#vector-toc'));
-        const vectorChild=element.matches('.vector-toc-list-item')&&
-          element.parentElement?.matches('.vector-toc-list')&&
-          Boolean(element.closest('#vector-toc'));
-        const minervaArticleSection=isMinervaArticleSection(element);
-        // Only recognized folded content is exempt from being hidden.
-        // Ordinary hidden advertisements, templates and inert descendants
-        // still follow their original visibility rules.
-        const folded=element.matches('.mw-collapsible-content')||
-          vectorList||vectorChild||minervaArticleSection||controlledPanels.has(element);
-        if((element.hidden||element.hasAttribute('inert')||
-            element.getAttribute('aria-hidden')==='true')&&
-           (!folded||element.hasAttribute('inert')))reason='hidden';
-        else {
-          const css=document.defaultView?.getComputedStyle?.(element);
-          const blockedContentVisibility=css?.contentVisibility==='hidden'&&
-            !hiddenUntilFoundAllowed(element,css);
-          if((css?.display==='none'||css?.visibility==='hidden'||
-              css?.visibility==='collapse'||blockedContentVisibility)&&
-             (!folded||blockedContentVisibility))reason='hidden';
-        }
-      }
-      if(!reason){
-        const root=element.getRootNode?.();
-        reason=visibilityReason(element.parentElement||root?.host);
-      }
-      visibilityCache.set(element,reason);
-      return reason;
-    };
+    const visibilityReason=createTextVisibilityFilter(roots);
     const cache=trackRecovery?{
       identity:pageIdentity(),sources:new WeakMap(),contexts:new WeakMap(),
       scopePositions:new Map(),detachedByKey:new Map()
@@ -1174,44 +1179,20 @@
       // Cross-origin frames may not expose frameElement: check the own DOM.
     }
     let checked=0,hidden=0,eligible=0;
-    const controlledPanels=controlledCollapsedArticlePanels();
-    const isHidden=element=>{
-      const seen=new Set();
-      for(let node=element;node&&!seen.has(node);
-          node=node.parentElement||node.getRootNode?.().host){
-        seen.add(node);
-        const vectorList=node.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'));
-        const vectorChild=node.matches('.vector-toc-list-item')&&
-          node.parentElement?.matches('.vector-toc-list')&&Boolean(node.closest('#vector-toc'));
-        const minervaArticleSection=isMinervaArticleSection(node);
-        const folded=node.matches('.mw-collapsible-content')||
-          vectorList||vectorChild||minervaArticleSection||controlledPanels.has(node);
-        if((node.hidden||node.hasAttribute?.('inert')||
-            node.getAttribute?.('aria-hidden')==='true')&&
-           (!folded||node.hasAttribute?.('inert')))return true;
-        const style=document.defaultView?.getComputedStyle?.(node);
-        const blockedContentVisibility=style?.contentVisibility==='hidden'&&
-          !hiddenUntilFoundAllowed(node,style);
-        if((style?.display==='none'||style?.visibility==='hidden'||
-            style?.visibility==='collapse'||blockedContentVisibility)&&
-           (!folded||blockedContentVisibility))return true;
-      }
-      return false;
-    };
+    const roots=openTextRoots();
+    const visibilityReason=createTextVisibilityFilter(roots);
     const indexed=indexedKoreanTextNodes();
     const byRoot=indexedKoreanByRoot(indexed);
-    for(const root of openTextRoots()){
+    for(const root of roots){
       const walker=indexed?null:document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
       const relevant=indexed?(byRoot.get(root)||[]):null;
       let node,position=0;
       while((node=indexed?relevant[position++]:walker.nextNode())){
         checked++;
         if(!/[가-힣]/u.test(node.data))continue;
-        const parent=node.parentElement;
-        if(parent?.closest('script,style,noscript,input,textarea,select,option,ruby,'+
-           '.kra-mobile-selection-bar,.kra-diagnostics,.kra-manual-review,'+
-           '.kra-floating-ball,.kra-manual-reopen'))continue;
-        if(isHidden(parent)){hidden++;continue;}
+        const reason=visibilityReason(node.parentElement);
+        if(reason==='excluded')continue;
+        if(reason==='hidden'){hidden++;continue;}
         eligible++;
         // Enough evidence to start analysis; no need to walk all ad scripts.
         return {ok:true,eligible:true,reason:'visible-korean',checked,hidden,eligibleNodes:eligible};
