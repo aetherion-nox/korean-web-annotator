@@ -346,12 +346,13 @@ export async function reviewTargets(config,targets,signal){
    errors.push(diagnostic);notify(diagnostic);
    if(error.permanent)break;
    failStreak++;
+   if(attempt+1>=maxRequests||!pending.length||failStreak>=5||current.length===1&&failStreak>=3)break;
    if(!manual&&!smart&&current.length>1){
     windowSize=Math.max(1,Math.ceil(current.length/2));
-    notify({stage:'retry',level:'warning',attempt:attempt+1,
-     message:`请求失败，下一次缩小到最多 ${windowSize} 个目标，已完成答案不会重发。`});
+    if(!dictionaryOnly&&pending.length>windowSize)
+     notify({stage:'retry',level:'warning',attempt:attempt+1,
+      message:`请求失败，下一次缩小到最多 ${windowSize} 个目标，已完成答案不会重发。`});
    }
-   if(failStreak>=5||current.length===1&&failStreak>=3)break;
    const delay=config.request?0:Math.min(6000,750*2**Math.min(failStreak,3));
    if(delay){await new Promise(resolve=>setTimeout(resolve,delay));signal?.throwIfAborted();}
   }

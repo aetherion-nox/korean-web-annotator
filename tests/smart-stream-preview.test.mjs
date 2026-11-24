@@ -79,3 +79,63 @@ test('explicit provider refusal does not promote provisional smart choices',asyn
  assert.ok(events.some(e=>e.provisional&&e.results[0].annotations.length));
  assert.ok(events.filter(e=>!e.provisional).every(e=>e.results[0].annotations.length===0));
 });
+
+test('pooled API retry previews rows before its response ends after a first-pass timeout', {timeout:8000}, async()=>{
+ const source='과학 학교';
+ const school={...word,target_id:'school',surface:'학교',start:3,end:5,context:source,options:[
+  {...word.options[0],replacement:'학교'},
+  {...word.options[1],replacement:'學校',entry_id:2,definitions:['school']}
+ ]};
+ const events=[],batchSizes=[];
+ const retryStarted=Promise.withResolvers(),firstPreview=Promise.withResolvers();
+ const controller=new AbortController(),oldFetch=globalThis.fetch;
+ const encoder=new TextEncoder();
+ let stream;
+ globalThis.fetch=async(_,request)=>{
+  const body=JSON.parse(request.body);
+  assert.equal(body.stream,true);
+  const payload=JSON.parse(body.messages[1].content);
+  batchSizes.push(payload.targets.length);
+  if(batchSizes.length===1)throw new DOMException('fixture timeout','TimeoutError');
+  assert.equal(batchSizes.length,2);
+  const answers=payload.targets.map(target=>JSON.stringify({t:target.target_id,c:target.options[0]}));
+  return new Response(new ReadableStream({start(c){
+   stream=c;
+   c.enqueue(encoder.encode(sse('{"results":['+answers[0])));
+   retryStarted.resolve(answers[1]);
+  }}),{headers:{'content-type':'text/event-stream'}});
+ };
+ const running=runSentencePipeline({
+  operationId:'retry-preview',sentences:[{id:'p',text:source}],modes:{hanja:true},progressiveAnnotation:true
+ },event=>{
+  events.push(event);
+  if(event.type==='RESULTS'&&event.source==='model'&&event.provisional)
+   firstPreview.resolve(event);
+ },{
+  signal:controller.signal,enabled:true,status:async()=>identity,
+  analyze:async()=>({...identity,annotations:[],targets:[{...word,context:source},school],stats:{pending:2}}),
+  modelConfig:async()=>({...config,smartSegmentation:false})
+ });
+ try{
+  const secondAnswer=await Promise.race([retryStarted.promise,running.then(()=>assert.fail('retry did not start'))]);
+  const preview=await Promise.race([
+   firstPreview.promise,
+   new Promise(resolve=>setImmediate(resolve)).then(()=>assert.fail('retry did not publish a preview while its SSE response was open'))
+  ]);
+  assert.deepEqual(batchSizes,[2,2]);
+  assert.ok(!events.some(e=>e.diagnostic?.message.includes('下一次缩小')));
+  assert.deepEqual(preview.results[0].annotations.map(a=>a.replacement),['科學']);
+  stream.enqueue(encoder.encode(sse(','+secondAnswer+']}', 'stop')+'data: [DONE]\n\n'));
+  stream.close();
+  stream=null;
+  await running;
+  const final=events.findLast(e=>e.type==='RESULTS'&&e.source==='model');
+  assert.equal(final.provisional,false);
+  assert.deepEqual(final.results[0].annotations.map(a=>a.replacement),['科學','學校']);
+ }finally{
+  controller.abort();
+  stream?.close();
+  await running.catch(()=>{});
+  globalThis.fetch=oldFetch;
+ }
+});

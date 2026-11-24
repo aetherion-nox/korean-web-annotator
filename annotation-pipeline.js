@@ -278,6 +278,32 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   if(lastPublished.get(item)===signature||(!accepted.length&&!item.repairs?.length&&!lastPublished.has(item)))return;lastPublished.set(item,signature);
   return emit('RESULTS',{source:'model',replaceModel:true,provisional,results:[{id:item.sentence.id,annotations:additions,reviewed}]});
  };
+ const previewModelResults=(owners,items)=>{
+  const previewCounts=new Map();
+  return accepted=>{
+   // Group stream previews by paragraph, not by individual SSE token. The
+   // model's 800+ answers in a 7K-character article should not regenerate
+   // a multi-hundred-ruby DOM tree 800 times.
+   const perItem=new Map();
+   for(const a of accepted){
+    const owner=owners.get(a.target.target_id);
+    if(!owner||owner.target.scan_only)continue;
+    const rows=perItem.get(owner.item)||[];
+    rows.push({target:owner.target,option:a.option});
+    perItem.set(owner.item,rows);
+   }
+   for(const item of items){
+    const previews=perItem.get(item)||[];
+    const previousCount=previewCounts.get(item);
+    if(!shouldPublishPreview({sentenceChars:item.sentence.text.length,
+      targetCount:item.reviewableTargets?.length||0,
+      lastCount:previousCount??0,nextCount:previews.length,
+      hasPublished:previousCount!==undefined}))continue;
+    previewCounts.set(item,previews.length);
+    publishModel(item,previews,previews.length>0);
+   }
+  };
+ };
  const pending=[];
  const progress={modelCompleted:0,modelTotal:0};
  const reportProgress=()=>emit('MODEL_PROGRESS',{...progress,modelPercent:progress.modelTotal?Math.round(100*progress.modelCompleted/progress.modelTotal):100});
@@ -361,33 +387,10 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  for(const [batchIndex,batch] of batches.entries()){
   if(batch.budget)diagnostic({stage:'batch-budget',level:'info',message:`${batch.budget.label} 档批次：预估输入 ${batch.budget.inputTokens}、答案 ${batch.budget.outputTokens}、输出预算上限 ${batch.budget.outputLimit}${config?.manualReview?'':`、实际请求上限 ${batch.budget.requestedOutputTokens}`}、安全余量 ${batch.budget.safetyTokens} tokens。${batch.budget.limitReason==='output'?'本批受答案长度预算限制。':''}`,detail:JSON.stringify(batch.budget)});
   const {owners,targets,repairScopes,manualBindings,manualPrepared}=preparedBatches[batchIndex];
-  const previewCounts=new Map();
   const firstReview=await reviewTargets({...config,rejectedChoiceHistory,rejectedChoiceFeedback,retryHistoryFeedback:true,
    firstPassOnly:config.manualReview!==true&&config.discardInvalidReviewResults!==true,
    repairScopes,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||600000,enableModelReview:true,context:batch.context,
-   ...(progressive&&!config.manualReview?{onPreview:accepted=>{
-    // Group stream previews by paragraph, not by individual SSE token. The
-    // model's 800+ answers in a 7K-character article should not regenerate
-    // a multi-hundred-ruby DOM tree 800 times.
-    const perItem=new Map();
-    for(const a of accepted){
-     const owner=owners.get(a.target.target_id);
-     if(!owner||owner.target.scan_only)continue;
-     const rows=perItem.get(owner.item)||[];
-     rows.push({target:owner.target,option:a.option});
-     perItem.set(owner.item,rows);
-    }
-    for(const item of batch.items){
-     const previews=perItem.get(item)||[];
-     const previous=previewCounts.get(item);
-     if(!shouldPublishPreview({sentenceChars:item.sentence.text.length,
-       targetCount:item.reviewableTargets?.length||0,
-       lastCount:previous?.count||0,nextCount:previews.length,
-       hasPublished:previous!==undefined}))continue;
-     previewCounts.set(item,{count:previews.length});
-     publishModel(item,previews,previews.length>0);
-    }
-   }}:{}),
+   onPreview:progressive&&!config.manualReview?previewModelResults(owners,batch.items):undefined,
    onReviewTargetsSubmitted:wire=>{
     for(const t of wire)if(t.experimental_hanja_audit===true){
      stats.experimental_hanja_audit_request_occurrences++;
@@ -531,6 +534,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     context:group.context,manualBindings,manualPrepared,
     operationId:message.operationId,batchBudget:group.budget,
     stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||600000,
+    onPreview:progressive&&!manual?previewModelResults(owners,group.items):undefined,
     onAccepted:async accepted=>{
      const changed=new Set();
      for(const a of accepted){
