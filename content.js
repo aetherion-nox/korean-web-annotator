@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.9-paragraph-review-cache';
+  const VERSION = '1.1.10-cache-persistence';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;

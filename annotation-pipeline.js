@@ -6,6 +6,7 @@ import {filterReviewTarget} from './review-pos.js';
 import {canProposeExperimentalOption} from './experimental-options.js';
 import {reviewTargets,safeDetail} from './choice-review.js';
 import {paragraphReviewKey,snapshotParagraphReview,restoreParagraphReview} from './review-cache.js';
+import {trimAnnotationCache} from './session-cache.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
 import {compactDomAnnotations,shouldPublishPreview,createOrderedResultRelay} from './annotation-event.js';
@@ -704,7 +705,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   }
  }
  diagnostic({stage:'cache',level:'info',message:'缓存汇总：本地分析命中 '+stats.localCacheHits+' 段；模型审核命中 '+stats.modelCacheHits+' 段（'+stats.modelCachedTargets+' 个答案）。'});
- while(cache.size>300)cache.delete(cache.keys().next().value);await persist(cache);
+ trimAnnotationCache(cache);await persist(cache);
  await emit('DONE',{reviewIncomplete:stats.model_unanswered>0,
   unansweredTargets:stats.model_unanswered,
   canAutoResume:Boolean(config&&!config.manualReview&&!modelPermanentFailure)});return stats;

@@ -15,7 +15,7 @@ const popupVersion=popupSource.match(/\bconst CONTENT_SCRIPT_VERSION\s*=\s*'([^'
 const workerVersion=workerSource.match(/\bconst CONTENT_SCRIPT_VERSION\s*=\s*'([^']+)'/)?.[1];
 
 test('web manifest, popup, worker and injected content script agree on one current startup version',()=>{
- assert.equal(manifest.version,'1.1.9');
+ assert.equal(manifest.version,'1.1.10');
  assert.equal(pkg.version,manifest.version);
  assert.ok(contentVersion,'content script must have a versioned ping response');
  assert.equal(popupVersion,contentVersion);

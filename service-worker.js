@@ -9,7 +9,7 @@ import {engineConfig,engineStatus,analyzeLocal,analyzeLocalBatch} from './local-
 import {reviewTargets} from './choice-review.js';
 import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
-import {prepareCacheSession} from './session-cache.js';
+import {prepareCacheSession,AnnotationCache,cacheCounts} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {
@@ -19,7 +19,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.9-paragraph-review-cache';
+const CONTENT_SCRIPT_VERSION='1.1.10-cache-persistence';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -32,7 +32,12 @@ function serializeHistory(tabId,callback){
  return next;
 }
 const STREAM_PORT_NAME='KRA_ANNOTATE_STREAM_V1';
-const cache=new Map();
+let cache=new AnnotationCache();
+let cacheStorageQueue=Promise.resolve();
+function serializeCacheStorage(work){
+ const next=cacheStorageQueue.catch(()=>{}).then(work);
+ cacheStorageQueue=next;return next;
+}
 let cacheLoaded=false;
 let cacheLoadPromise;
 const enginePreloader=createEnginePreloader();
@@ -277,6 +282,7 @@ function sanitizeUiSettings(value) {
     copyMode:['base','annotated','hangul','annotation'].includes(source.copyMode)?source.copyMode:'hangul',
     stopAutoAfterPageComplete:source.stopAutoAfterPageComplete ?? true,
     restoreExistingAnnotations:source.restoreExistingAnnotations ?? true,
+    clearCacheOnExit:source.clearCacheOnExit!==false,
     hideToolbarOnFirstManual:source.hideToolbarOnFirstManual !== false,
     toolbarHangulOnly:source.toolbarHangulOnly ?? true,
     toolbarDisplay:source.toolbarDisplay==='always'?'always':'selection',
@@ -507,14 +513,12 @@ async function startPageFromPopup(message){
  if(!tab?.id)throw new Error('没有找到当前标签页。');
  if(pendingPopupPageStarts.has(tab.id))return pendingPopupPageStarts.get(tab.id);
  const operation=(async()=>{
-  const uiSettings=sanitizeUiSettings(message.uiSettings);
-  const persist=chrome.storage.local.get('uiSettings').then(({uiSettings:stored={}})=>
-   chrome.storage.local.set({uiSettings:{...stored,...uiSettings,
-    clearCacheOnExit:message.uiSettings?.clearCacheOnExit??true}})
-  ).catch(()=>{});
   try{
-   const response=await startWholePageForTab(tab.id,{...message,uiSettings,trigger:'popup'});
-   await persist;return response;
+   const {uiSettings:stored={}}=await chrome.storage.local.get('uiSettings');
+   const uiSettings=sanitizeUiSettings({...stored,...message.uiSettings});
+   // Commit settings before any annotation can initialize the cache.
+   await chrome.storage.local.set({uiSettings:{...stored,...uiSettings}});
+   return await startWholePageForTab(tab.id,{...message,uiSettings,trigger:'popup'});
   }finally{pendingPopupPageStarts.delete(tab.id);}
  })();
  pendingPopupPageStarts.set(tab.id,operation);return operation;
@@ -690,7 +694,12 @@ async function checkReady(){const config=await engineConfig();
  if(config.enableModelReview&&!config.manualModelReview)await getApiConfig();
  return {mode:'local',enableModelReview:config.enableModelReview,manualModelReview:config.manualModelReview,...status};
 }
-async function clearAnnotationCache(){await loadCache();cache.clear();cacheLoaded=true;await chrome.storage.local.remove(CACHE_KEY);}
+async function clearAnnotationCache(){
+ await loadCache();
+ // Running tasks retain their old map; they cannot repopulate the new cache.
+ cache=new AnnotationCache();
+ await serializeCacheStorage(()=>chrome.storage.local.remove(CACHE_KEY));
+}
 async function markCurrentProviderStreamUnstable(){return;}
 async function testApi(){
  const config=await getApiConfig();
@@ -706,6 +715,9 @@ async function loadCache(){
 }
 async function runModern(message,post,signal,manualSession,waitForUnfinishedReview=null){
  await loadCache();const config=await engineConfig();
+ const {uiSettings:cacheSettings={}}=await chrome.storage.local.get('uiSettings');
+ const counts=cacheCounts(cache);
+ post({type:'DIAGNOSTIC',operationId:message.operationId,diagnostic:{stage:'cache',level:'info',message:'任务开始前缓存：本地 '+counts.local+' 条、模型 '+counts.model+' 条；退出浏览器后'+(cacheSettings.clearCacheOnExit===false?'保留':'清除')+'缓存。'+(message.forceRegenerate?'本次强制忽略缓存。':'')}});
  if(config.manualModelReview&&!manualSession)throw Error('手动聊天审核需要网页输入框，请从网页标注入口启动。');
  const reviewConfiguration=async manual=>({...((manual)?{provider:'manual',model:'manual-chat',endpoint:'manual://chat',manualReview:true,request:manualSession.request}:await getApiConfig()),batchContextTier:config.batchContextTier,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit,matchManualOutputBudget:config.matchManualOutputBudget,reviewPosFilter:config.reviewPosFilter,retryInvalidDictionaryChoices:config.retryInvalidDictionaryChoices,discardInvalidReviewResults:config.discardInvalidReviewResults,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,hanjaReadingCheck:config.hanjaReadingCheck,smartSegmentation:config.smartSegmentation});
  const modelConfig=()=>reviewConfiguration(config.manualModelReview===true);
@@ -720,10 +732,13 @@ async function runModern(message,post,signal,manualSession,waitForUnfinishedRevi
    // Keep one paragraph string in the cache key; never persist that same
    // full text in every target as well. Target.context is rehydrated after
    // validateAnalysis() on a subsequent cache hit.
-   const compact=Array.from(map,([key,value])=>[key,
-    value&&Array.isArray(value.targets)?{...value,
-      targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
-   return chrome.storage.local.set({[CACHE_KEY]:compact});
+   return serializeCacheStorage(async()=>{
+    if(map!==cache)return;
+    const compact=Array.from(map,([key,value])=>[key,
+     value&&Array.isArray(value.targets)?{...value,
+       targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
+    await chrome.storage.local.set({[CACHE_KEY]:compact});
+   });
   }});
 }
 function legacyPlan(message){
