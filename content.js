@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.12-folded-panels-manual-cache';
+  const VERSION = '1.1.13.1-folded-panels-manual-cache';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;

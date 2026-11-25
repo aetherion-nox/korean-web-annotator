@@ -100,7 +100,45 @@
     </section>
 
     <label><span data-i18n="providerLabel">服务商</span><select id="provider"></select></label>
+    <div class="buttons">
+      <button id="refreshProviderModels" type="button" data-i18n="refreshProviderModels">刷新当前渠道</button>
+      <button id="refreshAllModels" type="button" data-i18n="refreshAllModels">刷新全部模型</button>
+    </div>
+    <pre id="directoryStatus" role="status"></pre>
+    <details class="profile-note">
+      <summary data-i18n="providerReference">模型参考配置</summary>
+      <label><span data-i18n="providerReferenceUrl">HTTPS 配置地址</span><input id="providerReferenceUrl" type="url"></label>
+      <div class="buttons"><button id="updateProviderReference" type="button" data-i18n="updateProviderReference">更新参考配置</button><button id="rollbackProviderReference" type="button" data-i18n="rollbackProviderReference">回滚配置</button><button id="refreshModelsDev" type="button" data-i18n="refreshModelsDev">更新 Models.dev 补充信息</button></div>
+    </details>
+    <label id="modelSearchRow" hidden><span data-i18n="modelSearch">搜索模型名称或 ID</span><input id="modelSearch" type="search"></label>
     <label><span data-i18n="modelChoice">模型</span><select id="modelSelect"></select></label>
+    <p id="directoryModelDetails" class="profile-note"></p>
+    <div id="routerSettings" hidden>
+      <label><span data-i18n="routerMode">OpenRouter 路由</span><select id="routerMode">
+        <option value="balanced" data-i18n="routeBalanced">均衡</option>
+        <option value="price" data-i18n="routePrice">最低价格</option>
+        <option value="throughput" data-i18n="routeThroughput">最快生成</option>
+        <option value="latency" data-i18n="routeLatency">最低延迟</option>
+        <option value="only" data-i18n="routeOnly">指定供应商</option>
+      </select></label>
+      <details class="profile-note">
+        <summary data-i18n="routerAdvanced">OpenRouter 高级参数</summary>
+        <label><span data-i18n="routerAdvancedHint">JSON（仅发送模型目录支持的参数）</span>
+          <textarea id="routerAdvanced" rows="3" placeholder='{"temperature":0.2,"top_p":0.9}'></textarea>
+        </label>
+      </details>
+      <div id="routerProvidersRow" hidden>
+        <label><span data-i18n="routerSearch">搜索推理供应商</span><input id="routerSearch" type="search"></label>
+        <label><span data-i18n="routerProvider">推理供应商</span><select id="routerProvider"></select></label>
+        <button id="refreshRouterProviders" type="button" data-i18n="refreshRouterProviders">刷新供应商</button>
+        <p id="routerStatus" class="profile-note" role="status"></p>
+      </div>
+    </div>
+    <div id="localSettings" hidden>
+      <p class="profile-note" data-i18n="localServiceHint">API Key 可留空。若服务运行在另一台设备上，请填写该设备的局域网地址。</p>
+      <button id="ollamaModelDetails" type="button" hidden data-i18n="ollamaDetails">读取 Ollama 模型详情</button>
+    </div>
+    <label id="newProviderStreamRow" class="inline" hidden><input id="newProviderStream" type="checkbox"><span data-i18n="providerStreaming">流式输出</span></label>
     <label><span data-i18n="endpoint">接口完整地址</span><input id="endpoint" type="url" placeholder="https://api.example.com/v1/chat/completions"></label>
     <label id="customModelRow"><span data-i18n="model">模型名</span><input id="model" type="text" placeholder="your-model-name"></label>
     <label><span data-i18n="apiKey">API Key</span><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="sk-..."></label>
@@ -129,6 +167,9 @@
   </main>
   <script src="api-profiles.js"></script>
   <script src="model-catalog.js"></script>
+  <script src="provider-registry.js"></script>
+  <script src="provider-directory.js"></script>
+  <script src="provider-config.js"></script>
   <script src="options.js"></script>
   <script type="module" src="engine-settings.js"></script>
   <script type="module" src="feature-settings.js"></script>

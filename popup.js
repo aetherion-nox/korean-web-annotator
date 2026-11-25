@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.12-folded-panels-manual-cache';
+const CONTENT_SCRIPT_VERSION = '1.1.13.1-folded-panels-manual-cache';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');

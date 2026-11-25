@@ -4,7 +4,7 @@ main { max-width:720px; margin:30px auto; padding:24px; background:#fff; border:
 h1 { margin:0; font-size:24px; }
 .intro { color:#5f6368; margin:8px 0 20px; }
 label:not(.inline) { display:block; margin:14px 0; font-weight:600; }
-input[type="text"], input[type="url"], input[type="password"], input[type="number"], select { box-sizing:border-box; width:100%; margin-top:6px; padding:9px 10px; border:1px solid #c9ccd1; border-radius:8px; font:inherit; background:#fff; }
+input[type="text"], input[type="search"], input[type="url"], input[type="password"], input[type="number"], select { box-sizing:border-box; width:100%; margin-top:6px; padding:9px 10px; border:1px solid #c9ccd1; border-radius:8px; font:inherit; background:#fff; }
 .topbar select { width:auto; min-width:130px; margin:0; }
 .language-picker { display:flex !important; flex-direction:column; align-items:flex-end; gap:4px; margin:0 !important; font-weight:400 !important; flex:0 0 auto; }
 .language-hint { font-size:11px; line-height:1.1; letter-spacing:.02em; color:#5f6368; white-space:nowrap; }
@@ -48,3 +48,24 @@ button { min-height:38px; padding:0 14px; border:1px solid #c9ccd1; border-radiu
 .engine-switch-panel h3 { margin:0 0 12px; font-size:15px; }
 #resetEngineSwitches { background:#fff; }
 
+
+#directoryStatus:empty,
+#directoryModelDetails:empty {
+  display: none;
+}
+
+#directoryModelDetails,
+#routerStatus {
+  overflow-wrap: anywhere;
+}
+
+#routerAdvanced {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+
+#directoryStatus {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

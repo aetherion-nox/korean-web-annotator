@@ -5,6 +5,10 @@ import {callBrowserEngine,copyTextToClipboard} from './browser-engine-host.js';
 import {configureBrowserEngineHost} from './browser-engine.js';
 configureBrowserEngineHost(callBrowserEngine);
 import './api-profiles.js';
+import './model-catalog.js';
+import './provider-registry.js';
+import './provider-directory.js';
+import './provider-config.js';
 import {engineConfig,engineStatus,analyzeLocal,analyzeLocalBatch} from './local-engine.js';
 import {reviewTargets} from './choice-review.js';
 import {requestLogger} from './request-log.js';
@@ -19,7 +23,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.12-folded-panels-manual-cache';
+const CONTENT_SCRIPT_VERSION='1.1.13.1-folded-panels-manual-cache';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -658,28 +662,41 @@ async function getApiConfig() {
   const paragraphFastPath = profile.paragraphFastPath ?? true;
 
   if (!endpoint || !model) throw new Error('请先在 API 设置中填写接口地址和模型名。');
-  const url = new URL(endpoint);
-  const localHttp = url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
-  if (url.protocol !== 'https:' && !localHttp) throw new Error('不允许访问非 HTTPS 的远程 API。');
-  if (!apiKey && !localHttp) {
-    if (profile.keyStorageMode === 'encrypted' && profile.encryptedApiKey) {
-      throw new Error('当前配置的 API Key 已加密保存但尚未解锁，请在 API 设置中解锁。');
-    }
+  const registry = globalThis.KRA_PROVIDER_REGISTRY;
+  const directory = globalThis.KRA_PROVIDER_DIRECTORY;
+  const provider = registry.idOf(profile);
+  const url = new URL(registry.endpoint(endpoint,provider));
+  if (!apiKey && profile.keyStorageMode === 'encrypted' && profile.encryptedApiKey) {
+    throw new Error('当前配置的 API Key 已加密保存但尚未解锁，请在 API 设置中解锁。');
+  }
+  if (!apiKey && !registry.keyOptional(url,provider)) {
     throw new Error('没有找到 API Key。');
   }
 
-  if(chrome.permissions?.contains && !await chrome.permissions.contains({origins:[`${url.origin}/*`]})) {
+  if(chrome.permissions?.contains && !await chrome.permissions.contains({origins:[registry.originPattern(url)]})) {
     throw new Error('尚未授权访问此 API 域名。请在 API 设置页重新保存配置并允许域名访问。');
   }
 
+  const discovered = provider === 'ollama'
+    ? await directory.loadDetail({provider,endpoint,model,profileId:profile.id})
+    : (await directory.load({provider,endpoint,profileId:profile.id}))?.models.find(item=>item.id===model);
+  const reference=await globalThis.KRA_PROVIDER_CONFIG.channel(provider);
+  const modelReference=reference?.models.find(item=>item.id===model);
+  const modelCapability=discovered ? {...modelReference,...Object.fromEntries(Object.entries(discovered).filter(([,value])=>value!=null))} : modelReference;
   return {
     endpoint: url.href,
     model,
     apiKey,
     minConfidence,
     disableThinking,
-    provider: profile.provider,
-    reasoningEffort: profile.reasoningEffort,
+    provider, modelCapability,
+    stream: profile.providerStream ?? reference?.defaults.stream ?? false,
+    routerMode: profile.routerMode,
+    routerAdvanced: profile.routerAdvanced,
+    routerProvider: profile.routerProvider,
+    routerProviderParameters: profile.routerProviderParameters,
+    routerProviderModel: profile.routerProviderModel,
+    reasoningEffort: profile.reasoningEffort || reference?.defaults.effort,
     paragraphFastPath,
     keyStorageMode: profile.keyStorageMode || 'session',
     profileId: profile.id,
@@ -705,10 +722,11 @@ async function clearAnnotationCache(){
 async function markCurrentProviderStreamUnstable(){return;}
 async function testApi(){
  const config=await getApiConfig();
- const target={target_id:'test-id',start:0,end:2,surface:'경제',context:'경제',options:[{choice_id:null,type:'keep',replacement:'경제',entry_id:null,definitions:[]}]};
- const result=await reviewTargets({...config,enableModelReview:true},[target]);
+ let reportedProvider='';
+ const target={target_id:'test-id',start:0,end:2,surface:'경제',context:'경제',options:[{choice_id:null,type:'keep',replacement:'경제',entry_id:null,definitions:[]},{choice_id:'c0',type:'hanja',replacement:'經濟',entry_id:1,definitions:['economy']}]};
+ const result=await reviewTargets({...config,enableModelReview:true,firstPassOnly:true,onDiagnostic:event=>{if(event.stage==='response-provider')reportedProvider=event.message;}},[target]);
  if(result.accepted.length!==1)throw Error(result.errors?.length ? result.errors.map(e=>`${e.message}: ${e.detail||''}`).join('\n') : 'API did not return a valid dictionary choice ID');
- return 'API ID protocol test succeeded.';
+ return reportedProvider || 'API ID protocol test succeeded.';
 }
 async function loadCache(){
  if(cacheLoaded)return;

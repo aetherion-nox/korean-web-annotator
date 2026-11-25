@@ -1,5 +1,6 @@
 import {filterReviewTarget,filterReviewTargets} from './review-pos.js';
-import {qwenRequestSettings} from './qwen-api.js';
+import {prepareRequest, thinkingSettings} from './provider-adapter.js';
+export {thinkingSettings} from './provider-adapter.js';
 import {readModelContent,choicePreviewParser,experimentalChoicePreviewParser} from './model-stream.js';
 import {requestLogger} from './request-log.js';
 import './model-catalog.js';
@@ -136,38 +137,6 @@ export function validateExperimentalChoices(targets,response,config={}){
  }
  return {accepted,unresolved,invalidDictionaryChoiceIds,
   experimentalAccepted,experimentalProposed:experimentalAccepted,experimentalRejected,rejectionCounts,rejectionSamples};
-}
-export function thinkingSettings(config){
- const capability=globalThis.KRA_MODEL_CATALOG.resolve(config);
- if(!capability)return {body:{},label:'模型默认思考设置（未收录能力）'};
- const enabled=capability.thinking==='required'||config.disableThinking===false;
- const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
- const effort=capability.efforts.includes(config.reasoningEffort)?config.reasoningEffort:capability.efforts[0];
- if(provider==='qwen'){
-  if(capability.thinking==='none')return {body:{},label:'此模型不使用思考参数'};
-  const body=capability.thinking==='toggle'?{enable_thinking:enabled}:{};
-  if(enabled&&capability.efforts.length)body.reasoning_effort=effort;
-  return {body,label:enabled?`Qwen 思考开启${capability.efforts.length?'（'+effort+'）':''}`:'Qwen 思考关闭'};
- }
- // Gemini and Meta Muse use OpenAI-style reasoning_effort rather than
- // Xiaomi/GLM's vendor-specific "thinking" object. Muse cannot disable reasoning.
- if(provider==='gemini'||provider==='muse'){
-  const level=enabled?effort:'none';
-  return {body:{reasoning_effort:level},label:enabled?`思考强度：${level}`:'关闭思考'};
- }
- // Tencent TokenHub supports the same explicit thinking switch for
- // Hy4 Flash, Hy4, Hy4 Preview and Hy3. The accepted effort levels differ:
- // Hy3: low/high/no_think; Hy4 family: high/no_think.
- if(provider==='hunyuan'){
-  const body={thinking:{type:enabled?'enabled':'disabled'}};
-  if(capability.efforts.length)body.reasoning_effort=enabled?effort:'no_think';
-  return {body,label:enabled?(effort?`混元思考强度：${effort}`:'混元思考开启'):'混元关闭思考'};
- }
- if(provider==='openai')return {body:{reasoning_effort:enabled?effort:'none'},label:enabled?`思考强度：${effort}`:'关闭思考'};
- if(provider==='anthropic')return {body:{thinking:{type:enabled?'adaptive':capability.offType||'disabled'},output_config:{effort:enabled?effort:'low'}},label:enabled?`自适应思考（${effort}）`:capability.offType==='between_tools'?'关闭前置思考':'关闭思考'};
- const body={thinking:{type:enabled?'enabled':'disabled'}};
- if(enabled&&capability.efforts.length)body.reasoning_effort=capability.efforts.includes(config.reasoningEffort)?config.reasoningEffort:capability.efforts[0];
- return {body,label:enabled?`思考开启${body.reasoning_effort?`（${body.reasoning_effort}）`:''}`:'关闭思考'};
 }
 export function safeDetail(value,config={}){
  let text=String(value||'');
@@ -362,19 +331,11 @@ export async function reviewTargets(config,targets,signal){
  return {accepted,unresolved:pending,errors};
 }
 async function requestChoices(config,targets,signal){
- const provider=config.provider||globalThis.KRA_MODEL_CATALOG.inferProvider(config.endpoint);
- const native=provider==='openai'||provider==='anthropic';
- const guard=requestTimeoutGuard({signal,
-  hardMs:config.timeoutMs || 600000,
-  idleMs:config.stream===true?180000:(config.timeoutMs||600000)});
- const requestSignal=guard.signal;
  const {payload,stats:payloadStats,choiceIndex}=buildReviewPayload(config.context,targets,config);
  config.onDiagnostic?.({stage:'request',level:'info',message:`共享请求：${payloadStats.targets} 个词，${payloadStats.sentences} 份句子，${payloadStats.candidates} 个候选；用户输入 ${payloadStats.legacyUserBytes} → ${payloadStats.userBytes} 字节。`});
- let body={model:config.model,messages:[
+ const messages=[
   {role:'system',content:buildReviewInstructions(config)},
-  {role:'user',content:JSON.stringify(payload)}],response_format:{type:'json_object'},...thinkingSettings(config).body};
- if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
- const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(config.endpoint).pathname);
+  {role:'user',content:JSON.stringify(payload)}];
  const requestedCap=config.apiOutputTokenLimit??config.batchBudget?.outputLimit;
  const requestBudget=describeBatchBudget(config.context||'',targets,{
   tier:config.batchContextTier||'1m',wireIds:true,manual:false,
@@ -385,27 +346,15 @@ async function requestChoices(config,targets,signal){
   matchManualOutputBudget:config.matchManualOutputBudget===true
  });
  const outputTokenLimit=normalizeOutputTokenLimit(requestBudget.requestedOutputTokens,false);
- if(responses){
-  const {messages,reasoning_effort}=body;
-  body={model:config.model,input:messages,store:false,
-   text:{format:{type:'json_object'}},max_output_tokens:outputTokenLimit,
-   ...(reasoning_effort?{reasoning:{effort:reasoning_effort}}:{})};
- }else if(provider==='anthropic'){
-  const {messages,thinking,output_config}=body;
-  body={model:config.model,system:messages[0].content,messages:messages.slice(1),
-   max_tokens:outputTokenLimit,...(thinking?{thinking,output_config}:{})};
- }else if(provider==='openai'||provider==='muse'){
-  body.max_completion_tokens=outputTokenLimit;
- }else{
-  body.max_tokens=outputTokenLimit;
- }
- if(config.stream===true){body.stream=true;if(['qwen','deepseek','hunyuan'].includes(provider))body.stream_options={include_usage:true};}
- const auth=provider==='anthropic'?{'x-api-key':config.apiKey||'','anthropic-version':'2023-06-01'}:config.apiKey?(provider==='mimo'?{'api-key':config.apiKey}:{Authorization:`Bearer ${config.apiKey}`}):{};
+ const {provider,endpoint,protocol,body,headers}=prepareRequest(config,messages,outputTokenLimit);
  const logger=config.logger||requestLogger;
  const started=Date.now(),secrets=[config.apiKey,config.engineToken].filter(Boolean);
- const headers={'Content-Type':'application/json',...auth};
- const record={startedAt:new Date(started).toISOString(),endpoint:config.endpoint,provider,model:config.model,operationId:config.operationId,attempt:config.attempt||1,stream:body.stream===true,payloadStats,batchBudget:{...config.batchBudget,requestOutputTokens:outputTokenLimit},headers,body};
+ const record={startedAt:new Date(started).toISOString(),endpoint,provider,model:config.model,operationId:config.operationId,attempt:config.attempt||1,stream:body.stream===true,payloadStats,batchBudget:{...config.batchBudget,requestOutputTokens:outputTokenLimit},headers,body};
  const logId=await logger.start(record,secrets);
+ const guard=requestTimeoutGuard({signal,
+  hardMs:config.timeoutMs || 600000,
+  idleMs:config.stream===true?180000:(config.timeoutMs||600000)});
+ const requestSignal=guard.signal;
  let raw='',rawTruncated=false,status,firstByteMs,metadata={},responseHeaders={},latestPreview=[];
  const onRaw=chunk=>{if(chunk)guard.activity();if(chunk&&firstByteMs===undefined)firstByteMs=Date.now()-started;
    // Full wire response is retained only when the user enables request logging.
@@ -413,9 +362,9 @@ async function requestChoices(config,targets,signal){
    if(logId){raw+=chunk;return;}
    if(raw.length+chunk.length>1_500_000)rawTruncated=true;
    raw+=chunk.slice(0,Math.max(0,1_500_000-raw.length));};
- const onMetadata=data=>{if(data.id)metadata.id=data.id;if(data.usage)metadata.usage={...metadata.usage,...data.usage};if(data.stop_reason)metadata.finishReason=data.stop_reason;if(data.choices?.[0]?.finish_reason)metadata.finishReason=data.choices[0].finish_reason;};
+ const onMetadata=data=>{if(provider==='openrouter'&&typeof data.provider==='string'&&metadata.inferenceProvider!==data.provider){metadata.inferenceProvider=data.provider;config.onDiagnostic?.({stage:'response-provider',level:'info',message:'OpenRouter 推理供应商：'+data.provider});}if(data.id)metadata.id=data.id;if(data.usage)metadata.usage={...metadata.usage,...data.usage};if(data.stop_reason)metadata.finishReason=data.stop_reason;if(data.choices?.[0]?.finish_reason)metadata.finishReason=data.choices[0].finish_reason;};
  try{
-  const response=await fetch(config.endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:requestSignal});
+  const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:requestSignal,...(provider==='openrouter'||globalThis.KRA_PROVIDER_REGISTRY.local(provider)?{redirect:'error',credentials:'omit'}:{})});
   guard.activity();
   status=response.status;responseHeaders=Object.fromEntries(['content-type','x-request-id','request-id','retry-after'].map(name=>[name,response.headers.get(name)]).filter(([,v])=>v));
   if(!response.ok){const detail=await response.text();onRaw(detail);const error=Error(`模型 API HTTP ${response.status}`);error.detail=detail;error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
@@ -428,7 +377,7 @@ async function requestChoices(config,targets,signal){
   const preview=(config.experimentalHanja||config.experimentalLoanword)?
     experimentalChoicePreviewParser(choiceValidationTargets,{...config,choiceIndex},previewCallback):
     choicePreviewParser(choiceValidationTargets,previewCallback,()=>null,{...config,choiceIndex});
-  const content=await readModelContent(response,{protocol:responses?'responses':provider==='anthropic'?'anthropic':'chat',signal:requestSignal,maxContentChars:Math.min(16_000_000,Math.max(2_000_000,outputTokenLimit*8)),onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
+  const content=await readModelContent(response,{protocol,signal:requestSignal,maxContentChars:Math.min(16_000_000,Math.max(2_000_000,outputTokenLimit*8)),onRaw,onMetadata,onDelta:preview,onStarted:()=>config.onDiagnostic?.({stage:'response',level:'info',message:'已收到模型流式响应，正在接收审核结果。'})});
   let result,recovered=false;
   try{({response:result,recovered}=parsePartialReviewJson(content));}
   catch{if(config.discardInvalidReviewResults===true){result={results:[]};config.onDiagnostic?.({stage:'discard-invalid',level:'warning',message:'模型回复无法解析，已丢弃本次无效答案，不重新请求。'});}

@@ -7,7 +7,23 @@ const modelInput = document.querySelector('#model');
 const providerInput = document.querySelector('#provider');
 const modelSelect = document.querySelector('#modelSelect');
 const effortInput = document.querySelector('#reasoningEffort');
-const catalog = globalThis.KRA_MODEL_CATALOG;
+const legacyCatalog = globalThis.KRA_MODEL_CATALOG;
+const registry = globalThis.KRA_PROVIDER_REGISTRY;
+const directory = globalThis.KRA_PROVIDER_DIRECTORY;
+const catalog = {...legacyCatalog,providers:registry?.providers || legacyCatalog.providers};
+const element = id => document.getElementById(id);
+let directoryEntry = null;
+let ollamaDetail = null;
+let providerReference = null;
+let publicModelMetadata = [];
+let directoryRevision = 0;
+let routerRevision = 0;
+let routerOptions = [];
+let routerModel = '';
+let routerSelection = '';
+let verifiedRouterProviders = false;
+let routerProviderParameters = null;
+const refreshStatuses = new Map();
 const apiKeyInput = document.querySelector('#apiKey');
 const disableThinkingInput = document.querySelector('#disableThinking');
 const storageModeInputs = [...document.querySelectorAll('input[name="keyStorageMode"]')];
@@ -74,6 +90,20 @@ const MODEL_STRINGS = {
   en:{providerLabel:'Provider',modelChoice:'Model',effortLabel:'Reasoning effort',customModel:'Custom model',modelDocs:'Official documentation',reduceReasoning:'Disable thinking',requiredThinking:'Thinking is required. Supported efforts: ',toggleThinking:'This model supports disabling thinking.',unknownThinking:'Unknown model: use the server’s default thinking settings.'}
 };
 for(const [language,strings] of Object.entries(MODEL_STRINGS))Object.assign(STRINGS[language],strings);
+
+const DIRECTORY_STRINGS = {
+  en:{reasoningCapability:'Reasoning',reasoningSupported:'Supported',reasoningRequired:'Required',reasoningUnavailable:'Unavailable',refreshModelsDev:'Refresh Models.dev metadata',modelsDevReference:'Models.dev reference · account access unverified',noEndpoint:'No endpoint configured',serverDefault:'Server default',routerAdvanced:'OpenRouter advanced parameters',routerAdvancedHint:'JSON · only parameters advertised by the model are sent',providerReference:'Model reference configuration',providerReferenceUrl:'HTTPS configuration URL',updateProviderReference:'Update reference configuration',rollbackProviderReference:'Roll back configuration',remoteReference:'Remote reference · account access unverified',routerThinking:'Reasoning support varies by endpoint; some models cannot disable it.',refreshProviderModels:'Refresh current channel',refreshRouterProviders:'Refresh inference providers',refreshAllModels:'Refresh all models',modelSearch:'Search model name or ID',routerMode:'OpenRouter routing',
+    routeBalanced:'Balanced',routePrice:'Lowest price',routeThroughput:'Fastest generation',routeLatency:'Lowest latency',routeOnly:'Specific provider',
+    routerSearch:'Search inference providers',routerProvider:'Inference provider',localServiceHint:'API Key is optional. For a service on another device, enter that device’s private network address.',
+    ollamaDetails:'Load Ollama model details',providerStreaming:'Stream output',loadingDirectory:'Refreshing…',unknown:'Unknown',chooseProvider:'Select a provider',
+    serviceSource:'Service API',publicSource:'Public API',referenceSource:'Bundled reference · account access unverified',directoryFailure:'Refresh failed',resultsLimited:'Showing up to 200 matching models',contextLength:'Context',supportedParameters:'Parameters',price:'Price',capabilities:'Capabilities'},
+  'zh-CN':{reasoningCapability:'思考能力',reasoningSupported:'支持',reasoningRequired:'必需',reasoningUnavailable:'不支持',refreshModelsDev:'更新 Models.dev 补充信息',modelsDevReference:'Models.dev 参考 · 未核验账户权限',noEndpoint:'未配置接口地址',serverDefault:'服务端默认',routerAdvanced:'OpenRouter 高级参数',routerAdvancedHint:'JSON（仅发送模型目录支持的参数）',providerReference:'模型参考配置',providerReferenceUrl:'HTTPS 配置地址',updateProviderReference:'更新参考配置',rollbackProviderReference:'回滚配置',remoteReference:'远程参考 · 未核验账户权限',routerThinking:'思考能力取决于推理端点，部分模型无法关闭思考。',refreshProviderModels:'刷新当前渠道',refreshRouterProviders:'刷新推理供应商',refreshAllModels:'刷新全部模型',modelSearch:'搜索模型名称或 ID',routerMode:'OpenRouter 路由',
+    routeBalanced:'均衡',routePrice:'最低价格',routeThroughput:'最快生成',routeLatency:'最低延迟',routeOnly:'指定供应商',
+    routerSearch:'搜索推理供应商',routerProvider:'推理供应商',localServiceHint:'API Key 可留空。若服务运行在另一台设备上，请填写该设备的局域网地址。',
+    ollamaDetails:'读取 Ollama 模型详情',providerStreaming:'流式输出',loadingDirectory:'正在刷新…',unknown:'未知',chooseProvider:'请选择供应商',
+    serviceSource:'服务端 API',publicSource:'公开 API',referenceSource:'内置参考 · 未核验账户权限',directoryFailure:'刷新失败',resultsLimited:'最多显示 200 个匹配模型',contextLength:'上下文',supportedParameters:'支持参数',price:'价格',capabilities:'能力'}
+};
+for (const [language,strings] of Object.entries(DIRECTORY_STRINGS)) Object.assign(STRINGS[language],strings);
 
 const t = key => STRINGS[locale]?.[key] || STRINGS.en[key] || key;
 const {
@@ -161,6 +191,20 @@ function loadActiveProfileIntoForm() {
   const provider=profile.provider||catalog?.inferProvider(profile.endpoint)||'custom';
   providerInput.replaceChildren(...(catalog?.providers||[{id:'custom',label:'Custom',models:[]}]).map(item=>new Option(item.label,item.id)));
   providerInput.value=Array.from(providerInput.options).some(option=>option.value===provider)?provider:'custom';
+  directoryEntry = null;
+  ollamaDetail = null;
+  providerReference = null;
+  publicModelMetadata = [];
+  if (registry) {
+    element('modelSearch').value = '';
+    element('routerMode').value = profile.routerMode;
+    element('routerAdvanced').value = Object.keys(profile.routerAdvanced||{}).length ? JSON.stringify(profile.routerAdvanced) : '';
+    element('routerSearch').value = '';
+    element('newProviderStream').checked = profile.providerStream ?? false;
+    routerProviderParameters=profile.routerProviderParameters;
+    resetRouterProviders(profile.routerProviderModel === profile.model ? profile.routerProvider : '');
+    syncProviderControls();
+  }
   refreshModelChoices(profile.model);
   refreshThinkingControls(profile.reasoningEffort);
   let mode = ['session','local','encrypted'].includes(profile.keyStorageMode) ? profile.keyStorageMode : 'session';
@@ -172,13 +216,39 @@ function loadActiveProfileIntoForm() {
   confirmPassphraseInput.value = '';
   refreshKeyState();
   updateKeyPlaceholder();
+  if (registry) loadSelectedDirectory().catch(showError);
 }
 
 function refreshModelChoices(selected=modelInput.value) {
   const provider=catalog?.providers.find(item=>item.id===providerInput.value);
-  modelSelect.replaceChildren(...(provider?.models||[]).map(model=>new Option(model.label||model.id,model.id)),new Option(t('customModel'),'custom'));
-  modelSelect.value=provider?.models.some(model=>model.id===selected)?selected:'custom';
+  const models=directoryEntry?.models || [...new Map([
+    ...(provider?.models||[]).map(model=>({...model,source:'bundled-reference'})),...(providerReference?.models||[])
+  ].map(model=>[model.id,model])).values()];
+  const search=element('modelSearch')?.value.trim().toLowerCase() || '';
+  const selectedModel=models.find(item=>item.id===selected);
+  const matches=models.filter(item=>!search || [item.id,item.label,item.developer].some(value=>value?.toLowerCase().includes(search)));
+  const groups=new Map();
+  for(const model of matches.slice(0,200)){
+    const groupName=model.developer || (directoryEntry ? t('unknown') : '');
+    if(!groups.has(groupName))groups.set(groupName,[]);
+    groups.get(groupName).push(model);
+  }
+  const options=[];
+  if(selectedModel && !matches.slice(0,200).includes(selectedModel))options.push(new Option(selectedModel.label,selectedModel.id));
+  for(const [label,items] of groups){
+    const rows=items.map(model=>new Option(model.label===model.id ? model.id : model.label+' · '+model.id,model.id));
+    if(!label){options.push(...rows);continue;}
+    const group=document.createElement('optgroup');
+    group.label=label;group.append(...rows);options.push(group);
+  }
+  modelSelect.replaceChildren(...options,new Option(t('customModel'),'custom'));
+  modelSelect.value=selectedModel?selected:'custom';
   document.querySelector('#customModelRow').hidden=modelSelect.value!=='custom';
+  if(element('modelSearchRow')){
+    element('modelSearchRow').hidden=models.length<10;
+    modelSelect.title=matches.length>200?t('resultsLimited'):'';
+  }
+  renderDirectoryDetails();
 }
 
 const thinkingOffNotes={
@@ -212,17 +282,26 @@ const fixedThinkingNotes={
 };
 
 function refreshThinkingControls(effort=effortInput.value) {
-  const capability=catalog?.resolve({provider:providerInput.value,endpoint:endpointInput.value,model:modelInput.value});
+  let capability=catalog?.resolve({provider:providerInput.value,endpoint:endpointInput.value,model:modelInput.value});
+  const discovered=['openrouter','ollama'].includes(providerInput.value) ? selectedModelMetadata() : null;
+  if(providerInput.value==='openrouter' && discovered?.parameters?.some(p=>['reasoning','reasoning_effort'].includes(p))){
+    capability={thinking:discovered.thinking==='required'?'required':'toggle',efforts:['',...(discovered.efforts||registry.efforts)]};
+  }
+  if(providerInput.value==='ollama' && discovered?.thinking){
+    capability={thinking:discovered.thinking==='supported'?'toggle':discovered.thinking,
+      efforts:discovered.efforts?.length ? ['',...discovered.efforts] : []};
+  }
   document.querySelector('#disableThinkingRow').hidden=capability?.thinking!=='toggle';
   if(capability?.thinking==='required')disableThinkingInput.checked=false;
   const efforts=capability?.efforts||[];
-  effortInput.replaceChildren(...efforts.map(value=>new Option(value,value)));
+  effortInput.replaceChildren(...efforts.map(value=>new Option(value||t('serverDefault'),value)));
   effortInput.value=efforts.includes(effort)?effort:(efforts[0]||'');
   const note=document.querySelector('#modelCapabilityNote'),docs=document.querySelector('#modelDocs');
   note.textContent=capability?.offType==='between_tools'?(thinkingOffNotes[uiLocale.value]||thinkingOffNotes.en):capability?.thinking==='required'?t('requiredThinking')+efforts.join(' / '):capability?.thinking==='toggle'?t('toggleThinking'):t('unknownThinking');
   if(capability?.thinking==='none')note.textContent=(fixedThinkingNotes[uiLocale.value]||fixedThinkingNotes.en)[0];
   if(capability?.thinking==='required'&&!efforts.length)note.textContent=(fixedThinkingNotes[uiLocale.value]||fixedThinkingNotes.en)[1];
   if(providerInput.value==='qwen')note.textContent+=' '+(qwenNotes[uiLocale.value]||qwenNotes.en);
+  if(providerInput.value==='openrouter' && capability)note.textContent=t('routerThinking');
   if(providerInput.value==='hunyuan')note.textContent+=' '+(hunyuanNotes[uiLocale.value]||hunyuanNotes.en);
   docs.hidden=!capability?.docs;docs.textContent=t('modelDocs');if(capability?.docs)docs.href=capability.docs;else docs.removeAttribute('href');
   document.querySelector('#reasoningEffortRow').hidden=!capability||!efforts.length||(capability.thinking==='toggle'&&disableThinkingInput.checked);
@@ -231,6 +310,22 @@ function refreshThinkingControls(effort=effortInput.value) {
 providerInput.addEventListener('change',()=>{
   const provider=catalog?.providers.find(item=>item.id===providerInput.value);
   if(provider?.endpoint)endpointInput.value=provider.endpoint;
+  directoryEntry=null;
+  ollamaDetail=null;
+  providerReference=null;
+  publicModelMetadata=[];
+  if(registry){
+    element('modelSearch').value='';
+    element('routerMode').value='balanced';
+    element('routerAdvanced').value='';
+    apiKeyInput.value='';
+    resetRouterProviders();
+    syncProviderControls();
+    loadSelectedDirectory().then(()=>{
+      if(provider?.id!=='openrouter' || providerInput.value!=='openrouter' || directoryEntry)return;
+      return refreshDirectories(false);
+    }).catch(showError);
+  }
   if(provider?.models.length)modelInput.value=provider.models[0].id;
   disableThinkingInput.checked=true;
   refreshModelChoices();refreshThinkingControls('');
@@ -239,10 +334,23 @@ modelSelect.addEventListener('change',()=>{
   if(modelSelect.value!=='custom')modelInput.value=modelSelect.value;
   document.querySelector('#customModelRow').hidden=modelSelect.value!=='custom';
   disableThinkingInput.checked=true;refreshThinkingControls('');
+  renderDirectoryDetails();
+  if(registry)modelChanged();
 });
 modelInput.addEventListener('input',()=>refreshThinkingControls(''));
-modelInput.addEventListener('change',()=>refreshThinkingControls(''));
-endpointInput.addEventListener('change',()=>refreshThinkingControls());
+modelInput.addEventListener('change',()=>{refreshThinkingControls('');if(registry)modelChanged();});
+apiKeyInput.addEventListener('input',()=>{
+  try{apiKeyInput.dataset.origin=new URL(endpointInput.value).origin;}catch{delete apiKeyInput.dataset.origin;}
+});
+endpointInput.addEventListener('change',()=>{
+  if(apiKeyInput.dataset.origin){
+    let origin;
+    try{origin=new URL(endpointInput.value).origin;}catch{}
+    if(origin!==apiKeyInput.dataset.origin)apiKeyInput.value='';
+  }
+  refreshThinkingControls();
+  if(registry)loadSelectedDirectory().catch(showError);
+});
 disableThinkingInput.addEventListener('change',()=>refreshThinkingControls());
 
 profileSelect.addEventListener('change', async () => {
@@ -301,6 +409,7 @@ saveButton.addEventListener('click', async () => {
 
 testButton.addEventListener('click', async () => {
   try {
+    if(registry && providerInput.value==='openrouter' && element('routerMode').value==='only')await refreshSelectedRouter(true);
     const config = await readFormForSave(true);
     await requestEndpointPermission(config.endpoint);
     await saveConfig(config);
@@ -343,26 +452,29 @@ lockButton.addEventListener('click', async () => {
 });
 
 async function readFormForSave(requireUsableKey = false) {
-  const endpoint = endpointInput.value.trim();
+  const provider=providerInput.value||'custom';
+  const inputEndpoint = endpointInput.value.trim();
+  const endpoint = registry ? registry.endpoint(inputEndpoint,provider) : inputEndpoint;
   const model = modelInput.value.trim();
   const typedApiKey = apiKeyInput.value.trim();
   const capability=catalog?.resolve({provider:providerInput.value,endpoint,model});
   const disableThinking = capability?.thinking==='required'?false:disableThinkingInput.checked;
-  const reasoningEffort=capability?.efforts?.includes(effortInput.value)&&!(capability.thinking==='toggle'&&disableThinking)?effortInput.value:'';
-  const provider=providerInput.value||'custom';
-  const keyStorageMode = getStorageMode();
+  const reasoningEffort=provider==='openrouter'||provider==='ollama'?effortInput.value:capability?.efforts?.includes(effortInput.value)&&!(capability.thinking==='toggle'&&disableThinking)?effortInput.value:'';
+  let keyStorageMode = getStorageMode();
   const url = new URL(endpoint);
   const isAllowedHttp = url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
-  if (url.protocol !== 'https:' && !isAllowedHttp) throw new Error(t('remoteHttps'));
+  if (!registry && url.protocol !== 'https:' && !isAllowedHttp) throw new Error(t('remoteHttps'));
   if (!model) throw new Error(t('needModel'));
 
   const existing = activeProfile() || {};
   let sameOrigin=false;try{sameOrigin=new URL(existing.endpoint).origin===url.origin;}catch{}
   const originChanged=!sameOrigin;
-  if(originChanged&&!typedApiKey&&(sessionKeys[activeProfileId]||existing.localApiKey||existing.encryptedApiKey))throw new Error('接口域名已改变，请输入新服务商的 API Key。 / Endpoint origin changed; enter a new API Key.');
+  const optionalKey=registry ? registry.keyOptional(url,provider) : isAllowedHttp;
+  if(optionalKey && originChanged && !typedApiKey)keyStorageMode='session';
+  if(!optionalKey&&originChanged&&!typedApiKey&&(sessionKeys[activeProfileId]||existing.localApiKey||existing.encryptedApiKey))throw new Error('接口域名已改变，请输入新服务商的 API Key。 / Endpoint origin changed; enter a new API Key.');
   const apiKey = typedApiKey || (sameOrigin?(sessionKeys[activeProfileId] || existing.localApiKey || ''):'');
   const hasEncrypted = sameOrigin&&Boolean(existing.encryptedApiKey);
-  if (!apiKey && !isAllowedHttp && (requireUsableKey || keyStorageMode !== 'encrypted' || !hasEncrypted)) throw new Error(t('needKey'));
+  if (!apiKey && !optionalKey && (requireUsableKey || keyStorageMode !== 'encrypted' || !hasEncrypted)) throw new Error(t('needKey'));
 
   let passphrase = '';
   let shouldEncrypt = false;
@@ -376,7 +488,16 @@ async function readFormForSave(requireUsableKey = false) {
       if (passphrase !== confirm) throw new Error(t('passMismatch'));
     }
   }
-  return { endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, originChanged };
+  const routerMode=provider==='openrouter' ? element('routerMode').value : 'balanced';
+  const routerAdvanced=provider==='openrouter' ? registry.advancedOptions(JSON.parse(element('routerAdvanced').value.trim()||'{}')) : {};
+  const previous=activeProfile();
+  const retainedProvider=previous?.routerProviderModel===model && previous.routerProvider===routerSelection;
+  if(routerMode==='only' && !(routerModel===model && routerOptions.some(item=>item.id===routerSelection)) &&
+     !(retainedProvider && !verifiedRouterProviders && !requireUsableKey))throw Error(t('chooseProvider'));
+  const providerStream=registry && (provider==='openrouter'||registry.local(provider)) ? element('newProviderStream').checked : previous?.providerStream;
+  const routerParameters=routerMode==='only' ? routerOptions.find(item=>item.id===routerSelection)?.parameters ??
+    (retainedProvider ? routerProviderParameters : null) : null;
+  return { routerMode, routerAdvanced, routerProviderParameters:routerParameters, routerProvider:routerMode==='only'?routerSelection:'', routerProviderModel:routerMode==='only'?model:'',providerStream,endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, originChanged };
 }
 
 async function requestEndpointPermission(endpoint) {
@@ -401,6 +522,8 @@ async function saveConfig(config) {
     disableThinking: config.disableThinking,
     provider: config.provider,
     reasoningEffort: config.reasoningEffort,
+    routerMode:config.routerMode, routerAdvanced:config.routerAdvanced, routerProviderParameters:config.routerProviderParameters, routerProvider:config.routerProvider, routerProviderModel:config.routerProviderModel,
+    providerStream:config.providerStream,
   }, activeProfileId, name);
 
   if(config.originChanged){delete sessionKeys[activeProfileId];next.localApiKey='';next.encryptedApiKey=null;}
@@ -470,3 +593,225 @@ function applyLocale() {
   updateKeyPlaceholder();
 }
 function showError(error) { status.textContent = error?.message || String(error); }
+
+function directoryConfig(profile=activeProfile(),current=true) {
+  const provider=current ? providerInput.value : registry.idOf(profile);
+  const endpoint=current ? endpointInput.value.trim() : profile.endpoint;
+  const model=current ? modelInput.value.trim() : profile.model;
+  const url=new URL(registry.endpoint(endpoint,provider));
+  const sameOrigin=profile?.endpoint && new URL(profile.endpoint).origin===url.origin;
+  const apiKey=(current ? apiKeyInput.value.trim() : '') ||
+    (sameOrigin ? sessionKeys[profile.id] || profile.localApiKey || '' : '');
+  return {endpoint:url.href,provider,model,apiKey,profileId:profile?.id || ''};
+}
+function selectedModelMetadata() {
+  const id=modelInput.value.trim();
+  const reference=providerReference?.models.find(model=>model.id===id);
+  const supplemental=publicModelMetadata.find(model=>model.id===id);
+  const discovered=(ollamaDetail?.id===id ? ollamaDetail : null) || directoryEntry?.models.find(model=>model.id===id);
+  if(discovered)return {...supplemental,...reference,...Object.fromEntries(Object.entries(discovered).filter(([,value])=>value!=null)),
+    contextReference:discovered.contextLength==null && reference?.contextLength==null && supplemental?.contextLength!=null};
+  if(reference)return reference;
+  if(supplemental)return supplemental;
+  const bundled=registry?.get(providerInput.value).models.find(model=>model.id===id);
+  return bundled ? {...bundled,source:'bundled-reference'} : null;
+}
+const directoryThinkingLabels={supported:'reasoningSupported',toggle:'reasoningSupported',required:'reasoningRequired',none:'reasoningUnavailable'};
+function renderDirectoryDetails() {
+  const view=element('directoryModelDetails');
+  if(!view)return;
+  const model=selectedModelMetadata();
+  view.textContent=model ? [
+    model.developer,
+    model.inferenceProvider && `${t('routerProvider')}: ${model.inferenceProvider}`,
+    model.source==='remote-reference' && t('remoteReference'),
+    model.source==='models.dev' && t('modelsDevReference'),
+    model.source==='bundled-reference' && t('referenceSource'),
+    `${t('contextLength')}: ${model.contextLength ?? t('unknown')}${model.contextReference?' (Models.dev)':''}`,
+    model.pricing && `${t('price')}${model.channel==='openrouter'?' (USD)':''}: ${JSON.stringify(model.pricing)}`,
+    model.parameters && `${t('supportedParameters')}: ${model.parameters.join(', ')}`,
+    directoryThinkingLabels[model.thinking] && `${t('reasoningCapability')}: ${t(directoryThinkingLabels[model.thinking])}`,
+    (model.capabilities || model.architecture) && `${t('capabilities')}: ${JSON.stringify(model.capabilities || model.architecture)}`
+  ].filter(Boolean).join(' · ') : '';
+}
+function syncProviderControls() {
+  const id=providerInput.value;
+  element('routerSettings').hidden=id!=='openrouter';
+  element('routerProvidersRow').hidden=element('routerMode').value!=='only';
+  element('localSettings').hidden=!registry.local(id);
+  element('ollamaModelDetails').hidden=id!=='ollama';
+  element('newProviderStreamRow').hidden=id!=='openrouter'&&!registry.local(id);
+  endpointInput.readOnly=id==='openrouter';
+}
+function directorySummary(entry) {
+  const source={ 'service-api':'serviceSource','public-api':'publicSource','bundled-reference':'referenceSource' }[entry.source];
+  return `${t(source)} · ${entry.models.length} (+${entry.added}) · ${new Date(entry.updatedAt).toLocaleString(locale)}`;
+}
+function renderDirectoryStatuses() {
+  const rows=[...refreshStatuses.values()];
+  if(!rows.length && directoryEntry)rows.push(directorySummary(directoryEntry));
+  element('directoryStatus').textContent=rows.join('\n');
+}
+async function loadSelectedDirectory() {
+  const revision=++directoryRevision;
+  directoryEntry=null;
+  ollamaDetail=null;
+  providerReference=null;
+  publicModelMetadata=[];
+  let config;
+  try {config=directoryConfig();} catch {}
+  if(!config){refreshModelChoices();renderDirectoryStatuses();return;}
+  const [entry,detail,reference,publicMetadata]=await Promise.all([
+    directory.load(config),config.provider==='ollama' ? directory.loadDetail(config) : null,
+    globalThis.KRA_PROVIDER_CONFIG.channel(config.provider),
+    globalThis.KRA_PROVIDER_CONFIG.publicMetadata(config.provider)
+  ]);
+  if(revision!==directoryRevision)return;
+  directoryEntry=entry;
+  ollamaDetail=detail;
+  providerReference=reference;
+  publicModelMetadata=publicMetadata;
+  refreshModelChoices();
+  refreshThinkingControls();
+  renderDirectoryStatuses();
+}
+async function refreshDirectory(config) {
+  const key=JSON.stringify([config.provider,config.endpoint,config.profileId]);
+  const label=registry.get(config.provider).label+(config.profileName ? ' / '+config.profileName : '');
+  refreshStatuses.set(key,label+' · '+t('loadingDirectory'));
+  renderDirectoryStatuses();
+  try {
+    await requestEndpointPermission(config.endpoint);
+    const result=await directory.discover(config);
+    refreshStatuses.set(key,label+' · '+directorySummary(result));
+  } catch(error) {
+    const previous=await directory.load(config);
+    refreshStatuses.set(key,label+' · '+t('directoryFailure')+': '+error.message+(previous ? ' · '+directorySummary(previous) : ''));
+  }
+  renderDirectoryStatuses();
+}
+async function refreshDirectories(all) {
+  const configs=new Map();
+  const add=config=>configs.set(JSON.stringify([config.provider,config.endpoint,config.profileId]),config);
+  try {add(directoryConfig());} catch(error) {if(!all)throw error;}
+  if(all){
+    const configured=new Set([...configs.values()].map(config=>config.provider));
+    for(const profile of Object.values(profiles)){
+      if(!profile.endpoint)continue;
+      try {
+        add({...directoryConfig(profile,false),profileName:profile.name});
+        configured.add(registry.idOf(profile));
+      } catch(error) {refreshStatuses.set(profile.id,profile.name+' · '+t('directoryFailure')+': '+error.message);}
+    }
+    for(const provider of registry.providers){
+      if(configured.has(provider.id))continue;
+      if(!provider.endpoint){
+        refreshStatuses.set(provider.id,provider.label+' · '+t('noEndpoint'));
+        continue;
+      }
+      add({provider:provider.id,endpoint:registry.endpoint(provider.endpoint,provider.id),profileId:'',apiKey:''});
+    }
+  }
+  const buttons=[element('refreshAllModels'),element('refreshProviderModels')];
+  buttons.forEach(button=>{button.disabled=true;});
+  try {
+    await Promise.all([...configs.values()].map(refreshDirectory));
+    await loadSelectedDirectory();
+  } finally {buttons.forEach(button=>{button.disabled=false;});}
+}
+function resetRouterProviders(selection='') {
+  routerRevision++;
+  routerOptions=[];
+  routerModel='';
+  routerSelection=selection;
+  if(!selection)routerProviderParameters=null;
+  verifiedRouterProviders=false;
+  renderRouterProviders();
+}
+function renderRouterProviders() {
+  const select=element('routerProvider');
+  const search=element('routerSearch').value.trim().toLowerCase();
+  const options=routerOptions.filter(item=>item.id===routerSelection || (item.label+' '+item.id).toLowerCase().includes(search));
+  const retained=routerSelection && !verifiedRouterProviders && !options.some(item=>item.id===routerSelection);
+  select.replaceChildren(new Option(t('chooseProvider'),''),
+    ...(retained ? [new Option(routerSelection,routerSelection)] : []),
+    ...options.map(item=>new Option(item.label+' · '+item.id,item.id)));
+  select.value=retained || options.some(item=>item.id===routerSelection) ? routerSelection : '';
+}
+async function refreshSelectedRouter(throwOnFailure=false) {
+  if(providerInput.value!=='openrouter'||element('routerMode').value!=='only')return;
+  const model=modelInput.value.trim();
+  const revision=++routerRevision;
+  const view=element('routerStatus');
+  if(!model){view.textContent=t('needModel');return;}
+  view.textContent=t('loadingDirectory');
+  try {
+    const config=directoryConfig();
+    await requestEndpointPermission(config.endpoint);
+    const options=await directory.inferenceProviders(model,config.apiKey);
+    if(revision!==routerRevision || model!==modelInput.value.trim())return;
+    routerOptions=options;
+    routerModel=model;
+    verifiedRouterProviders=true;
+    if(!options.some(item=>item.id===routerSelection))routerSelection='';
+    renderRouterProviders();
+    view.textContent=`${options.length} · ${new Date().toLocaleTimeString(locale)}`;
+  } catch(error) {
+    if(revision!==routerRevision)return;
+    view.textContent=t('directoryFailure')+': '+error.message;
+    if(throwOnFailure)throw error;
+  }
+}
+function modelChanged() {
+  const selection=routerModel===modelInput.value.trim() ? routerSelection : '';
+  resetRouterProviders(selection);
+  refreshSelectedRouter();
+  if(providerInput.value==='ollama')loadSelectedDirectory().catch(showError);
+}
+
+if(registry){
+  let updatingReference=false;
+  const changeReference=async update=>{
+    if(updatingReference)return;
+    updatingReference=true;
+    try{
+      const config=globalThis.KRA_PROVIDER_CONFIG;
+      const version=update ? await config.update(element('providerReferenceUrl').value.trim()) : await config.rollback();
+      status.textContent=t('providerReference')+' · v'+version;
+      await loadSelectedDirectory();
+    }catch(error){showError(error);}
+    finally{updatingReference=false;}
+  };
+  element('updateProviderReference').addEventListener('click',()=>changeReference(true));
+  element('rollbackProviderReference').addEventListener('click',()=>changeReference(false));
+  element('refreshModelsDev').addEventListener('click',async event=>{
+    const button=event.currentTarget;
+    button.disabled=true;
+    status.textContent=t('loadingDirectory');
+    try{
+      const count=await globalThis.KRA_PROVIDER_CONFIG.refreshPublicCatalog();
+      status.textContent=`Models.dev · ${count} · ${new Date().toLocaleString(locale)}`;
+      await loadSelectedDirectory();
+    }catch(error){showError(error);}
+    finally{button.disabled=false;}
+  });
+  element('refreshProviderModels').addEventListener('click',()=>refreshDirectories(false).catch(showError));
+  element('refreshAllModels').addEventListener('click',()=>{refreshStatuses.clear();refreshDirectories(true).catch(showError);});
+  element('modelSearch').addEventListener('input',()=>refreshModelChoices());
+  element('routerMode').addEventListener('change',()=>{syncProviderControls();refreshSelectedRouter();});
+  element('routerProvider').addEventListener('change',event=>{routerSelection=event.target.value;});
+  element('routerSearch').addEventListener('input',renderRouterProviders);
+  element('refreshRouterProviders').addEventListener('click',()=>refreshSelectedRouter());
+  element('ollamaModelDetails').addEventListener('click',async()=>{
+    try{
+      const config=directoryConfig();
+      if(!config.model)throw Error(t('needModel'));
+      await requestEndpointPermission(config.endpoint);
+      const detail=await directory.refreshDetail(config);
+      if(providerInput.value!=='ollama'||modelInput.value.trim()!==config.model||activeProfileId!==config.profileId||directoryConfig().endpoint!==config.endpoint)return;
+      ollamaDetail=detail;
+      refreshThinkingControls();
+      renderDirectoryDetails();
+    }catch(error){showError(error);}
+  });
+}
