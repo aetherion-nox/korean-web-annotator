@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runSentencePipeline} from '../annotation-pipeline.js';
+import {createManualReviewSession} from '../manual-review.js';
 import {paragraphReviewKey,snapshotParagraphReview,restoreParagraphReview} from '../review-cache.js';
 import {AnnotationCache,canonicalStoredCacheKey,stableCacheStringify} from '../session-cache.js';
 const identity={engine_version:'fixture',dictionary_fingerprint:'fixture'};
@@ -58,8 +59,8 @@ test('pipeline does not resubmit stable paragraph after a remote recommendation 
     return {t:t.target_id,c:choice};
    })};
   }};
- const run=async last=>runSentencePipeline({operationId:'cache-test',modes:{hanja:true},sentences:['前','과학','後',last].map((text,i)=>({id:'s'+i,text}))},()=>{},{
-  enabled:true,cache,status:async()=>identity,analyze:async text=>({...identity,annotations:[],targets:text==='과학'?[word]:[],stats:{}}),modelConfig:async()=>config
+ const run=async (last,reviewConfig=config)=>runSentencePipeline({operationId:'cache-test',modes:{hanja:true},sentences:['前','과학','後',last].map((text,i)=>({id:'s'+i,text}))},()=>{},{
+  enabled:true,cache,status:async()=>identity,analyze:async text=>({...identity,annotations:[],targets:text==='과학'?[word]:[],stats:{}}),modelConfig:async()=>reviewConfig
  });
  const first=await run('추천 A');assert.equal(first.model_accepted,1);assert.equal(first.model_conversion_choices,1);assert.equal(requests.length,1);
  const second=await run('추천 B');assert.equal(requests.length,1);assert.equal(second.modelCacheHits,1);assert.equal(second.model_conversion_choices,1);
@@ -67,4 +68,54 @@ test('pipeline does not resubmit stable paragraph after a remote recommendation 
  const stored=Array.from(cache,([key,value])=>[key,value?.targets?{...value,targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
  cache=new AnnotationCache(JSON.parse(stableCacheStringify(stored)).map(([key,value])=>[canonicalStoredCacheKey(key),value]));
  const restarted=await run('추천 B');assert.equal(requests.length,1);assert.equal(restarted.localCacheHits,4);assert.equal(restarted.modelCacheHits,1);assert.equal(restarted.model_conversion_choices,1);
+ const manual=await run('추천 B',{manualReview:true,provider:'manual',model:'manual-chat',
+  endpoint:'manual://chat',reviewPosFilter:false,
+  request:async()=>{assert.fail('API result should satisfy manual review');}});
+ assert.equal(manual.modelCacheHits,1);
+ const otherApi=await run('추천 B',{...config,provider:'other',model:'other',
+  endpoint:'https://other.test',disableThinking:true});
+ assert.equal(otherApi.modelCacheHits,1);
+ assert.equal(requests.length,1);
+});
+test('validated manual answers survive a restart and can satisfy API or manual review',async()=>{
+ let cache=new AnnotationCache();
+ const run=async({forceRegenerate=false,expectedRequests=1,api=false}={})=>{
+  const operationId='manual-cache-test',events=[];
+  const signal=new AbortController().signal;
+  const session=createManualReviewSession({operationId,signal,post:event=>{
+   events.push(event);
+   if(event.type!=='MANUAL_REVIEW_REQUEST')return;
+   const results=event.bindings.map(({target_id})=>{
+    const pool=Object.entries(event.choiceIndex[target_id]).find(([,choices])=>choices.includes('c0'));
+    assert.ok(pool,'manual prompt must expose the Hanja conversion');
+    return {t:target_id,c:pool[0]};
+   });
+   queueMicrotask(()=>session.submit({operationId,requestId:event.requestId,text:JSON.stringify({
+    batch_id:event.requestId,results
+   })}));
+  }});
+  const stats=await runSentencePipeline({
+   operationId,modes:{hanja:true},sentences:[{id:'s',text:'과학'}],forceRegenerate
+  },event=>events.push(event),{
+   signal,enabled:true,cache,status:async()=>identity,
+   analyze:async()=>({...identity,annotations:[],targets:[word],stats:{}}),
+   modelConfig:async()=>api?{
+    provider:'fixture',model:'fixture',endpoint:'https://example.test',reviewPosFilter:false,
+    request:async()=>{assert.fail('Manual result should satisfy API review');}
+   }:{
+    provider:'manual',model:'manual-chat',endpoint:'manual://chat',
+    manualReview:true,request:session.request,reviewPosFilter:false
+   }
+  });
+  for(const type of ['MANUAL_REVIEW_PLAN','MANUAL_REVIEW_REQUEST'])
+   assert.equal(events.filter(event=>event.type===type).length,expectedRequests);
+  assert.equal(stats.model_conversion_choices,1);
+  assert.equal(stats.modelCacheHits,1-expectedRequests);
+  assert.ok(events.some(event=>event.source==='model'&&event.results[0].annotations[0]?.replacement==='科學'));
+ };
+ await run();
+ cache=new AnnotationCache(JSON.parse(stableCacheStringify([...cache])));
+ await run({expectedRequests:0});
+ await run({api:true,expectedRequests:0});
+ await run({forceRegenerate:true});
 });

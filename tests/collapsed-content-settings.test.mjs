@@ -113,3 +113,23 @@ test('ruby is written into a preloaded panel without expanding it',()=>{
  assert.equal(panel.querySelector('rt').textContent,'학교');
  dom.window.close();
 });
+test('a closed navigation menu is scanned and annotated without opening it',()=>{
+ const {dom,c,all}=setup('<header><button aria-expanded="false" aria-haspopup="true" aria-controls="menu">Open</button>'+
+  '<aside id="menu" style="display:none"><nav><a href="/economy">경제</a>'+
+  '<span hidden>숨겨진 템플릿</span></nav></aside>'+
+  '<aside style="display:none"><nav>숨겨진 광고</nav></aside></header>');
+ assert.deepEqual(all(),['경제']);
+ assert.equal(c.probeKoreanFrame().eligible,true);
+ Object.assign(c,{ownDomChanges:new WeakSet(),rememberRecovery(){}});
+ vm.runInContext(code.slice(code.indexOf('  function loanwordDisplay('),
+  code.indexOf('  // Cheap, read-only child-frame preflight.')),c);
+ const entries=c.collectTextNodes();
+ const [entry]=entries.values();
+ entry.annotations=[{start:0,end:2,surface:'경제',replacement:'經濟',type:'hanja'}];
+ assert.equal(c.insertConversions(entries,[]),1);
+ const doc=dom.window.document;
+ assert.equal(doc.querySelector('#menu rt').textContent,'경제');
+ assert.equal(doc.querySelector('#menu').style.display,'none');
+ assert.equal(doc.querySelector('button').getAttribute('aria-expanded'),'false');
+ dom.window.close();
+});

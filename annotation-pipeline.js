@@ -309,6 +309,13 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  const progress={modelCompleted:0,modelTotal:0};
  const reportProgress=()=>emit('MODEL_PROGRESS',{...progress,modelPercent:progress.modelTotal?Math.round(100*progress.modelCompleted/progress.modelTotal):100});
  const initialConfig=config;
+ const fingerprint=config&&JSON.stringify([
+  config.hanjaReadingCheck===true,
+  smartSegmentation?'id-review-v21-single-pass-segmentation-repair':
+   experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',
+  config.reviewPosFilter!==false,
+  ...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])
+ ]);
  let mixedContinuation=false;
  for(const [index,item] of work.entries()){
   const {analysis}=item;
@@ -323,9 +330,8 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
    analysis.targets;
   item.result={accepted:[],unresolved:item.reviewableTargets};
   if(config && item.reviewableTargets.length){
-   const fingerprint=JSON.stringify([config.hanjaReadingCheck===true,smartSegmentation?'id-review-v21-single-pass-segmentation-repair':experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',config.endpoint,config.model,config.provider,config.reviewPosFilter!==false,config.retryInvalidDictionaryChoices!==false,config.discardInvalidReviewResults===true,!!config.disableThinking,config.reasoningEffort,...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])]);
    item.reviewKey=paragraphReviewKey(work,index,fingerprint,message.restrictToSelection===true);
-   const cached=!bypassCache&&!config.manualReview&&cache.get(item.reviewKey);
+   const cached=!bypassCache&&cache.get(item.reviewKey);
    const restored=cached&&restoreParagraphReview(item,cached,config,message.restrictToSelection===true);
    if(restored){
     item.result=restored.result;item.repairs=restored.repairs;item.cacheRestored=true;
@@ -389,7 +395,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const manualPrepared=config.manualReview?prepareManualRequest({...config,manualBindings,batchNumber:batchIndex+1,batchTotal:batches.length,context:batch.context,batchBudget:batch.budget},targets):undefined;
   return {owners,targets,repairScopes,manualBindings,manualPrepared};
  });
- if(config?.manualReview)emit('MANUAL_REVIEW_PLAN',{batches:preparedBatches.map(b=>b.manualPrepared)});
+ if(config?.manualReview&&preparedBatches.length)emit('MANUAL_REVIEW_PLAN',{batches:preparedBatches.map(b=>b.manualPrepared)});
  // User-controlled retry state remains alive for this original DOM task.
  const rejectedChoiceHistory=new Map();
  const rejectedChoiceFeedback=new Map();
@@ -694,10 +700,10 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
  if(stats.model_unanswered)
   diagnostic({stage:'incomplete',level:'warning',
    message:`模型审核仍有 ${stats.model_unanswered} 个目标没有有效答案；本轮只能算部分完成，可继续恢复与重试。`});
- // Only cache fully verified results from the original API configuration.
+ // Only cache fully verified results from the original review configuration.
  // Forced nulls, mixed providers, interrupted smart scans and rejected repairs
  // must never become durable, seemingly complete answers.
- if(initialConfig&&!initialConfig.manualReview&&!mixedContinuation){
+ if(initialConfig&&!mixedContinuation){
   for(const item of work){
    if(!item.reviewKey||item.cacheRestored)continue;
    const snapshot=snapshotParagraphReview(item,smartSegmentation);

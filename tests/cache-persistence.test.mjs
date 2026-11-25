@@ -52,3 +52,16 @@ test('legacy paragraph cache key matches canonical key regardless of field order
  const reordered=['paragraph-review-v1','local','model',[{a:{b:3,y:2},z:1}]];
  assert.equal(canonicalStoredCacheKey(JSON.stringify(old)),stableCacheStringify(reordered));
 });
+test('stored API and manual keys migrate to the same validated-review key',()=>{
+ const rule='id-review-v20-literal-origin-choice';
+ const key=fingerprint=>stableCacheStringify(['paragraph-review-v1','local',JSON.stringify(fingerprint),[]]);
+ const shared=key([true,rule,false,true,false]);
+ for(const [endpoint,model,provider] of [
+  ['https://example.test','model','api'],['manual://chat','manual-chat','manual']
+ ]){
+  assert.equal(canonicalStoredCacheKey(key([
+   true,rule,endpoint,model,provider,false,true,false,false,null,true,false
+  ])),shared);
+ }
+ assert.equal(canonicalStoredCacheKey(shared),shared);
+});

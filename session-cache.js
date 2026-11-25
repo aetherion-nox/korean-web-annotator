@@ -17,7 +17,16 @@ export function stableCacheStringify(value){
 }
 export function canonicalStoredCacheKey(key){
  if(typeof key!=='string'||!key.startsWith('["paragraph-review-v1",'))return key;
- try{return stableCacheStringify(JSON.parse(key));}catch{return key;}
+ try{
+  const parts=JSON.parse(key);
+  const fingerprint=typeof parts[2]==='string'&&parts[2].startsWith('[')?JSON.parse(parts[2]):null;
+  // Older paragraph keys included the request route and retry preferences.
+  if(Array.isArray(fingerprint)&&[10,12].includes(fingerprint.length)&&
+     typeof fingerprint[1]==='string'&&fingerprint[1].startsWith('id-review-v')){
+   parts[2]=JSON.stringify([fingerprint[0],fingerprint[1],fingerprint[5],...fingerprint.slice(10)]);
+  }
+  return stableCacheStringify(parts);
+ }catch{return key;}
 }
 export const CACHE_LIMIT_PER_KIND=1000;
 function kind(key){

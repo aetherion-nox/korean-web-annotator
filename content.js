@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.11-stable-cache-persistence';
+  const VERSION = '1.1.12-folded-panels-manual-cache';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -780,11 +780,17 @@
        /^content-collapsible-block-\d+$/u.test(element.id));
   }
   // Preloaded folded reading panels can be scanned while they remain closed.
-  function collapsedArticlePanels(roots) {
+  function collapsedTextPanels(roots) {
     const isArticlePanel=panel=>panel?.matches('section,article,div,[role="region"],[role="group"],[role="tabpanel"]')&&
       panel.closest('main,article,[role="main"],[itemprop~="articleBody"]')&&
       !panel.closest('nav,aside,header,footer,dialog,[role="navigation"],[role="complementary"],'+
         '[role="dialog"],[role="alertdialog"],[role="menu"],[role="button"]');
+    const isControlledMenu=(control,panel)=>
+      control.matches('button,[role="button"],[role="menuitem"]')&&
+      control.matches('[aria-haspopup="true"],[aria-haspopup="menu"]')&&
+      (panel?.matches('nav,[role="navigation"],[role="menu"]')||
+       panel?.querySelector('nav,[role="navigation"],[role="menu"]'))&&
+      !panel.closest('dialog,[role="dialog"],[role="alertdialog"]');
     const panels=new Set();
     for(const root of roots){
       for(const panel of root.querySelectorAll('[data-state="closed"],[data-state="collapsed"]')){
@@ -796,7 +802,8 @@
         for(const id of control.getAttribute('aria-controls').split(/\s+/)){
           if(!id)continue;
           const panel=scope.getElementById(id);
-          if(isArticlePanel(panel)&&panel!==control&&!control.contains(panel))panels.add(panel);
+          if((isArticlePanel(panel)||isControlledMenu(control,panel))&&
+             panel!==control&&!control.contains(panel))panels.add(panel);
         }
       }
     }
@@ -804,7 +811,7 @@
   }
 
   function createTextVisibilityFilter(roots) {
-    const collapsedPanels=collapsedArticlePanels(roots);
+    const collapsedPanels=collapsedTextPanels(roots);
     const cache=new WeakMap();
     const visible={reason:'',foldedVisibility:''};
     const hidden={reason:'hidden',foldedVisibility:''};
