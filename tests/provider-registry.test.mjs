@@ -255,3 +255,45 @@ test('Models.dev is separate, keyless metadata and does not change discovered ac
   const config={provider:'openai',endpoint:registry.get('openai').endpoint,apiKey:'test'};
   assert.deepEqual((await directory.discover(config)).models.map(model=>model.id),['inside']);
 });
+
+test('local reasoning sends only the selected server format',async()=>{
+  const messages=[{role:'system',content:'Review'},{role:'user',content:'테스트'}];
+  for(const [provider,mode,value,fields] of [
+    ['lmstudio','native','high',{reasoning:'high',store:false}],
+    ['llamacpp','template','off',{chat_template_kwargs:{enable_thinking:false}}],
+    ['vllm','effort','medium',{reasoning_effort:'medium'}],
+    ['localai','metadata','low',{metadata:{enable_thinking:'true',reasoning_effort:'low'}}],
+    ['local','template','on',{chat_template_kwargs:{enable_thinking:true}}],
+    ['custom','effort','off',{reasoning_effort:'none'}]
+  ]){
+    const config={provider,endpoint:registry.get(provider).endpoint||'https://example.test/v1/chat/completions',model:'example'};
+    const unconfigured=prepareRequest(config,messages,1000);
+    assert.equal(unconfigured.protocol,'chat');
+    for(const key of Object.keys(fields))assert.equal(unconfigured.body[key],undefined);
+    const configured=prepareRequest({...config,localReasoningMode:mode,localReasoningValue:value},messages,1000);
+    for(const [key,expected] of Object.entries(fields))assert.deepEqual(configured.body[key],expected);
+    if(provider==='lmstudio'){
+      assert.equal(configured.protocol,'lmstudio');
+      assert.equal(new URL(configured.endpoint).pathname,'/api/v1/chat');
+      assert.equal(configured.body.input,'테스트');
+      const events=[{type:'reasoning.delta',content:'ignore'},{type:'message.delta',content:'answer'},{type:'chat.end'}];
+      const response=new Response(events.map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''),
+        {headers:{'content-type':'text/event-stream'}});
+      assert.equal(await readModelContent(response,{protocol:configured.protocol}),'answer');
+    }
+  }
+});
+
+test('reasoning rules match dated snapshots without guessing other variants',()=>{
+  const data=reference.validate({schemaVersion:1,version:1,channels:[{id:'qwen',
+    models:[{id:'example',thinking:'toggle',efforts:['low','high']}],
+    families:[{base:'example',reference:'example'}]
+  }]});
+  const rule=reference.modelRule(data.channels[0],'example-2026-11-25');
+  assert.deepEqual(rule.efforts,['low','high']);
+  assert.equal(reference.modelRule(data.channels[0],'example-reasoning'),null);
+  assert.equal(reference.mergeModelRule(rule,{thinking:'supported'}).thinking,'toggle');
+  assert.equal(reference.mergeModelRule(rule,{thinking:'none'}).thinking,'none');
+  assert.deepEqual(globalThis.KRA_MODEL_CATALOG.resolve({provider:'qwen',model:'qwen3.8-max-1125'}).efforts,
+    ['low','medium','xhigh']);
+});

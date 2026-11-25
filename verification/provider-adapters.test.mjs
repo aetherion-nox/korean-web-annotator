@@ -41,7 +41,7 @@ test('Claude Messages uses native authentication and parses only text blocks',as
 });
 test('thinking controls hide unsupported toggles and expose supported efforts',()=>{
  const elements=Object.fromEntries(['#disableThinkingRow','#reasoningEffortRow','#modelCapabilityNote','#modelDocs'].map(id=>[id,{removeAttribute(){}}]));
- const context={catalog:globalThis.KRA_MODEL_CATALOG,providerInput:{value:'openai'},endpointInput:{value:'https://api.openai.com/v1/responses'},modelInput:{value:'gpt-6-astra'},disableThinkingInput:{checked:true},effortInput:{value:'',replaceChildren(...options){this.options=options}},uiLocale:{value:'en'},document:{querySelector:id=>elements[id]},Option:function(text,value){this.text=text;this.value=value},t:key=>key};
+ const context={selectedModelMetadata:()=>null,catalog:globalThis.KRA_MODEL_CATALOG,providerInput:{value:'openai'},endpointInput:{value:'https://api.openai.com/v1/responses'},modelInput:{value:'gpt-6-astra'},disableThinkingInput:{checked:true},effortInput:{value:'',replaceChildren(...options){this.options=options}},uiLocale:{value:'en'},document:{querySelector:id=>elements[id]},Option:function(text,value){this.text=text;this.value=value},t:key=>key};
  vm.createContext(context);
  const source=fs.readFileSync(new URL('../options.js',import.meta.url),'utf8');
  vm.runInContext(source.slice(source.indexOf('const thinkingOffNotes='),source.indexOf("providerInput.addEventListener('change'")),context);

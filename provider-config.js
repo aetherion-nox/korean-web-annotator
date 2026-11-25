@@ -1,6 +1,7 @@
 (() => {
   const registry = globalThis.KRA_PROVIDER_REGISTRY;
   const storeKey = 'providerReferenceConfigV1';
+  const urlKey='providerReferenceUrlV1';
   const source = 'remote-reference';
   const allowedEfforts = ['none','minimal','low','medium','high','xhigh','max'];
   const mappings = ['openrouter-reasoning','openrouter-effort','ollama-toggle','ollama-level'];
@@ -25,7 +26,7 @@
     if(input.schemaVersion!==1 || !Number.isSafeInteger(input.version) || input.version<1)throw Error('Unsupported configuration version.');
     if(!Array.isArray(input.channels)||input.channels.length>registry.providers.length)throw Error('Invalid channels.');
     const channels=input.channels.map(channel=>{
-      object(channel,['id','defaults','models']);
+      object(channel,['id','defaults','models','families']);
       if(!registry.providers.some(provider=>provider.id===channel.id))throw Error('Unknown channel.');
       const defaults=channel.defaults ?? {};
       object(defaults,['effort','stream']);
@@ -40,14 +41,24 @@
         if(model.contextLength!==undefined&&(!Number.isSafeInteger(model.contextLength)||model.contextLength<1))throw Error('Invalid context length.');
         if(model.parameters!==undefined)list(model.parameters);
         if(model.efforts!==undefined)list(model.efforts,allowedEfforts);
-        if(model.thinking!==undefined&&!['none','supported','required'].includes(model.thinking))throw Error('Invalid thinking capability.');
+        if(model.thinking!==undefined&&!['none','supported','toggle','required'].includes(model.thinking))throw Error('Invalid thinking capability.');
         if(model.mapping!==undefined&&(!mappings.includes(model.mapping)||
             !model.mapping.startsWith(channel.id+'-')))throw Error('Invalid adapter mapping.');
         if(model.stream!==undefined&&typeof model.stream!=='boolean')throw Error('Invalid streaming capability.');
         return {...model,label:model.label||model.id,channel:channel.id,source};
       });
       if(new Set(models.map(model=>model.id)).size!==models.length)throw Error('Duplicate model ID.');
-      return {id:channel.id,defaults,models};
+      const families=channel.families ?? [];
+      if(!Array.isArray(families)||families.length>100)throw Error('Invalid model families.');
+      const seen=new Set();
+      for(const family of families){
+        object(family,['base','reference']);
+        string(family.base,256);
+        if(seen.has(family.base)||!models.some(model=>model.id===family.reference && model.thinking && Array.isArray(model.efforts)))
+          throw Error('Invalid model family reference.');
+        seen.add(family.base);
+      }
+      return {id:channel.id,defaults,models,families};
     });
     if(new Set(channels.map(channel=>channel.id)).size!==channels.length)throw Error('Duplicate channel.');
     return {schemaVersion:1,version:input.version,channels};
@@ -75,11 +86,12 @@
     }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
     return JSON.parse(text);
   }
-  async function update(value) {
+  async function update(value,refresh=false) {
     const data=validate(await download(value,1_000_000));
     const state=await read();
+    if(refresh && data.version===state.current?.version)return data.version;
     if(data.version<=(state.current?.version || 0))throw Error('Configuration version is not newer.');
-    await chrome.storage.local.set({[storeKey]:{current:{...data,updatedAt:new Date().toISOString()},previous:state.current || null}});
+    await chrome.storage.local.set({[urlKey]:value,[storeKey]:{current:{...data,updatedAt:new Date().toISOString()},previous:state.current || null}});
     return data.version;
   }
   async function rollback() {
@@ -87,6 +99,27 @@
     if(!current)throw Error('No reference configuration to roll back.');
     await chrome.storage.local.set({[storeKey]:{current:previous || null,previous:null}});
     return previous?.version || 0;
+  }
+  async function sourceUrl(){
+    return (await chrome.storage.local.get(urlKey))[urlKey] || '';
+  }
+  async function refreshRules(){
+    const url=await sourceUrl();
+    return url ? update(url,true) : null;
+  }
+  function modelRule(channel,id){
+    const exact=channel?.models.find(model=>model.id===id);
+    if(exact)return exact;
+    const family=channel?.families?.find(({base})=>
+      id===base || id.startsWith(base+'-') && /^(?:\d{4}|\d{8}|\d{4}-\d{2}-\d{2})$/.test(id.slice(base.length+1)));
+    const model=family && channel.models.find(item=>item.id===family.reference);
+    return model ? {...model,id} : null;
+  }
+  function mergeModelRule(rule,official){
+    if(!official)return rule;
+    const fields=Object.fromEntries(Object.entries(official).filter(([,value])=>value!=null));
+    if(fields.thinking==='supported' && ['toggle','required'].includes(rule?.thinking))delete fields.thinking;
+    return {...rule,...fields};
   }
   async function channel(id) {
     const {current}=await read();
@@ -122,5 +155,5 @@
     if(!Object.hasOwn(modelDevChannels,channel))return [];
     return (await chrome.storage.local.get(supplementalKey))[supplementalKey]?.[channel] || [];
   }
-  globalThis.KRA_PROVIDER_CONFIG = {validate,update,rollback,channel,refreshPublicCatalog,publicMetadata};
+  globalThis.KRA_PROVIDER_CONFIG = {validate,update,rollback,channel,modelRule,mergeModelRule,sourceUrl,refreshRules,refreshPublicCatalog,publicMetadata};
 })();

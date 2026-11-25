@@ -101,6 +101,9 @@ test('OpenRouter settings filter catalogs and recheck provider availability when
   assert.equal(element('localSettings').hidden,true);
   assert.equal(element('routerMode').value,'balanced');
   assert.equal(element('modelSelect').options.length,201);
+  assert.deepEqual([...element('routerDeveloper').options].map(option=>option.value),['','fixture','more']);
+  choose('routerDeveloper','fixture');
+  assert.deepEqual([...element('modelSelect').options].map(option=>option.value),['fixture/first','fixture/second','custom']);
   choose('modelSearch','Catalog Label','input');
   assert.equal(element('modelSelect').options.length,3);
   choose('modelSelect','fixture/first');
@@ -115,6 +118,10 @@ test('OpenRouter settings filter catalogs and recheck provider availability when
   choose('modelSelect','fixture/second');
   await until(()=>element('routerProvider').querySelector('option[value="beta"]'));
   assert.equal(element('routerProvider').value,'');
+  choose('routerDeveloper','more');
+  assert.equal(element('model').value,'fixture/second');
+  assert.equal(element('modelSelect').querySelector('option[value="fixture/second"]').disabled,true);
+  assert.equal(element('modelSelect').querySelector('option[value="fixture/first"]'),null);
   assert.ok(urls.includes('/api/v1/models/fixture/first/endpoints'));
   assert.ok(urls.includes('/api/v1/models/fixture/second/endpoints'));
 });

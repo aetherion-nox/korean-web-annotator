@@ -48,3 +48,9 @@ Ollama 支持原生 `/api/tags`、`/api/show` 和 `/api/chat`。刷新只查询�
 ```
 
 可更新已有渠道的参考模型、能力、默认流式与思考强度。映射值只有内置的 `openrouter-reasoning`、`openrouter-effort`、`ollama-toggle` 和 `ollama-level`。配置导入会校验版本、字段和映射，保留上次成功配置供回滚。更新请求不带 API Key，配置无法指定鉴权、请求主机或可执行代码。
+
+### 本地模型的思考设置
+
+Ollama 从模型详情读取档位。LM Studio 优先从原生模型目录读取支持的档位，显式设置后使用原生 REST 聊天接口。llama.cpp、vLLM、LocalAI 和通用兼容接口可手动选择服务端支持的参数格式和强度。服务版本与模型模板决定参数是否生效。留在「服务端默认」时沿用原请求行为。
+
+「刷新全部模型」同时更新 Models.dev 的参考资料，以及在「模型参考配置」中成功设置过的 HTTPS 规则源。未设置规则源时使用内置规则。下载失败会保留上一次成功的数据。规则配置可在渠道对象中新增 `"families":[{"base":"example-model","reference":"example-model"}]`，其中 reference 必须指向同渠道内带有明确 thinking 和 efforts 的模型。系列匹配只覆盖基础 ID 和数字日期后缀。可关闭的模型请用 thinking 为 toggle，单纯支持思考请用 supported。

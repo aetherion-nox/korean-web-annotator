@@ -23,7 +23,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.13.1-folded-panels-manual-cache';
+const CONTENT_SCRIPT_VERSION='1.1.13.2-folded-panels-manual-cache';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -458,6 +458,7 @@ async function wholePageAnalysisStamp(){
   const safeApi=api?{
    endpoint:api.endpoint,model:api.model,provider:api.provider,
    minConfidence:api.minConfidence,disableThinking:api.disableThinking,
+   localReasoningMode:api.localReasoningMode,localReasoningValue:api.localReasoningValue,
    reasoningEffort:api.reasoningEffort,paragraphFastPath:api.paragraphFastPath,
    profileId:api.profileId
   }:null;
@@ -681,8 +682,8 @@ async function getApiConfig() {
     ? await directory.loadDetail({provider,endpoint,model,profileId:profile.id})
     : (await directory.load({provider,endpoint,profileId:profile.id}))?.models.find(item=>item.id===model);
   const reference=await globalThis.KRA_PROVIDER_CONFIG.channel(provider);
-  const modelReference=reference?.models.find(item=>item.id===model);
-  const modelCapability=discovered ? {...modelReference,...Object.fromEntries(Object.entries(discovered).filter(([,value])=>value!=null))} : modelReference;
+  const modelReference=globalThis.KRA_PROVIDER_CONFIG.modelRule(reference,model);
+  const modelCapability=globalThis.KRA_PROVIDER_CONFIG.mergeModelRule(modelReference,discovered);
   return {
     endpoint: url.href,
     model,
@@ -691,6 +692,8 @@ async function getApiConfig() {
     disableThinking,
     provider, modelCapability,
     stream: profile.providerStream ?? reference?.defaults.stream ?? false,
+    localReasoningMode: profile.localReasoningMode,
+    localReasoningValue: profile.localReasoningValue,
     routerMode: profile.routerMode,
     routerAdvanced: profile.routerAdvanced,
     routerProvider: profile.routerProvider,

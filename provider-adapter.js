@@ -12,7 +12,7 @@ export function thinkingSettings(config){
   return {body:{},label:supported?(enabled?'思考开启'+(config.reasoningEffort?'（'+config.reasoningEffort+'）':''):'请求关闭思考'):'模型默认思考设置（未收录能力）'};
  }
  const bundled=globalThis.KRA_MODEL_CATALOG.resolve({...config,provider});
- const thinking=discovered?.thinking==='supported'?'toggle':discovered?.thinking;
+ const thinking=discovered?.thinking;
  const capability=['toggle','required','none'].includes(thinking)&&Array.isArray(discovered?.efforts)?
    {...bundled,thinking,efforts:discovered.efforts}:bundled;
  if(!capability || provider==='custom' || registry.local(provider))return {body:{},label:'模型默认思考设置（未收录能力）'};
@@ -47,7 +47,14 @@ export function thinkingSettings(config){
 
 export function prepareRequest(config,messages,outputTokenLimit){
  const provider=registry.idOf(config);
- const endpoint=registry.endpoint(config.endpoint,provider);
+ let endpoint=registry.endpoint(config.endpoint,provider);
+ const lmNative=provider==='lmstudio' && config.localReasoningMode==='native' &&
+   registry.localReasoningEnabled(provider,config.localReasoningMode,config.localReasoningValue);
+ if(lmNative){
+  const url=new URL(endpoint);
+  url.pathname=url.pathname.replace(/(?:\/v1)?\/chat\/completions\/?$/,'/api/v1/chat');
+  endpoint=url.href;
+ }
  const responses=provider==='openai'&&/\/responses\/?$/.test(new URL(endpoint).pathname);
  let body={model:config.model,messages,response_format:{type:'json_object'},...thinkingSettings(config).body};
  if(provider==='qwen'){delete body.response_format;Object.assign(body,qwenRequestSettings(config));}
@@ -67,6 +74,6 @@ export function prepareRequest(config,messages,outputTokenLimit){
  }
  if(config.stream===true){body.stream=true;if(['qwen','deepseek','hunyuan'].includes(provider))body.stream_options={include_usage:true};}
 
- const protocol=responses?'responses':provider==='anthropic'?'anthropic':provider==='ollama'?'ollama':'chat';
+ const protocol=lmNative?'lmstudio':responses?'responses':provider==='anthropic'?'anthropic':provider==='ollama'?'ollama':'chat';
  return {provider,endpoint,protocol,body:registry.adapt(config,body,outputTokenLimit),headers:registry.headers(provider,config.apiKey)};
 }

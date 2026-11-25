@@ -113,6 +113,7 @@ export async function readModelContent(response,{protocol='chat',signal,onStarte
   let data;try{data=JSON.parse(raw);}catch{throw streamError('模型响应不是有效 JSON',raw);}
   onMetadata(data);
   if(data.error)throw streamError('模型返回 API 错误',JSON.stringify(data.error));
+  if(protocol==='lmstudio')return (data.output||[]).filter(item=>item.type==='message').map(item=>item.content).join('');
   if(protocol==='responses'){
    if(data.status!=='completed')throw streamError('模型回复未正常结束',String(data.status));
    return (data.output||[]).filter(i=>i.type==='message').flatMap(i=>i.content||[]).filter(b=>b.type==='output_text').map(b=>b.text).join('');
@@ -139,7 +140,10 @@ export async function readModelContent(response,{protocol='chat',signal,onStarte
   let event;try{event=JSON.parse(data);}catch{throw streamError('模型流式响应包含无效 JSON');}
   if(event.error||event.type==='error'){const error=streamError('模型返回流式 API 错误',JSON.stringify(event.error||event));error.discardPartial=true;throw error;}
   if(!started){started=true;onStarted();}
-  if(protocol==='ollama'){
+  if(protocol==='lmstudio'){
+   if(event.type==='message.delta')append(event.content);
+   if(event.type==='chat.end')done=true;
+  }else if(protocol==='ollama'){
    append(event.message?.content);
    if(event.done){done=true;finish=event.done_reason||'stop';onMetadata(event);}
   }else if(protocol==='responses'){
@@ -165,7 +169,7 @@ export async function readModelContent(response,{protocol='chat',signal,onStarte
    if(buffer.length>2_000_000)throw streamError('模型流式数据包超出大小限制');
    if(chunk.done){if(buffer)line(buffer.replace(/\r$/,''));dispatch();break;}
   }
-  const valid=protocol==='responses'?finish==='completed':protocol==='anthropic'?done&&['end_turn','stop_sequence'].includes(finish):finish==='stop';
+  const valid=protocol==='lmstudio'?done:protocol==='responses'?finish==='completed':protocol==='anthropic'?done&&['end_turn','stop_sequence'].includes(finish):finish==='stop';
   if(!valid){
    const error=streamError('模型流式回复中断或未正常结束，已保留原文',String(finish||'missing finish_reason'));
    // Only truncation or a lost transport may salvage complete rows. Explicit

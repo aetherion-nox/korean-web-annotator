@@ -110,6 +110,7 @@
       <label><span data-i18n="providerReferenceUrl">HTTPS 配置地址</span><input id="providerReferenceUrl" type="url"></label>
       <div class="buttons"><button id="updateProviderReference" type="button" data-i18n="updateProviderReference">更新参考配置</button><button id="rollbackProviderReference" type="button" data-i18n="rollbackProviderReference">回滚配置</button><button id="refreshModelsDev" type="button" data-i18n="refreshModelsDev">更新 Models.dev 补充信息</button></div>
     </details>
+    <label id="routerDeveloperRow" hidden><span data-i18n="modelDeveloper">模型厂商</span><select id="routerDeveloper"></select></label>
     <label id="modelSearchRow" hidden><span data-i18n="modelSearch">搜索模型名称或 ID</span><input id="modelSearch" type="search"></label>
     <label><span data-i18n="modelChoice">模型</span><select id="modelSelect"></select></label>
     <p id="directoryModelDetails" class="profile-note"></p>
@@ -137,6 +138,11 @@
     <div id="localSettings" hidden>
       <p class="profile-note" data-i18n="localServiceHint">API Key 可留空。若服务运行在另一台设备上，请填写该设备的局域网地址。</p>
       <button id="ollamaModelDetails" type="button" hidden data-i18n="ollamaDetails">读取 Ollama 模型详情</button>
+    </div>
+    <div id="localReasoningRow" hidden>
+      <label><span data-i18n="localReasoningProtocol">思考参数格式</span><select id="localReasoningMode"></select></label>
+      <label id="localReasoningValueRow" hidden><span data-i18n="localReasoningSetting">思考开关或强度</span><select id="localReasoningValue"></select></label>
+      <p class="profile-note" data-i18n="localReasoningHint">请按服务版本和模型模板选择参数。默认沿用服务端设置。</p>
     </div>
     <label id="newProviderStreamRow" class="inline" hidden><input id="newProviderStream" type="checkbox"><span data-i18n="providerStreaming">流式输出</span></label>
     <label><span data-i18n="endpoint">接口完整地址</span><input id="endpoint" type="url" placeholder="https://api.example.com/v1/chat/completions"></label>

@@ -13,6 +13,7 @@ const directory = globalThis.KRA_PROVIDER_DIRECTORY;
 const catalog = {...legacyCatalog,providers:registry?.providers || legacyCatalog.providers};
 const element = id => document.getElementById(id);
 let directoryEntry = null;
+let routerDeveloperFilter = null;
 let ollamaDetail = null;
 let providerReference = null;
 let publicModelMetadata = [];
@@ -92,12 +93,12 @@ const MODEL_STRINGS = {
 for(const [language,strings] of Object.entries(MODEL_STRINGS))Object.assign(STRINGS[language],strings);
 
 const DIRECTORY_STRINGS = {
-  en:{reasoningCapability:'Reasoning',reasoningSupported:'Supported',reasoningRequired:'Required',reasoningUnavailable:'Unavailable',refreshModelsDev:'Refresh Models.dev metadata',modelsDevReference:'Models.dev reference · account access unverified',noEndpoint:'No endpoint configured',serverDefault:'Server default',routerAdvanced:'OpenRouter advanced parameters',routerAdvancedHint:'JSON · only parameters advertised by the model are sent',providerReference:'Model reference configuration',providerReferenceUrl:'HTTPS configuration URL',updateProviderReference:'Update reference configuration',rollbackProviderReference:'Roll back configuration',remoteReference:'Remote reference · account access unverified',routerThinking:'Reasoning support varies by endpoint; some models cannot disable it.',refreshProviderModels:'Refresh current channel',refreshRouterProviders:'Refresh inference providers',refreshAllModels:'Refresh all models',modelSearch:'Search model name or ID',routerMode:'OpenRouter routing',
+  en:{localReasoningProtocol:'Reasoning parameter format',localReasoningSetting:'Reasoning setting',localReasoningHint:'Choose a format supported by the server version and model template.',localReasoningOff:'Off',localReasoningOn:'On',reasoningControlsUnknown:'This model supports reasoning. Its controls are unverified; the server default applies.',modelDeveloper:'Model developer',allDevelopers:'All developers',currentModel:'Current model',reasoningCapability:'Reasoning',reasoningSupported:'Supported',reasoningRequired:'Required',reasoningUnavailable:'Unavailable',refreshModelsDev:'Refresh Models.dev metadata',modelsDevReference:'Models.dev reference · account access unverified',noEndpoint:'No endpoint configured',serverDefault:'Server default',routerAdvanced:'OpenRouter advanced parameters',routerAdvancedHint:'JSON · only parameters advertised by the model are sent',providerReference:'Model reference configuration',providerReferenceUrl:'HTTPS configuration URL',updateProviderReference:'Update reference configuration',rollbackProviderReference:'Roll back configuration',remoteReference:'Remote reference · account access unverified',routerThinking:'Reasoning support varies by endpoint; some models cannot disable it.',refreshProviderModels:'Refresh current channel',refreshRouterProviders:'Refresh inference providers',refreshAllModels:'Refresh all models',modelSearch:'Search model name or ID',routerMode:'OpenRouter routing',
     routeBalanced:'Balanced',routePrice:'Lowest price',routeThroughput:'Fastest generation',routeLatency:'Lowest latency',routeOnly:'Specific provider',
     routerSearch:'Search inference providers',routerProvider:'Inference provider',localServiceHint:'API Key is optional. For a service on another device, enter that device’s private network address.',
     ollamaDetails:'Load Ollama model details',providerStreaming:'Stream output',loadingDirectory:'Refreshing…',unknown:'Unknown',chooseProvider:'Select a provider',
     serviceSource:'Service API',publicSource:'Public API',referenceSource:'Bundled reference · account access unverified',directoryFailure:'Refresh failed',resultsLimited:'Showing up to 200 matching models',contextLength:'Context',supportedParameters:'Parameters',price:'Price',capabilities:'Capabilities'},
-  'zh-CN':{reasoningCapability:'思考能力',reasoningSupported:'支持',reasoningRequired:'必需',reasoningUnavailable:'不支持',refreshModelsDev:'更新 Models.dev 补充信息',modelsDevReference:'Models.dev 参考 · 未核验账户权限',noEndpoint:'未配置接口地址',serverDefault:'服务端默认',routerAdvanced:'OpenRouter 高级参数',routerAdvancedHint:'JSON（仅发送模型目录支持的参数）',providerReference:'模型参考配置',providerReferenceUrl:'HTTPS 配置地址',updateProviderReference:'更新参考配置',rollbackProviderReference:'回滚配置',remoteReference:'远程参考 · 未核验账户权限',routerThinking:'思考能力取决于推理端点，部分模型无法关闭思考。',refreshProviderModels:'刷新当前渠道',refreshRouterProviders:'刷新推理供应商',refreshAllModels:'刷新全部模型',modelSearch:'搜索模型名称或 ID',routerMode:'OpenRouter 路由',
+  'zh-CN':{localReasoningProtocol:'思考参数格式',localReasoningSetting:'思考开关或强度',localReasoningHint:'按服务版本和模型模板选择参数。默认沿用服务端设置。',localReasoningOff:'关闭',localReasoningOn:'开启',reasoningControlsUnknown:'该模型支持思考，开关和强度参数尚未确认，使用服务端默认设置。',modelDeveloper:'模型厂商',allDevelopers:'全部厂商',currentModel:'当前模型',reasoningCapability:'思考能力',reasoningSupported:'支持',reasoningRequired:'必需',reasoningUnavailable:'不支持',refreshModelsDev:'更新 Models.dev 补充信息',modelsDevReference:'Models.dev 参考 · 未核验账户权限',noEndpoint:'未配置接口地址',serverDefault:'服务端默认',routerAdvanced:'OpenRouter 高级参数',routerAdvancedHint:'JSON（仅发送模型目录支持的参数）',providerReference:'模型参考配置',providerReferenceUrl:'HTTPS 配置地址',updateProviderReference:'更新参考配置',rollbackProviderReference:'回滚配置',remoteReference:'远程参考 · 未核验账户权限',routerThinking:'思考能力取决于推理端点，部分模型无法关闭思考。',refreshProviderModels:'刷新当前渠道',refreshRouterProviders:'刷新推理供应商',refreshAllModels:'刷新全部模型',modelSearch:'搜索模型名称或 ID',routerMode:'OpenRouter 路由',
     routeBalanced:'均衡',routePrice:'最低价格',routeThroughput:'最快生成',routeLatency:'最低延迟',routeOnly:'指定供应商',
     routerSearch:'搜索推理供应商',routerProvider:'推理供应商',localServiceHint:'API Key 可留空。若服务运行在另一台设备上，请填写该设备的局域网地址。',
     ollamaDetails:'读取 Ollama 模型详情',providerStreaming:'流式输出',loadingDirectory:'正在刷新…',unknown:'未知',chooseProvider:'请选择供应商',
@@ -196,6 +197,7 @@ function loadActiveProfileIntoForm() {
   providerReference = null;
   publicModelMetadata = [];
   if (registry) {
+    routerDeveloperFilter=null;
     element('modelSearch').value = '';
     element('routerMode').value = profile.routerMode;
     element('routerAdvanced').value = Object.keys(profile.routerAdvanced||{}).length ? JSON.stringify(profile.routerAdvanced) : '';
@@ -204,6 +206,7 @@ function loadActiveProfileIntoForm() {
     routerProviderParameters=profile.routerProviderParameters;
     resetRouterProviders(profile.routerProviderModel === profile.model ? profile.routerProvider : '');
     syncProviderControls();
+    refreshLocalReasoning(profile.localReasoningMode,profile.localReasoningValue);
   }
   refreshModelChoices(profile.model);
   refreshThinkingControls(profile.reasoningEffort);
@@ -226,15 +229,36 @@ function refreshModelChoices(selected=modelInput.value) {
   ].map(model=>[model.id,model])).values()];
   const search=element('modelSearch')?.value.trim().toLowerCase() || '';
   const selectedModel=models.find(item=>item.id===selected);
-  const matches=models.filter(item=>!search || [item.id,item.label,item.developer].some(value=>value?.toLowerCase().includes(search)));
+  const developerSelect=element('routerDeveloper');
+  const isRouter=provider?.id==='openrouter' && developerSelect;
+  const developerOf=model=>model.developer || ' unknown';
+  let developerFilter='';
+  if(developerSelect){
+    element('routerDeveloperRow').hidden=!isRouter;
+    if(isRouter){
+      const developers=[...new Set(models.map(developerOf))].sort((a,b)=>a.localeCompare(b));
+      developerFilter=routerDeveloperFilter ?? (selectedModel ? developerOf(selectedModel) : '');
+      if(!developers.includes(developerFilter))developerFilter='';
+      developerSelect.replaceChildren(new Option(t('allDevelopers'),''),
+        ...developers.map(id=>new Option(id===' unknown'?t('unknown'):id,id)));
+      developerSelect.value=developerFilter;
+    }
+  }
+  const matches=models.filter(item=>(!developerFilter || developerOf(item)===developerFilter) &&
+    (!search || [item.id,item.label,item.developer].some(value=>value?.toLowerCase().includes(search))));
   const groups=new Map();
   for(const model of matches.slice(0,200)){
-    const groupName=model.developer || (directoryEntry ? t('unknown') : '');
+    const groupName=developerFilter ? '' : model.developer || (directoryEntry ? t('unknown') : '');
     if(!groups.has(groupName))groups.set(groupName,[]);
     groups.get(groupName).push(model);
   }
   const options=[];
-  if(selectedModel && !matches.slice(0,200).includes(selectedModel))options.push(new Option(selectedModel.label,selectedModel.id));
+  if(selectedModel && !matches.slice(0,200).includes(selectedModel)){
+    const outsideDeveloper=developerFilter && developerOf(selectedModel)!==developerFilter;
+    const option=new Option(outsideDeveloper ? t('currentModel')+' · '+selectedModel.label : selectedModel.label,selectedModel.id);
+    option.disabled=Boolean(outsideDeveloper);
+    options.push(option);
+  }
   for(const [label,items] of groups){
     const rows=items.map(model=>new Option(model.label===model.id ? model.id : model.label+' · '+model.id,model.id));
     if(!label){options.push(...rows);continue;}
@@ -283,7 +307,10 @@ const fixedThinkingNotes={
 
 function refreshThinkingControls(effort=effortInput.value) {
   let capability=catalog?.resolve({provider:providerInput.value,endpoint:endpointInput.value,model:modelInput.value});
-  const discovered=['openrouter','ollama'].includes(providerInput.value) ? selectedModelMetadata() : null;
+  const discovered=selectedModelMetadata();
+  if(discovered?.rule && ['toggle','required','none'].includes(discovered.rule.thinking) && Array.isArray(discovered.rule.efforts)){
+    capability={...capability,...discovered.rule};
+  }
   if(providerInput.value==='openrouter' && discovered?.parameters?.some(p=>['reasoning','reasoning_effort'].includes(p))){
     capability={thinking:discovered.thinking==='required'?'required':'toggle',efforts:['',...(discovered.efforts||registry.efforts)]};
   }
@@ -298,6 +325,12 @@ function refreshThinkingControls(effort=effortInput.value) {
   effortInput.value=efforts.includes(effort)?effort:(efforts[0]||'');
   const note=document.querySelector('#modelCapabilityNote'),docs=document.querySelector('#modelDocs');
   note.textContent=capability?.offType==='between_tools'?(thinkingOffNotes[uiLocale.value]||thinkingOffNotes.en):capability?.thinking==='required'?t('requiredThinking')+efforts.join(' / '):capability?.thinking==='toggle'?t('toggleThinking'):t('unknownThinking');
+  if(!capability && ['supported','toggle','required'].includes(discovered?.thinking)){
+    note.textContent=t('reasoningControlsUnknown');
+  }
+  if(!capability && discovered?.thinking==='none'){
+    note.textContent=(fixedThinkingNotes[uiLocale.value]||fixedThinkingNotes.en)[0];
+  }
   if(capability?.thinking==='none')note.textContent=(fixedThinkingNotes[uiLocale.value]||fixedThinkingNotes.en)[0];
   if(capability?.thinking==='required'&&!efforts.length)note.textContent=(fixedThinkingNotes[uiLocale.value]||fixedThinkingNotes.en)[1];
   if(providerInput.value==='qwen')note.textContent+=' '+(qwenNotes[uiLocale.value]||qwenNotes.en);
@@ -315,12 +348,14 @@ providerInput.addEventListener('change',()=>{
   providerReference=null;
   publicModelMetadata=[];
   if(registry){
+    routerDeveloperFilter=null;
     element('modelSearch').value='';
     element('routerMode').value='balanced';
     element('routerAdvanced').value='';
     apiKeyInput.value='';
     resetRouterProviders();
     syncProviderControls();
+    refreshLocalReasoning('','');
     loadSelectedDirectory().then(()=>{
       if(provider?.id!=='openrouter' || providerInput.value!=='openrouter' || directoryEntry)return;
       return refreshDirectories(false);
@@ -335,7 +370,7 @@ modelSelect.addEventListener('change',()=>{
   document.querySelector('#customModelRow').hidden=modelSelect.value!=='custom';
   disableThinkingInput.checked=true;refreshThinkingControls('');
   renderDirectoryDetails();
-  if(registry)modelChanged();
+  if(registry){refreshLocalReasoning();modelChanged();}
 });
 modelInput.addEventListener('input',()=>refreshThinkingControls(''));
 modelInput.addEventListener('change',()=>{refreshThinkingControls('');if(registry)modelChanged();});
@@ -457,7 +492,9 @@ async function readFormForSave(requireUsableKey = false) {
   const endpoint = registry ? registry.endpoint(inputEndpoint,provider) : inputEndpoint;
   const model = modelInput.value.trim();
   const typedApiKey = apiKeyInput.value.trim();
-  const capability=catalog?.resolve({provider:providerInput.value,endpoint,model});
+  const rule=selectedModelMetadata()?.rule;
+  const capability=rule && ['toggle','required','none'].includes(rule.thinking) && Array.isArray(rule.efforts) ?
+    rule : catalog?.resolve({provider:providerInput.value,endpoint,model});
   const disableThinking = capability?.thinking==='required'?false:disableThinkingInput.checked;
   const reasoningEffort=provider==='openrouter'||provider==='ollama'?effortInput.value:capability?.efforts?.includes(effortInput.value)&&!(capability.thinking==='toggle'&&disableThinking)?effortInput.value:'';
   let keyStorageMode = getStorageMode();
@@ -497,7 +534,7 @@ async function readFormForSave(requireUsableKey = false) {
   const providerStream=registry && (provider==='openrouter'||registry.local(provider)) ? element('newProviderStream').checked : previous?.providerStream;
   const routerParameters=routerMode==='only' ? routerOptions.find(item=>item.id===routerSelection)?.parameters ??
     (retainedProvider ? routerProviderParameters : null) : null;
-  return { routerMode, routerAdvanced, routerProviderParameters:routerParameters, routerProvider:routerMode==='only'?routerSelection:'', routerProviderModel:routerMode==='only'?model:'',providerStream,endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, originChanged };
+  return { localReasoningMode:element('localReasoningMode')?.value||'',localReasoningValue:element('localReasoningValue')?.value||'',routerMode, routerAdvanced, routerProviderParameters:routerParameters, routerProvider:routerMode==='only'?routerSelection:'', routerProviderModel:routerMode==='only'?model:'',providerStream,endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, originChanged };
 }
 
 async function requestEndpointPermission(endpoint) {
@@ -523,6 +560,7 @@ async function saveConfig(config) {
     provider: config.provider,
     reasoningEffort: config.reasoningEffort,
     routerMode:config.routerMode, routerAdvanced:config.routerAdvanced, routerProviderParameters:config.routerProviderParameters, routerProvider:config.routerProvider, routerProviderModel:config.routerProviderModel,
+    localReasoningMode:config.localReasoningMode,localReasoningValue:config.localReasoningValue,
     providerStream:config.providerStream,
   }, activeProfileId, name);
 
@@ -590,6 +628,7 @@ function applyLocale() {
   document.title = t('title');
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
   refreshModelChoices();refreshThinkingControls();
+  if(registry)refreshLocalReasoning();
   updateKeyPlaceholder();
 }
 function showError(error) { status.textContent = error?.message || String(error); }
@@ -606,12 +645,15 @@ function directoryConfig(profile=activeProfile(),current=true) {
 }
 function selectedModelMetadata() {
   const id=modelInput.value.trim();
-  const reference=providerReference?.models.find(model=>model.id===id);
+  const reference=globalThis.KRA_PROVIDER_CONFIG?.modelRule(providerReference,id);
   const supplemental=publicModelMetadata.find(model=>model.id===id);
   const discovered=(ollamaDetail?.id===id ? ollamaDetail : null) || directoryEntry?.models.find(model=>model.id===id);
-  if(discovered)return {...supplemental,...reference,...Object.fromEntries(Object.entries(discovered).filter(([,value])=>value!=null)),
+  if(discovered){
+    const effective=globalThis.KRA_PROVIDER_CONFIG.mergeModelRule(reference,discovered);
+    return {...supplemental,...effective,rule:effective,
     contextReference:discovered.contextLength==null && reference?.contextLength==null && supplemental?.contextLength!=null};
-  if(reference)return reference;
+  }
+  if(reference)return {...reference,rule:reference};
   if(supplemental)return supplemental;
   const bundled=registry?.get(providerInput.value).models.find(model=>model.id===id);
   return bundled ? {...bundled,source:'bundled-reference'} : null;
@@ -634,6 +676,23 @@ function renderDirectoryDetails() {
     (model.capabilities || model.architecture) && `${t('capabilities')}: ${JSON.stringify(model.capabilities || model.architecture)}`
   ].filter(Boolean).join(' · ') : '';
 }
+function refreshLocalReasoning(mode=element('localReasoningMode').value,value=element('localReasoningValue').value){
+  const modes=registry.localReasoningModes(providerInput.value);
+  const modeSelect=element('localReasoningMode');
+  const valueSelect=element('localReasoningValue');
+  const labels={native:'LM Studio REST',effort:'reasoning_effort',template:'chat_template_kwargs',metadata:'metadata'};
+  element('localReasoningRow').hidden=!modes.length;
+  modeSelect.replaceChildren(new Option(t('serverDefault'),''),...modes.map(item=>new Option(labels[item],item)));
+  modeSelect.value=modes.includes(mode)?mode:'';
+  const advertised=selectedModelMetadata()?.localReasoningOptions;
+  const values=modeSelect.value==='native' && Array.isArray(advertised) ? advertised :
+    registry.localReasoningValues(modeSelect.value);
+  element('localReasoningValueRow').hidden=!values.length;
+  valueSelect.replaceChildren(new Option(t('serverDefault'),''),...values.map(item=>
+    new Option(item==='off'?t('localReasoningOff'):item==='on'?t('localReasoningOn'):item,item)));
+  valueSelect.value=values.includes(value)?value:'';
+}
+
 function syncProviderControls() {
   const id=providerInput.value;
   element('routerSettings').hidden=id!=='openrouter';
@@ -673,6 +732,7 @@ async function loadSelectedDirectory() {
   publicModelMetadata=publicMetadata;
   refreshModelChoices();
   refreshThinkingControls();
+  refreshLocalReasoning();
   renderDirectoryStatuses();
 }
 async function refreshDirectory(config) {
@@ -715,7 +775,21 @@ async function refreshDirectories(all) {
   const buttons=[element('refreshAllModels'),element('refreshProviderModels')];
   buttons.forEach(button=>{button.disabled=true;});
   try {
-    await Promise.all([...configs.values()].map(refreshDirectory));
+    const jobs=[...configs.values()].map(refreshDirectory);
+    if(all){
+      const config=globalThis.KRA_PROVIDER_CONFIG;
+      const refreshReference=async (label,run)=>{
+        try{
+          const result=await run();
+          if(result!==null)refreshStatuses.set(label,label+' · '+result);
+        }catch(error){
+          refreshStatuses.set(label,label+' · '+t('directoryFailure')+': '+error.message);
+        }
+      };
+      jobs.push(refreshReference('Models.dev',config.refreshPublicCatalog),
+        refreshReference(t('providerReference'),config.refreshRules));
+    }
+    await Promise.all(jobs);
     await loadSelectedDirectory();
   } finally {buttons.forEach(button=>{button.disabled=false;});}
 }
@@ -770,6 +844,10 @@ function modelChanged() {
 }
 
 if(registry){
+  globalThis.KRA_PROVIDER_CONFIG.sourceUrl().then(url=>{
+    const input=element('providerReferenceUrl');
+    if(!input.value)input.value=url;
+  }).catch(showError);
   let updatingReference=false;
   const changeReference=async update=>{
     if(updatingReference)return;
@@ -797,6 +875,12 @@ if(registry){
   });
   element('refreshProviderModels').addEventListener('click',()=>refreshDirectories(false).catch(showError));
   element('refreshAllModels').addEventListener('click',()=>{refreshStatuses.clear();refreshDirectories(true).catch(showError);});
+  element('localReasoningMode').addEventListener('change',event=>refreshLocalReasoning(event.target.value,''));
+  element('routerDeveloper').addEventListener('change',event=>{
+    routerDeveloperFilter=event.target.value;
+    element('modelSearch').value='';
+    refreshModelChoices();
+  });
   element('modelSearch').addEventListener('input',()=>refreshModelChoices());
   element('routerMode').addEventListener('change',()=>{syncProviderControls();refreshSelectedRouter();});
   element('routerProvider').addEventListener('change',event=>{routerSelection=event.target.value;});

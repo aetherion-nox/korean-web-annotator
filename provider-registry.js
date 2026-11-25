@@ -84,6 +84,19 @@
     }));
   }
 
+  const localReasoningModes = id => ({
+    lmstudio:['native'],llamacpp:['effort','template'],vllm:['effort','template'],localai:['template','metadata'],
+    local:['effort','template','metadata'],custom:['effort','template','metadata']
+  })[id] || [];
+  const localReasoningValues = mode => ({
+    native:['off','on','low','medium','high'],
+    effort:['off','low','medium','high','minimal','xhigh','max'],
+    template:['off','on','low','medium','high'],
+    metadata:['off','on','low','medium','high']
+  })[mode] || [];
+  const localReasoningEnabled = (id,mode,value) =>
+    localReasoningModes(id).includes(mode) && localReasoningValues(mode).includes(value);
+
   function adapt(config,body,limit) {
     const id = idOf(config);
     const cap = id==='openrouter' && config.routerMode==='only' && Array.isArray(config.routerProviderParameters) ?
@@ -110,6 +123,15 @@
       if (!cap?.parameters?.includes('response_format')) delete body.response_format;
     }
     if (cap?.stream===false) delete body.stream;
+    const {localReasoningMode:mode,localReasoningValue:value}=config;
+    if(localReasoningEnabled(id,mode,value)){
+      const enabled=value!=='off';
+      if(mode==='native')return {model:body.model,system_prompt:body.messages[0].content,
+        input:body.messages[1].content,max_output_tokens:limit,reasoning:value,stream:body.stream===true,store:false};
+      if(mode==='effort')body.reasoning_effort=enabled ? value : 'none';
+      if(mode==='template')body.chat_template_kwargs={enable_thinking:enabled,...(enabled && value!=='on' ? {reasoning_effort:value} : {})};
+      if(mode==='metadata')body.metadata={enable_thinking:String(enabled),...(enabled && value!=='on' ? {reasoning_effort:value} : {})};
+    }
     if (id !== 'ollama') return body;
     const supportsThinking = ['supported','required'].includes(cap?.thinking);
     const levels=cap?.efforts?.length ? cap.efforts : cap?.mapping==='ollama-level' ? ['low','medium','high'] : [];
@@ -125,5 +147,5 @@
       options:{num_predict:limit},...(think!==undefined ? {think} : {})};
   }
 
-  globalThis.KRA_PROVIDER_REGISTRY = {providers,get,idOf,local,routerBase,efforts,routes,checkedUrl,endpoint,keyOptional,originPattern,headers,adapt,routing,advancedOptions};
+  globalThis.KRA_PROVIDER_REGISTRY = {providers,get,idOf,local,routerBase,efforts,routes,checkedUrl,endpoint,keyOptional,originPattern,headers,adapt,routing,advancedOptions,localReasoningModes,localReasoningValues,localReasoningEnabled};
 })();

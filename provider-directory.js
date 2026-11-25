@@ -45,7 +45,8 @@
   }
 
   function normalize(row,id,updatedAt,source) {
-    const model = id === 'gemini' && typeof row.name==='string' ? row.name.replace(/^models\//,'') : row.id || row.model || row.name;
+    const model = id === 'gemini' && typeof row.name==='string' ? row.name.replace(/^models\//,'') : row.id || row.model || row.key || row.name;
+    if (id==='lmstudio' && row.type && row.type!=='llm')return null;
     if (typeof model !== 'string' || !model || !isText(model)) return null;
     if (Array.isArray(row.supportedGenerationMethods) && !row.supportedGenerationMethods.includes('generateContent')) return null;
     if (Array.isArray(row.architecture?.output_modalities) && !row.architecture.output_modalities.includes('text')) return null;
@@ -57,13 +58,18 @@
     const parameters = Array.isArray(row.supported_parameters) ? row.supported_parameters.filter(p=>typeof p==='string') : null;
     const text = value => typeof value==='string' && value.trim() ? value : null;
     const developer = id === 'openrouter' && model.includes('/') ? model.split('/')[0] :
-      text(row.author?.name) || text(row.author) || text(row.developer) || (id==='qwen' ? text(row.provider) : null);
-    const reasoning = row.reasoning;
-    const thinking = reasoning?.mandatory === true ? 'required' :
-      parameters?.some(name=>['reasoning','reasoning_effort'].includes(name)) ? 'supported' : row.thinking || null;
+      text(row.author?.name) || text(row.author) || text(row.developer) || text(row.publisher) || (id==='qwen' ? text(row.provider) : null);
+    const reasoning = row.reasoning || row.capabilities?.reasoning;
+    const localReasoningOptions=id==='lmstudio' && Array.isArray(reasoning?.allowed_options) ?
+      reasoning.allowed_options.filter(value=>registry.localReasoningValues('native').includes(value)) : null;
+    const thinking = localReasoningOptions?.some(value=>value!=='off') ? 'supported' : reasoning?.mandatory === true ? 'required' :
+      parameters?.some(name=>['reasoning','reasoning_effort'].includes(name)) ||
+      reasoning===true || row.thinking===true || (id==='qwen' && Array.isArray(row.capabilities) && row.capabilities.includes('Reasoning'))
+        ? 'supported' : ['required','toggle','supported','none'].includes(row.thinking) ? row.thinking :
+          reasoning===false || row.thinking===false ? 'none' : null;
     return {channel:id,id:model,label:text(row.displayName) || text(row.display_name) || text(row.label) || text(row.name) || model,
       developer,inferenceProvider:text(row.inference_provider),
-      contextLength:row.context_length ?? row.inputTokenLimit ?? row.top_provider?.context_length ?? row.model_info?.context_window ?? null,
+      localReasoningOptions,contextLength:row.max_context_length ?? row.context_length ?? row.inputTokenLimit ?? row.top_provider?.context_length ?? row.model_info?.context_window ?? null,
       thinking,efforts:Array.isArray(reasoning?.supported_efforts) ? reasoning.supported_efforts.filter(value=>registry.efforts.includes(value)) : null,
       parameters,pricing:row.pricing || row.prices || null,architecture:row.architecture || row.inference_metadata || null,
       capabilities:Array.isArray(row.capabilities) ? row.capabilities : null,updatedAt,source};
@@ -85,7 +91,14 @@
       }
       rows = [];
       for (let page = 0; page < 100; page++) {
-        const data = await json(url,id==='openrouter' ? {provider:id} : config);
+        let data;
+        if(id==='lmstudio'){
+          const native=new URL(url);
+          native.pathname=native.pathname.replace(/(?:\/v1)?\/models\/?$/,'/api/v1/models');
+          try{ data={data:(await json(native,config)).models}; }
+          catch(error){ if(error.status!==404 && error.status!==405)throw error; }
+        }
+        data ??= await json(url,id==='openrouter' ? {provider:id} : config);
         if(qwenNative && data.success===false)throw Error('Qwen model list request failed.');
         const batch = qwenNative ? data.output?.models : id === 'gemini' || id === 'ollama' ? data.models : data.data;
         if (!Array.isArray(batch)) throw Error('Invalid model list');

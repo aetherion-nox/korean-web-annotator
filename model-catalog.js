@@ -47,6 +47,15 @@
   {id:'custom',label:'自定义 / Custom',endpoint:'',models:[]}
  ];
  function inferProvider(endpoint){try{const host=new URL(endpoint).hostname;if(/^(tokenhub|tokenhub-intl)\.tencentmaas\.(com|cn)$/.test(host))return 'hunyuan';if(['dashscope.aliyuncs.com','dashscope-intl.aliyuncs.com','dashscope-us.aliyuncs.com'].includes(host)||/^[a-z0-9-]+\.[a-z0-9-]+\.maas\.aliyuncs\.com$/.test(host))return 'qwen';return providers.find(p=>p.endpoint&&new URL(p.endpoint).hostname===host)?.id||'custom';}catch{return 'custom';}}
- function resolve(config){const id=config.provider||inferProvider(config.endpoint);return providers.find(p=>p.id===id)?.models.find(m=>m.id===config.model)||null;}
+ function resolve(config){
+  const id=config.provider||inferProvider(config.endpoint);
+  const models=providers.find(provider=>provider.id===id)?.models;
+  const exact=models?.find(model=>model.id===config.model);
+  if(exact||id!=='qwen')return exact||null;
+  // Qwen dates snapshots of these published aliases without changing their API family.
+  const snapshot=/^(qwen3\.8-(?:max|flash))-\d{4}$/.exec(config.model);
+  const base=snapshot && models?.find(model=>model.id===snapshot[1]);
+  return base ? {...base,id:config.model,label:config.model} : null;
+ }
  globalThis.KRA_MODEL_CATALOG={providers,inferProvider,resolve,verifiedAt:'2026-10-12',qwenVerifiedAt:'2026-10-27',newProvidersVerifiedAt:'2026-11-16'};
 })();

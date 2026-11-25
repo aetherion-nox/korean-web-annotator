@@ -29,7 +29,7 @@ test('Hunyuan Flash toggle is visible and disabled effort picker is hidden in UI
  const elements=Object.fromEntries(['#disableThinkingRow','#reasoningEffortRow','#modelCapabilityNote','#modelDocs']
   .map(id=>[id,{removeAttribute(){}}]));
  const ctx={
-  catalog,providerInput:{value:'hunyuan'},
+  catalog,selectedModelMetadata:()=>null,providerInput:{value:'hunyuan'},
   endpointInput:{value:'https://tokenhub.tencentmaas.com/v1/chat/completions'},
   modelInput:{value:'hy4-flash'},disableThinkingInput:{checked:true},
   effortInput:{value:'',options:[],replaceChildren(...o){this.options=o;}},
