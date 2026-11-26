@@ -5,8 +5,7 @@ import {protectRepeatedArticleNames} from './article-name-consistency.js';
 import {filterReviewTarget} from './review-pos.js';
 import {canProposeExperimentalOption} from './experimental-options.js';
 import {reviewTargets,safeDetail} from './choice-review.js';
-import {paragraphReviewKey,snapshotParagraphReview,restoreParagraphReview} from './review-cache.js';
-import {trimAnnotationCache} from './session-cache.js';
+import {articleCacheScope,createArticleReviewLookup,paragraphReviewKey,snapshotParagraphReview,restoreParagraphReview} from './review-cache.js';
 import {manualReviewBatches,prepareManualRequest} from './manual-review.js';
 import {contextReviewBatches,normalizeBatchContextTier} from './batch-budget.js';
 import {compactDomAnnotations,shouldPublishPreview,createOrderedResultRelay} from './annotation-event.js';
@@ -316,7 +315,9 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   config.reviewPosFilter!==false,
   ...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])
  ]);
- let mixedContinuation=false;
+ const articleLookup=config&&!bypassCache ?
+  createArticleReviewLookup(work,await articleCacheScope(message.articleCacheIdentity),cache):null;
+ let mixedContinuation=false,modelCacheMisses=0,modelCacheRejected=0,articleCacheHits=0;
  for(const [index,item] of work.entries()){
   const {analysis}=item;
   // Do not ask an ordinary (non-experimental) model to choose among null/no-conversion
@@ -332,7 +333,15 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   if(config && item.reviewableTargets.length){
    item.reviewKey=paragraphReviewKey(work,index,fingerprint,message.restrictToSelection===true);
    const cached=!bypassCache&&cache.get(item.reviewKey);
-   const restored=cached&&restoreParagraphReview(item,cached,config,message.restrictToSelection===true);
+   let restored=cached&&restoreParagraphReview(item,cached,config,message.restrictToSelection===true);
+   const nearby=!restored&&articleLookup?.find(item.reviewKey,index);
+   if(nearby)restored=restoreParagraphReview(item,nearby,config,message.restrictToSelection===true);
+   if(restored&&nearby)articleCacheHits++;
+   if(!restored&&!bypassCache){
+    if(cached||nearby)modelCacheRejected++;
+    else modelCacheMisses++;
+   }
+   item.articleScope=articleLookup?.scopeFor(index);
    if(restored){
     item.result=restored.result;item.repairs=restored.repairs;item.cacheRestored=true;
     const accepted=item.result.accepted;
@@ -707,11 +716,11 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   for(const item of work){
    if(!item.reviewKey||item.cacheRestored)continue;
    const snapshot=snapshotParagraphReview(item,smartSegmentation);
-   if(snapshot)cache.set(item.reviewKey,snapshot);
+   if(snapshot)cache.set(item.reviewKey,item.articleScope ? {...snapshot,articleScope:item.articleScope} : snapshot);
   }
  }
- diagnostic({stage:'cache',level:'info',message:'缓存汇总：本地分析命中 '+stats.localCacheHits+' 段；模型审核命中 '+stats.modelCacheHits+' 段（'+stats.modelCachedTargets+' 个答案）。'});
- trimAnnotationCache(cache);await persist(cache);
+ diagnostic({stage:'cache',level:'info',message:'缓存汇总：本地分析命中 '+stats.localCacheHits+' 段；模型审核命中 '+stats.modelCacheHits+' 段（'+stats.modelCachedTargets+' 个答案，其中同篇文章容错命中 '+articleCacheHits+' 段）；未找到匹配 '+modelCacheMisses+' 段，缓存校验未通过 '+modelCacheRejected+' 段。'});
+ await persist(cache);
  await emit('DONE',{reviewIncomplete:stats.model_unanswered>0,
   unansweredTargets:stats.model_unanswered,
   canAutoResume:Boolean(config&&!config.manualReview&&!modelPermanentFailure)});return stats;

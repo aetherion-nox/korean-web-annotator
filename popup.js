@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.13.2-folded-panels-manual-cache';
+const CONTENT_SCRIPT_VERSION = '1.1.13.3-folded-panels-manual-cache';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -11,6 +11,8 @@ const stopAutoAfterPageComplete=document.querySelector('#stopAutoAfterPageComple
 const restoreExistingAnnotations=document.querySelector('#restoreExistingAnnotations');
 const hideToolbarOnFirstManual=document.querySelector('#hideToolbarOnFirstManual');
 const clearCacheOnExit=document.querySelector('#clearCacheOnExit');
+const cacheLimitInput=document.querySelector('#annotationCacheLimitPerKind');
+let savedCacheLimit=1000;
 const toolbarHangulOnly=document.querySelector('#toolbarHangulOnly');
 const toolbarDisplay = document.querySelector('#toolbarDisplay');
 const mobileSelectionToolbar = document.querySelector('#mobileSelectionToolbar');
@@ -113,9 +115,32 @@ async function init() {
   toolbarHangulOnly.checked=uiSettings.toolbarHangulOnly ?? true;
   toolbarDisplay.value=uiSettings.toolbarDisplay==='always'?'always':'selection';
   syncToolbarOptions();
+  if(cacheLimitInput){
+    const {annotationCacheLimitPerKind}=await chrome.storage.local.get('annotationCacheLimitPerKind');
+    if(Number.isInteger(annotationCacheLimitPerKind)&&annotationCacheLimitPerKind>=1&&annotationCacheLimitPerKind<=10000){
+      savedCacheLimit=annotationCacheLimitPerKind;
+    }
+    cacheLimitInput.value=String(savedCacheLimit);
+  }
   // Loading the popup must not inject scripts or warm up the engine.
   await refreshHistorySteps();
 }
+
+cacheLimitInput?.addEventListener('change', async () => {
+  const value=cacheLimitInput.valueAsNumber;
+  if(!Number.isInteger(value)||!cacheLimitInput.checkValidity()){
+    cacheLimitInput.value=String(savedCacheLimit);
+    showError(new Error('标注缓存上限请输入 1–10000 之间的整数。'));
+    return;
+  }
+  try{
+    await chrome.storage.local.set({annotationCacheLimitPerKind:value});
+    savedCacheLimit=value;
+  }catch(error){
+    cacheLimitInput.value=String(savedCacheLimit);
+    showError(error);
+  }
+});
 
 uiLocale.addEventListener('change', async () => {
   locale = normalizeLocale(uiLocale.value);

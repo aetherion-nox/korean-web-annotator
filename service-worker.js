@@ -13,7 +13,7 @@ import {engineConfig,engineStatus,analyzeLocal,analyzeLocalBatch} from './local-
 import {reviewTargets} from './choice-review.js';
 import {requestLogger} from './request-log.js';
 import {runSentencePipeline,CACHE_KEY} from './annotation-pipeline.js';
-import {prepareCacheSession,AnnotationCache,cacheCounts,canonicalStoredCacheKey,trimAnnotationCache} from './session-cache.js';
+import {prepareCacheSession,AnnotationCache,cacheCounts,canonicalStoredCacheKey,trimAnnotationCache,CACHE_LIMIT_SETTING,normalizeAnnotationCacheLimit} from './session-cache.js';
 import {createManualReviewSession} from './manual-review.js';
 import {dispatchChildFrameBatch} from './page-frame-dispatch.js';
 import {
@@ -23,7 +23,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.13.2-folded-panels-manual-cache';
+const CONTENT_SCRIPT_VERSION='1.1.13.3-folded-panels-manual-cache';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -741,8 +741,10 @@ async function loadCache(){
    cache.set(canonicalStoredCacheKey(row[0]),row[1]);
   }
   const loaded=cacheCounts(cache);
-  trimAnnotationCache(cache);
-  cacheLoadReport={reason,storedEntries:Array.isArray(saved)?saved.length:0,loaded};
+  const settings=await chrome.storage.local.get(CACHE_LIMIT_SETTING);
+  const limit=normalizeAnnotationCacheLimit(settings[CACHE_LIMIT_SETTING]);
+  const retained=trimAnnotationCache(cache,limit);
+  cacheLoadReport={reason,storedEntries:Array.isArray(saved)?saved.length:0,loaded,retained};
   cacheLoaded=true;
  })().finally(()=>{cacheLoadPromise=null;});
  await cacheLoadPromise;
@@ -771,10 +773,20 @@ async function runModern(message,post,signal,manualSession,waitForUnfinishedRevi
    // validateAnalysis() on a subsequent cache hit.
    return serializeCacheStorage(async()=>{
     if(map!==cache)return;
-    const compact=Array.from(map,([key,value])=>[key,
-     value&&Array.isArray(value.targets)?{...value,
-       targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
     try{
+     const settings=await chrome.storage.local.get(CACHE_LIMIT_SETTING);
+     if(map!==cache)return;
+     const limit=normalizeAnnotationCacheLimit(settings[CACHE_LIMIT_SETTING]);
+     const before=cacheCounts(map);
+     const after=trimAnnotationCache(map,limit);
+     if(before.local!==after.local||before.model!==after.model){
+      cacheDiagnostic('缓存达到容量上限，已淘汰较早使用的记录。',{
+       limitPerKind:limit,evicted:{local:before.local-after.local,model:before.model-after.model}
+      });
+     }
+     const compact=Array.from(map,([key,value])=>[key,
+      value&&Array.isArray(value.targets)?{...value,
+        targets:value.targets.map(({context,repair_context,...target})=>target)}:value]);
      await chrome.storage.local.set({[CACHE_KEY]:compact});
     }catch(error){
      cacheDiagnostic('缓存持久化写入失败；本次已分析结果仍可显示，但重启后可能不能复用。',{error:String(error?.message||error),counts:cacheCounts(map)},'warning');

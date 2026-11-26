@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.13.2-folded-panels-manual-cache';
+  const VERSION = '1.1.13.3-folded-panels-manual-cache';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -3124,6 +3124,7 @@
       port.postMessage({ type: 'START', operationId,
         ...(task.mergedGroup?{mergeGroupId:message.mergeGroupId}:{}),
         sentences:paragraphPlan.sentences, context:paragraphPlan.context,
+        ...(task.wholePage && window.top===window ? {articleCacheIdentity:pageIdentity()} : {}),
         restrictToSelection:true, progressiveAnnotation:task.progressive, modes,
         forceRegenerate:Boolean(message.forceRegenerate),reviewAll:message.reviewAll===true });
     } catch (error) { finishTask(task); status(error.message || '无法启动分析', 0); return { ok: false, error: error.message }; }

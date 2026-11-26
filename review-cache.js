@@ -13,6 +13,86 @@ export function paragraphReviewKey(work,index,fingerprint,restrictToSelection=fa
   item.analysis.annotations,item.analysis.repair_context??null,neighbors,
   sentence.adjacentContext??null,restrictToSelection?sentence.selected??[]:null]);
 }
+// Preserve identity-bearing query parameters and SPA routes.
+function normalizeArticleUrl(value){
+ if(typeof value!=='string'||!value||value.length>4096)return null;
+ try{
+  const url=new URL(value);
+  if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return null;
+  for(const name of [...url.searchParams.keys()]){
+   if(/^utm_(source|medium|campaign|term|content|id)$/i.test(name)||/^(fbclid|gclid)$/i.test(name))
+    url.searchParams.delete(name);
+  }
+  return url.href;
+ }catch{return null;}
+}
+export async function articleCacheScope(identity){
+ if(typeof identity!=='string'||identity.length>10000)return null;
+ let article;
+ try{article=JSON.parse(identity);}catch{return null;}
+ if(!Array.isArray(article))return null;
+ const [url,canonical,title]=article;
+ if(typeof title!=='string'||!title.trim()||title.length>1024)return null;
+ const urls=[...new Set([normalizeArticleUrl(url),normalizeArticleUrl(canonical)].filter(Boolean))];
+ if(!urls.length)return null;
+ return Promise.all(urls.map(async value=>{
+  const bytes=new TextEncoder().encode(JSON.stringify([value,title.trim()]));
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+ }));
+}
+const anchorWindow=3;
+export function createArticleReviewLookup(work,scope,cache){
+ if(!scope?.length)return null;
+ const counts=new Map();
+ for(const {sentence} of work){
+  if(sentence.articleCacheEligible===false)continue;
+  counts.set(sentence.text,(counts.get(sentence.text)||0)+1);
+ }
+ const normalizeKey=parts=>{
+  parts[6]=null;
+  return stableCacheStringify(parts);
+ };
+ const candidates=new Map();
+ for(const [key,record] of cache){
+  if(typeof key!=='string'||!key.startsWith('["paragraph-review-v1",')||
+     !Array.isArray(record?.articleScope)||!record.articleScope.some(id=>scope.includes(id)))continue;
+  let parts;
+  try{parts=JSON.parse(key);}catch{continue;}
+  if(!Array.isArray(parts[6]))continue;
+  const [before,after]=parts[6];
+  if(typeof before!=='string'||typeof after!=='string')continue;
+  const signature=normalizeKey(parts);
+  const list=candidates.get(signature)||[];
+  list.push({key,before,after});
+  candidates.set(signature,list);
+ }
+ function eligible(index){
+  const sentence=work[index].sentence;
+  return sentence.articleCacheEligible!==false&&counts.get(sentence.text)===1;
+ }
+ function anchors(index,offset){
+  return Array.from({length:anchorWindow},(_,distance)=>work[index+offset*(distance+1)]?.sentence)
+   .filter(sentence=>sentence&&sentence.articleCacheEligible!==false)
+   .filter(sentence=>counts.get(sentence.text)===1).map(sentence=>sentence.text);
+ }
+ return {
+  scopeFor(index){
+   return eligible(index)&&eligibleNeighbor(index-1)&&eligibleNeighbor(index+1) ? scope : null;
+  },
+  find(key,index){
+   if(!eligible(index))return null;
+   const list=candidates.get(normalizeKey(JSON.parse(key)));
+   if(!list)return null;
+   const before=anchors(index,-1),after=anchors(index,1);
+   const matches=list.filter(entry=>before.includes(entry.before)&&after.includes(entry.after));
+   return matches.length===1 ? cache.get(matches[0].key) : null;
+  }
+ };
+ function eligibleNeighbor(index){
+  return work[index]&&eligible(index);
+ }
+}
 export function snapshotParagraphReview(item,smart){
  if(item.cacheUnsafe||!item.reviewableTargets?.length||item.result.unresolved.some(t=>!t.scan_only))return null;
  const retired=new Set((item.repairs||[]).flatMap(r=>r.source_target_ids));

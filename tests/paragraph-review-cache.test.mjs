@@ -119,3 +119,31 @@ test('validated manual answers survive a restart and can satisfy API or manual r
  await run({api:true,expectedRequests:0});
  await run({forceRegenerate:true});
 });
+
+test('article fallback handles tracking URLs and insertions without weakening exact matches',async()=>{
+ const requests=[];
+ const cache=new AnnotationCache();
+ const config={reviewPosFilter:false,request:async(cfg,targets)=>{
+  requests.push(targets.length);
+  const {buildReviewPayload}=await import('../review-payload.js');
+  const {payload}=buildReviewPayload(cfg.context||'',targets,cfg);
+  return {results:payload.targets.map(t=>({t:t.target_id,c:t.options[0]}))};
+ }};
+ const run=(path,texts,title='기사')=>runSentencePipeline({
+  operationId:'article-cache',modes:{hanja:true},
+  articleCacheIdentity:JSON.stringify(['https://example.test'+path,'',title]),
+  sentences:texts.map((text,i)=>({id:'s'+i,text}))
+ },()=>{},{
+  cache,enabled:true,status:async()=>identity,
+  analyze:async text=>({...identity,annotations:[],targets:text==='과학'?[word]:[],stats:{}}),
+  modelConfig:async()=>config
+ });
+ assert.equal((await run('/news?id=1',['前','과학','後'])).model_conversion_choices,1);
+ assert.equal((await run('/news?id=1&utm_source=feed',['前','추천','과학','後'])).modelCacheHits,1);
+ assert.equal((await run('/news?id=2',['前','과학','後'],'另一篇')).modelCacheHits,1);
+ assert.equal(requests.length,1);
+ assert.equal((await run('/news?id=2',['前','추천','과학','後'],'另一篇')).modelCacheHits,0);
+ assert.equal((await run('/news?id=1',['改写','과학','後'])).modelCacheHits,0);
+ assert.equal((await run('/news?id=1',['前','추천','과학','과학','後'])).modelCacheHits,0);
+ assert.equal(requests.length,4);
+});

@@ -51,6 +51,10 @@
     <label class="choice"><input id="hideToolbarOnFirstManual" type="checkbox" checked><span data-i18n="hideToolbarOnFirstManual">手动填写框首次弹出时隐藏工具条</span></label>
     <label class="choice"><input id="clearCacheOnExit" type="checkbox"><span>退出浏览器后清除标注缓存</span></label>
     <p class="setting-hint">关闭后跨浏览器会话保留本地分析和模型审核缓存；网页重绘恢复与此独立。缓存仍受容量及匹配条件限制。</p>
+    <label class="choice" for="annotationCacheLimitPerKind">标注缓存上限（每类）
+      <input id="annotationCacheLimitPerKind" type="number" min="1" max="10000" step="1" value="1000" style="width:5.5em" aria-describedby="annotationCacheLimitHint">
+    </label>
+    <p id="annotationCacheLimitHint" class="setting-hint">本地分析和模型审核各自最多保留此数量的段落记录。</p>
     <label class="choice force-choice"><input id="forceRegenerate" type="checkbox"><span data-i18n="forceRegenerate">本次忽略缓存，重新分析文本</span></label>
     <label class="choice">工具条显示 <select id="toolbarDisplay"><option value="selection">选中文字时显示</option><option value="always">始终显示</option></select></label>
     <label class="choice"><input id="hideToolbarOnCompletion" type="checkbox" checked aria-describedby="hideToolbarOnCompletionHint"><span data-i18n="hideToolbarOnCompletion">标注完成后自动收起工具条</span></label>

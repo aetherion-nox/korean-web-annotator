@@ -29,6 +29,10 @@ export function canonicalStoredCacheKey(key){
  }catch{return key;}
 }
 export const CACHE_LIMIT_PER_KIND=1000;
+export const CACHE_LIMIT_SETTING='annotationCacheLimitPerKind';
+export function normalizeAnnotationCacheLimit(value){
+ return Number.isInteger(value)&&value>=1&&value<=10000 ? value : CACHE_LIMIT_PER_KIND;
+}
 function kind(key){
  if(typeof key!=='string')return 'legacy';
  if(key.startsWith('["paragraph-review-v1",'))return 'model';

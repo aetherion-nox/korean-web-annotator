@@ -134,11 +134,12 @@ export function createMergedFrameReviewCoordinator({run,createSession,renderRepo
     const sentence=p.sentences[i];
     const canonical=key(part,i);
     owners.set(canonical,{part,id:sentence.id});
-    sentences.push({...sentence,id:canonical});
+    sentences.push({...sentence,id:canonical,articleCacheEligible:part.frameId===0});
    }
   }
   group.owners=owners;
   return {...group.parts[0].message,operationId:group.id,
+   articleCacheIdentity:group.parts.find(part=>part.frameId===0)?.message.articleCacheIdentity,
    sentences,context:contextPieces.join('\n\n')};
  }
  function finalize(id){
