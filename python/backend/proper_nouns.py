@@ -106,27 +106,33 @@ def _complete_lexical_span(text,tokens,start,end):
         return part.tag=='MM' and part.form=='이' and (i+1==len(tokens) or tokens[i+1].start>q)
     return False
 
-async def dictionary_name_evidence(text,tokens,lookup,*,include_person_hanja=False,spans=None):
+async def dictionary_name_evidence(text,tokens,lookup,*,include_person_hanja=False,spans=None,excluded_person_entries=None):
     from backend.mixed_origins import candidate_spans
     if spans is None:spans=candidate_spans(text,tokens)
     entries=await lookup(list(dict.fromkeys(word for _,_,word in spans))) if spans else {}
     names=[];conflicts=[];verified_person_hanja={}
+    kiwi_proper_ranges=proper_noun_ranges(tokens)
     for a,b,word in spans:
         records=entries.get(word,[])
         people=[r for r in records if is_dictionary_person(r)]
         if not people:continue
-        # A dictionary can contain an unrelated historical person with the
-        # same reading as an ordinary noun/determiner. Without a proper-noun
-        # token, that homograph is NOT evidence that this occurrence is a name.
         ordinary=any(is_dictionary_ordinary(r) for r in records)
-        tokens_here=[t for t in tokens if a<=t.start and t.start+t.length<=b and t.length>0]
-        has_proper_token=any(t.tag.split('-')[0]=='NNP' for t in tokens_here)
-        if ordinary and not has_proper_token:continue
+        complete_span=_complete_lexical_span(text,tokens,a,b)
+        has_proper_token=any(a<=start<end<=b for start,end in kiwi_proper_ranges)
+        # A person-only entry can match a fragment of a larger word. Require
+        # a complete lexical span or a proper-noun token wholly inside it.
+        # Homographs always require the proper-noun token.
+        if not has_proper_token:
+            if ordinary:continue
+            if not complete_span:
+                if excluded_person_entries is not None:
+                    excluded_person_entries[(a,b)]={r.get('entry_id',r.get('id')) for r in people}
+                continue
         names.append((a,b))
         # A dictionary name flag by itself does NOT authorize generated Hanja.
         # Require the same exact source word AND a pure, aligned Hanja origin
         # from a genuine person entry. This reuses the existing raw lookup.
-        if include_person_hanja and _complete_lexical_span(text,tokens,a,b):
+        if include_person_hanja and complete_span:
             known=[]
             for record in people:
                 origin=record.get('origin_raw')
@@ -141,7 +147,7 @@ async def dictionary_name_evidence(text,tokens,lookup,*,include_person_hanja=Fal
             if known:verified_person_hanja[(a,b)]=known
         person_ids={r.get('entry_id',r.get('id')) for r in records if is_dictionary_person(r)}
         if (any(is_dictionary_ordinary(r) and r.get('entry_id',r.get('id')) not in person_ids for r in records)
-                and _complete_lexical_span(text,tokens,a,b)):
+                and complete_span):
             conflicts.append((a,b,word,records))
     pure=[span for span in names if all(span!=(a,b) for a,b,_,_ in conflicts)]
     conflicts=[c for c in sorted(conflicts,key=lambda x:(-len(x[2]),x[0]))

@@ -110,7 +110,7 @@ def candidate_spans(text,tokens):
             if HANGUL.fullmatch(word):spans.add((start,end,word))
     return sorted(spans,key=lambda r:(r[0],-r[1]))
 
-async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=(),review_ranges=(),spans=None,progress=None):
+async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_ranges=(),review_ranges=(),spans=None,progress=None,excluded_entries=None):
     if spans is None:spans=candidate_spans(text,tokens)
     proper_ranges=proper_noun_ranges(tokens)+list(review_ranges)
     # Long pages can have thousands of whole-word converter matches. Testing
@@ -154,6 +154,8 @@ async def collect_mixed(engine,text,tokens,modes,*,whole_word_ranges=(),blocked_
         # by source start. Only the last range can overlap a later span.
         if ranges and start<ranges[-1][1] and ranges[-1][0]<end:continue
         all_records=entries.get(word,[])
+        excluded=(excluded_entries or {}).get((start,end))
+        if excluded:all_records=[record for record in all_records if record['id'] not in excluded]
         # Ordinary perfectly aligned single-origin Hanja/native headwords are
         # completely owned by Converter or the native no-conversion path. The former
         # implementation still built full alignment trees and options for

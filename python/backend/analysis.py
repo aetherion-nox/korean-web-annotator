@@ -16,7 +16,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-null-only-origin-1.1.56.64'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-dictionary-name-boundaries-v1'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 
 class _SpanIndex:
@@ -325,9 +325,12 @@ class Engine:
         token_by_span={}
         for token in tokens:
             token_by_span.setdefault((token.start,token.start+token.length),token)
+        excluded_person_entries={}
         dictionary_names,homograph_evidence,known_person_hanja=await dictionary_name_evidence(
-            text,tokens,self.lookup_candidates_cached,include_person_hanja=True,spans=shared_spans)
-        proper_ranges=proper_noun_ranges(tokens)+dictionary_names
+            text,tokens,self.lookup_candidates_cached,include_person_hanja=True,spans=shared_spans,
+            excluded_person_entries=excluded_person_entries)
+        kiwi_proper_ranges=proper_noun_ranges(tokens)
+        proper_ranges=kiwi_proper_ranges+dictionary_names
         name_protection=modes.get('nameProtection',True) is not False
         homograph_evidence=homograph_evidence if name_protection else []
         conflicting_ranges=[(a,b) for a,b,_,_ in homograph_evidence]
@@ -349,8 +352,9 @@ class Engine:
         mixed=dict(annotations=[],targets=[],ranges=[],skipped_mixed=0)
         if self.dictionary is not None and (modes.get('hanja',True) or modes.get('loanword',False)):
             from backend.mixed_origins import collect_mixed
-            whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')]
-            mixed=await collect_mixed(self,text,tokens,{**modes,'reviewAll':review_conversions},whole_word_ranges=whole_word_ranges,blocked_ranges=blocked_for_local,review_ranges=dictionary_names,spans=shared_spans,
+            whole_word_ranges=[(s.start,s.end) for s in segments if s.selection_reason in ('whole_word_match','whole_word_keep_competition')
+                               and s.matched_entry_id not in excluded_person_entries.get((s.start,s.end),())]
+            mixed=await collect_mixed(self,text,tokens,{**modes,'reviewAll':review_conversions},whole_word_ranges=whole_word_ranges,blocked_ranges=blocked_for_local,review_ranges=dictionary_names,spans=shared_spans,excluded_entries=excluded_person_entries,
                                       progress=(lambda part,done,total:checkpoint('mixed',part,done,total)) if long_progress else None)
         mixed_at=perf_counter()
         phase('mixed','done',mixedTargetCount=len(mixed['targets']))
@@ -367,14 +371,18 @@ class Engine:
             if s.status not in ('converted','ambiguous'):continue
             if mixed_index.overlaps(s.start,s.end):continue
             if not valid(s.start,s.end,s.original):rejected+=1;continue
-            if s.status=='converted' and not review_conversions and not overlaps_proper_noun(s.start,s.end,proper_ranges):
+            excluded_entries=excluded_person_entries.get((s.start,s.end),())
+            if (s.status=='converted' and s.matched_entry_id not in excluded_entries
+                    and not review_conversions and not overlaps_proper_noun(s.start,s.end,proper_ranges)):
                 if not safe_replacement(s.display_text) or occupied_index.overlaps(s.start,s.end):rejected+=1;continue
                 occupied.append((s.start,s.end))
                 occupied_index.add(s.start,s.end)
                 token=token_by_span.get((s.start,s.end))
                 selected=next((c for c in s.candidates if c.get('entry_id')==s.matched_entry_id),{})
                 if modes.get('hanja',True):annotations.append(dict(start=to_utf16(text,s.start),end=to_utf16(text,s.end),surface=s.original,type='hanja',replacement=restore_mixed_display(s.original,s.display_text,s.origin_raw,token=token,written_form=selected.get('written_form'))))
-            else:reviews.append((s.start,s.end,s.original,s.candidates))
+            else:
+                candidates=[c for c in s.candidates if c.get('entry_id') not in excluded_entries] if excluded_entries else s.candidates
+                if candidates:reviews.append((s.start,s.end,s.original,candidates))
         # Only review needs tokens to reproduce the original display builder.
         review_tokens=token_by_span if reviews else {}
         # Match non-converting dictionary senses to exact component spans in
@@ -447,7 +455,7 @@ class Engine:
             entries=token_entries
             # Whole-entry owned words already contain all sibling origins in every mode.
             # Disabled Hanja annotations must not block ordinary loanword lookup.
-            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names,pos_filter=pos_filter)
+            loan=collect(text,tokens,entries,(occupied if modes.get('hanja',True) else mixed['ranges'])+blocked_for_local,force_review=review_conversions,hanja_enabled=modes.get('hanja',True),review_ranges=dictionary_names,pos_filter=pos_filter,excluded_entries=excluded_person_entries)
             skipped_mixed=loan['skipped_mixed']
             # A locally certain loan overlapping an original Hanja review becomes
             # a fixed review option instead of pre-empting that connected region.
@@ -604,8 +612,9 @@ class Engine:
         monotonic_tokens=all(token_morphology[i-1]['start']<=token_morphology[i]['start']
                              and token_ends[i-1]<=token_ends[i]
                              for i in range(1,len(token_morphology)))
-        proper_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in proper_ranges]
-        dictionary_name_utf16=[(to_utf16(text,a),to_utf16(text,b)) for a,b in dictionary_names]
+        kiwi_proper_index=_SpanIndex((to_utf16(text,a),to_utf16(text,b)) for a,b in kiwi_proper_ranges)
+        dictionary_name_spans={(to_utf16(text,a),to_utf16(text,b)) for a,b in dictionary_names}
+        dictionary_name_index=_SpanIndex(dictionary_name_spans)
         if long_progress:checkpoint('target_finalize','targets',0,len(targets))
         for i,target in enumerate(targets):
             if long_progress and i and not (i & 127):
@@ -625,8 +634,12 @@ class Engine:
                 # Overlapping or out-of-order tokenizers keep original logic.
                 target['morphology']=[dict(m) for m in token_morphology
                                       if m['start']<b and a<m['end']]
-            if overlaps_proper_noun(target['start'],target['end'],proper_utf16):target['proper_noun']=True
-            if overlaps_proper_noun(target['start'],target['end'],dictionary_name_utf16):target['dictionary_person_name']=True
+            exact_name=(a,b) in dictionary_name_spans
+            if exact_name or kiwi_proper_index.overlaps(a,b):target['proper_noun']=True
+            if exact_name:
+                target['dictionary_person_name']=True
+            elif dictionary_name_index.overlaps(a,b):
+                target['dictionary_name_overlap']=True
         # Expose Kiwi's actual proposal and conservative name/proper-noun
         # boundaries only for optional single-pass LLM segmentation auditing.
         # All offsets are converted once to JavaScript UTF-16 coordinates.

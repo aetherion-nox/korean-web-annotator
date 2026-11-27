@@ -52,7 +52,8 @@ export function prepareManualRequest(config,targets){
    repair_sentence_key:t.repair_sentence_key,start:t.start,end:t.end,
    surface:t.surface,scan_only:t.scan_only===true,
    proper_noun:t.proper_noun===true,suspected_person_name:t.suspected_person_name===true,
-   dictionary_person_name:t.dictionary_person_name===true,dictionary_name_homograph:t.dictionary_name_homograph===true
+   dictionary_person_name:t.dictionary_person_name===true,dictionary_name_homograph:t.dictionary_name_homograph===true,
+   dictionary_name_overlap:t.dictionary_name_overlap===true
   })),scopes:[...scopes]};
  })():undefined;
  return {requestId,bindings,repairValidation,choiceIndex,retryInvalidDictionaryChoices:config.discardInvalidReviewResults!==true,discardInvalidReviewResults:config.discardInvalidReviewResults===true,smartSegmentation:config.smartSegmentation===true,hanjaReadingCheck:config.hanjaReadingCheck===true,batchNumber:config.batchNumber,batchTotal:config.batchTotal,targetCount:wireTargets.filter(t=>!(config.smartSegmentation===true&&t.scan_only===true)).length,text:buildManualPrompt(config.context,wireTargets,requestId,config),budget:{...describeBatchBudget(config.context,wireTargets,{tier:config.batchContextTier,manual:true,wireIds:true,batchId:requestId,reviewPosFilter:config.reviewPosFilter,experimentalHanja:config.experimentalHanja,experimentalLoanword:config.experimentalLoanword,dictionaryFree:config.dictionaryFree,smartSegmentation:config.smartSegmentation,manualOutputTokenLimit:config.manualOutputTokenLimit,apiOutputTokenLimit:config.apiOutputTokenLimit}),limitReason:config.batchBudget?.limitReason}};
