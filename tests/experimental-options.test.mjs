@@ -70,8 +70,8 @@ test('identical literal origin and dictionary spelling remain separate evidence 
  assert.equal(literal.experimentalAccepted,1);
  assert.equal(literal.accepted[0].option.entry_id,'experimental:hanja');
  assert.equal(choose(oldHanja,'c0',{experimentalHanja:true}).accepted[0].option.entry_id,10);
- assert.equal(choose({...oldHanja,dictionary_person_name:true},'原潛',{experimentalHanja:true}).accepted[0].option.type,'keep',
-  'personal-name Hanja protection still rejects the proposed conversion');
+ assert.equal(choose({...oldHanja,dictionary_person_name:true},'原潛',{experimentalHanja:true}).accepted[0].option.type,'hanja',
+  'personal-name evidence no longer vetoes an aligned experimental answer');
 });
 
 test('Latin spelling is validated as loanword without trusting an invented pool key',()=>{
@@ -100,14 +100,16 @@ test('script, alignment and enabled-mode guards reject invented or malformed val
  }
 });
 
-test('Hanja proper nouns are eligible except flagged personal names',()=>{
+test('Hanja proper nouns and existing flagged personal names are eligible',()=>{
  const proper={...hanja,proper_noun:true};
  assert.equal(canProposeExperimentalOption(proper,'hanja'),true);
  assert.equal(choose(proper,'原潛',{experimentalHanja:true}).accepted.length,1);
  for(const flag of ['suspected_person_name','dictionary_person_name','dictionary_name_homograph']){
   const t={...hanja,[flag]:true};
-  assert.equal(canProposeExperimentalOption(t,'hanja'),false,flag);
-  assert.equal(choose(t,'原潛',{experimentalHanja:true}).accepted[0].option.type,'keep',flag);
+  assert.equal(canProposeExperimentalOption(t,'hanja'),true,flag);
+  assert.equal(choose(t,'原潛',{experimentalHanja:true}).accepted[0].option.type,'hanja',flag);
+  assert.equal(choose(t,'原潛',{experimentalHanja:false}).accepted[0].option.type,'keep',flag);
+  assert.equal(choose(t,'原子潛水艇',{experimentalHanja:true}).accepted[0].option.type,'keep',flag);
   assert.equal(choose(t,'c0',{experimentalHanja:true}).accepted.length,1,'dictionary keys remain available');
  }
 });

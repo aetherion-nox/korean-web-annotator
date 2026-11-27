@@ -118,24 +118,26 @@ const experimentalCopy={
  },
  en:{
   experimentalHanja:'Experimental: literal Hanja origins (on by default)',
-  experimentalHanjaHint:'In one model response, if no dictionary sense fits and the true origin is known, write Hanja directly in results.choice_id. No experimental_options, x0 or preliminary KEEP step. Local alignment, name and boundary checks still apply.',
+  experimentalHanjaHint:'In one model response, if no dictionary sense fits and the true origin is known, write Hanja directly in results.choice_id. No experimental_options, x0 or preliminary KEEP step. Local alignment and boundary checks still apply. For existing personal-name review targets, use genuine Hanja only when the exact identity and spelling are reliably known.',
   experimentalLoanword:'Experimental: literal loanword originals (on by default)',
   experimentalLoanwordHint:'Write the actual borrowed Latin-script original directly in choice_id when no supplied sense fits, never an English translation. Existing c0/n0/KEEP selections still work; all origins are checked locally.'
  },
  ja:{
   experimentalHanja:'実験：漢字語源を直接指定（初期設定は有効）',
-  experimentalHanjaHint:'辞書の候補が適切でなく語源に確証がある場合、同じ results.choice_id に漢字を直接記入します。別の候補配列や KEEP 後の再審査は不要です。アライメント・人名を検証します。',
+  experimentalHanjaHint:'辞書の候補が適切でなく語源に確証がある場合、同じ results.choice_id に漢字を直接記入します。別の候補配列や KEEP 後の再審査は不要です。文字の対応と語境界を確認します。審査対象の人名は本人と実際の漢字表記が確実な場合のみ補完します。',
   experimentalLoanword:'実験：外来語の原綴りを直接指定（初期設定は有効）',
   experimentalLoanwordHint:'真の借用元のラテン文字表記を choice_id に直接記入します。英訳ではありません。既存の選択肢は引き続き使用できます。'
  },
  ko:{
   experimentalHanja:'실험: 한자 어원 직접 선택 (기본 켜짐)',
-  experimentalHanjaHint:'사전 후보가 맞지 않고 실제 어원을 확실히 알 때 같은 results.choice_id에 한자를 직접 작성합니다. 별도 배열이나 KEEP 후 재검토가 필요하지 않습니다. 정렬·인명·경계를 확인합니다.',
+  experimentalHanjaHint:'사전 후보가 맞지 않고 실제 어원을 확실히 알 때 같은 results.choice_id에 한자를 직접 작성합니다. 별도 배열이나 KEEP 후 재검토가 필요하지 않습니다. 정렬·경계를 확인합니다. 이미 검토 대상인 인명은 인물과 실제 한자 표기가 확실할 때만 보완합니다.',
   experimentalLoanword:'실험: 외래어 원어 직접 선택 (기본 켜짐)',
   experimentalLoanwordHint:'실제 차용어의 라틴 문자 원어를 choice_id에 직접 작성합니다. 영문 번역을 대신 쓰지 않습니다. 기존 사전 선택지도 그대로 사용합니다.'
  }
 };
 for(const [locale,labels] of Object.entries(experimentalCopy))Object.assign(copy[locale],labels);
+copy['zh-CN'].experimentalHanjaHint='词典候选不匹配且真实词源可靠时，可直接填写汉字。已进入审核的人名只有在确切身份和真实汉字写法可靠时才可直填；不猜测，不新增受保护人名审核目标。';
+copy['zh-TW'].experimentalHanjaHint='字典候選不符且真實詞源可靠時，可直接填寫漢字。已進入審核的人名僅在確切身分及真實漢字寫法可靠時才可直填；不猜測，不新增受保護人名審核目標。';
 const segmentationCopy={
  'zh-CN':['实验性：LLM 智能分词修复（默认开启）','开启后，完整韩语句子、Kiwi 分词线索和已由本地确定的词也会提交至你选择的模型服务，可能明显增加费用。模型在同一轮审核中检查错分与漏词；仅通过本地校验的修复会生效。模型自行提供的未核实词源会用虚线标记。'],
  'zh-TW':['實驗性：LLM 智慧斷詞修復（預設開啟）','開啟時會把完整韓語句子、Kiwi 斷詞線索及本地已確定的詞送交指定模型，可能增加費用。一次請求同時校正斷詞與漏詞，修復須通過本地驗證；模型自寫的未核實詞源會有虛線標記。'],
@@ -153,7 +155,7 @@ const localAuditCopy={
 };
 for(const [locale,labels] of Object.entries(localAuditCopy))Object.assign(copy[locale],{reviewLocalConversions:labels[0],reviewLocalConversionsHint:labels[1]});
 const readingCopy={
- 'zh-CN':['模型直填汉字读音校验（默认关闭）','仅校验模型在实验性功能中直接填写的汉字词源的韩语读音与词首音变；词典提供的 c/n 选项不受此开关影响，也不会被该读音表再次否决。开启可能因多音字、数字后单位等情况误判；关闭仅跳过模型直填汉字的读音比对，字形、词界、位置、人名保护仍然执行。此校验不能证明词源正确。'],
+ 'zh-CN':['模型直填汉字读音校验（默认关闭）','仅校验模型在实验性功能中直接填写的汉字词源的韩语读音与词首音变；词典提供的 c/n 选项不受此开关影响，也不会被该读音表再次否决。开启可能因多音字、数字后单位等情况误判；关闭仅跳过模型直填汉字的读音比对，字形、词界、位置及姓名整段保护仍然执行。此校验不能证明词源正确。'],
  'zh-TW':['模型直填漢字讀音驗證（預設關閉）','僅驗證模型在實驗性功能中直接填寫之漢字詞源的韓語讀音及頭音法則；字典提供的 c/n 選項不受此開關影響，也不會被讀音表再次否決。開啟可能誤判多音字及數字後的單位；關閉僅略過模型直填漢字的讀音比對，字形、詞界、位置及人名保護仍然執行。此驗證無法證明詞源正確。'],
  en:['Check model-written Hanja readings (off by default)','Applies Korean reading and initial-sound checks ONLY to Hanja spellings written directly by the model in experimental origin mode. Dictionary c/n choices are never rejected by this reading table. Enabling may falsely reject polyphonic Hanja or units after numbers. Turning off skips only this reading comparison; script, word boundaries, spans and personal-name safeguards remain. A match does not prove the etymology.'],
  ja:['モデル直記漢字の読みを検証（初期設定はオフ）','実験的な語源補完でモデルが直接入力した漢字にだけ、韓国語の読みと頭音法則の照合を適用します。辞書の c/n 選択肢には適用せず、読み表を理由に拒否しません。有効時は多音字や数字に続く単位を誤判定する場合があります。オフでも字種・語境界・位置・人名保護は有効です。読みの照合だけでは語源の正しさは証明できません。'],

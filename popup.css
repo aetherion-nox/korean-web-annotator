@@ -28,3 +28,5 @@ button.danger-subtle { color:#a50e0e; }
 #resetAnnotationAppearance {min-height:28px;padding:0 10px;font-size:12px;}
 .appearance-hint,#annotationAppearanceStatus {font-size:11px;color:#5f6368;margin:5px 0 0;}
 #annotationAppearanceStatus:empty {display:none;}
+
+#persistentForceRow[hidden]{display:none!important}

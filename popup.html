@@ -56,6 +56,8 @@
     </label>
     <p id="annotationCacheLimitHint" class="setting-hint">本地分析和模型审核各自最多保留此数量的段落记录。</p>
     <label class="choice force-choice"><input id="forceRegenerate" type="checkbox"><span data-i18n="forceRegenerate">本次忽略缓存，重新分析文本</span></label>
+    <label id="persistentForceRow" class="choice force-choice" hidden><input id="persistentForceRegenerate" type="checkbox"><span data-i18n="persistentForceRegenerate">忽略缓存，重新分析文本</span></label>
+    <p class="setting-hint" data-i18n="forceRegenerateHint">本次选项持续到退出浏览器；下方选项跨浏览器会话保留。</p>
     <label class="choice">工具条显示 <select id="toolbarDisplay"><option value="selection">选中文字时显示</option><option value="always">始终显示</option></select></label>
     <label class="choice"><input id="hideToolbarOnCompletion" type="checkbox" checked aria-describedby="hideToolbarOnCompletionHint"><span data-i18n="hideToolbarOnCompletion">标注完成后自动收起工具条</span></label>
     <p id="hideToolbarOnCompletionHint" class="setting-hint" data-i18n="hideToolbarOnCompletionHint">正常完成后收起；可按工具条显示设置重新选中文字，或点击已启用的悬浮球重新打开。</p>

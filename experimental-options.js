@@ -21,7 +21,7 @@ export function buildExperimentalOriginInstructions(config={}){
   hanja?"EXPERIMENTAL HANJA ON: direct Hanja must be genuine Sino-Korean characters aligned to Hangul readings, NOT a meaning-equivalent Chinese translation pronounced differently. Do not replace native Korean morphemes with semantic Hanja; preserve source boundaries and explicit native suffixes. Hanja must align with the Korean source.":"EXPERIMENTAL HANJA OFF: no raw Hanja in results[].c; use only a matching pooled p ID or actual JSON null for Hanja words.",
   loanword?"EXPERIMENTAL LOANWORD ON: borrowed words may use established Latin originals, including identifiable foreign personal names. Do not invent translations or romanizations of native Korean names.":"EXPERIMENTAL LOANWORD OFF: no raw Latin origin in results[].c; use only a matching pooled p ID or actual JSON null for borrowed words.",
    ...(hanja||loanword?["MIXED ORIGINS: c may combine an enabled Hanja/Latin original with unchanged Hangul anywhere (not only suffixes): 터부도→taboo도, 금기도→禁忌도, 재확인도→재確認도. Preserve Hangul exactly; Hanja aligns syllable-by-syllable; Latin lengths may differ. Ambiguous boundaries: null."]:[]),
-  ...(hanja?["Non-person proper nouns may use authentic Hanja spellings. A personal name may use ONLY a matching pooled p ID or verified_person_hanja; never guess personal Hanja."]:[]),
+  ...(hanja?["Proper nouns, including personal names, may use authentic Hanja spellings. Prefer a matching pooled p ID or verified_person_hanja; if none matches, use direct Hanja only when the exact person's identity and real Hanja spelling are reliably known. Never guess a name from its pronunciation. Return null if uncertain."]:[]),
   "Output exactly one {t,c} row per target unless superseded by a validated segmentation repair. c is a matching pooled p ID, an authentic enabled source spelling or JSON null. Results and repair objects follow separate rules."
  ].join('\n');
 }
@@ -29,7 +29,7 @@ export function buildExperimentalOriginInstructions(config={}){
 const CJK=/^[\p{Script=Han}]+$/u;
 const LOANWORD=/^[\p{Script=Latin}0-9][\p{Script=Latin}\p{M}0-9 .·'’()\/&+\-]*$/u;
 const RESERVED=/^[cnxp]\d+$/i;
-// Script-specific permissions: NNP is not itself a veto; personal-name Hanja is.
+// Personal-name flags are context evidence, not a literal-origin veto. Existing target generation and protected segmentation ranges remain unchanged.
 export function canProposeExperimentalOption(target,type){
  const surface=target?.surface||'';
  // A compound component can have its own valid origin even when adjacent to other word tokens.
@@ -37,8 +37,7 @@ export function canProposeExperimentalOption(target,type){
  // remain the authoritative local guards for literal origins.
  if(!/[가-힣]/u.test(surface)||/\s/u.test(surface)||target.scan_only===true)return false;
  if(type==='loanword')return true;
- if(type==='hanja')return !(target.dictionary_person_name===true||
-   target.dictionary_name_homograph===true||target.suspected_person_name===true);
+ if(type==='hanja')return true;
  return false;
 }
 
@@ -131,7 +130,7 @@ export function explainLiteralOriginRejection(target,choiceId,config={}){
  if(!canProposeExperimentalOption(target,kind)){
   if(!/[가-힣]/u.test(target?.surface||'')||/\s/u.test(target?.surface||'')||target.scan_only===true)
    return 'partial_or_cross_word_boundary';
-  return kind==='hanja'?'person_name_hanja_blocked':'source_boundary_or_name_blocked';
+  return 'source_boundary_or_name_blocked';
  }
  if(kind==='hanja'){
   if(config.hanjaReadingCheck===true&&literalOriginOption(target,choiceId,{...config,hanjaReadingCheck:false}))

@@ -23,7 +23,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.13.3-folded-panels-manual-cache';
+const CONTENT_SCRIPT_VERSION='1.1.14-session-cache-person-origin';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -374,7 +374,7 @@ async function inspectChildFrames(tabId,run,finalPass=false){
  const report=await dispatchChildFrameBatch(list,{
   started:run.started,concurrency:3,
   ensure:async frame=>ensureContentScriptInFrame(tabId,frame.frameId),
-  probe:async frame=>chrome.tabs.sendMessage(tabId,{type:'KRA_FRAME_PROBE'},{frameId:frame.frameId}),
+  probe:async frame=>chrome.tabs.sendMessage(tabId,{type:'KRA_FRAME_PROBE',forceRegenerate:run.forceRegenerate},{frameId:frame.frameId}),
   start:async frame=>chrome.tabs.sendMessage(tabId,{
    type:'START_ANNOTATION',modes:run.modes,deepAnalysis:true,
    forceRegenerate:run.forceRegenerate,requestConcurrency:4,uiSettings:run.uiSettings,
@@ -471,6 +471,15 @@ async function wholePageAnalysisStamp(){
  }
 }
 
+// Session storage survives worker suspension, but not browser exit.
+async function cacheBypassEnabled(explicit=false){
+ if(explicit===true)return true;
+ const [session,local]=await Promise.all([
+  chrome.storage.session?.get('sessionForceRegenerate')??{},
+  chrome.storage.local.get('persistentForceRegenerate')
+ ]);
+ return session.sessionForceRegenerate===true||local.persistentForceRegenerate===true;
+}
 async function startWholePageForTab(tabId,settings){
  const uiSettings=sanitizeUiSettings(settings.uiSettings);
  const analysisSettingsStamp=await wholePageAnalysisStamp();
@@ -480,7 +489,7 @@ async function startWholePageForTab(tabId,settings){
   collectionDeadline:startedAt+FRAME_COLLECTION_MAX_MS,
   lastFrameEventAt:0,lastFrameReport:null,started:new Set(),
   serial:Promise.resolve(),timer:null,finalizer:null,finalizing:false,modes:settings.modes,
-  forceRegenerate:Boolean(settings.forceRegenerate),autoResume:settings.autoResume===true,uiSettings,analysisSettingsStamp,
+  forceRegenerate:settings.autoResume===true?false:await cacheBypassEnabled(settings.forceRegenerate),autoResume:settings.autoResume===true,uiSettings,analysisSettingsStamp,
   trigger:settings.trigger||'popup'};
  const previous=activeFrameScans.get(tabId);
  if(previous){
@@ -569,7 +578,7 @@ async function handlePageContextMenu(info,tab){
   const modes={hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true};
   const response=frameId===0?
    await startWholePageForTab(tab.id,{modes,forceRegenerate:false,uiSettings,trigger:'context-menu'}):
-   await chrome.tabs.sendMessage(tab.id,{type:'START_ANNOTATION',modes,forceRegenerate:false},{frameId});
+   await chrome.tabs.sendMessage(tab.id,{type:'START_ANNOTATION',modes,forceRegenerate:await cacheBypassEnabled()},{frameId});
   if(!response?.ok)throw Error(response?.error||'无法启动整页标注。');
  }
  await refreshPageMenu(tab.id);
@@ -625,7 +634,7 @@ async function handleSelectionContextMenu(info, tab) {
     modes,
     deepAnalysis: true,
     requestConcurrency: 4,
-    forceRegenerate: false
+    forceRegenerate: await cacheBypassEnabled()
   }, { frameId });
 
   if (!response?.ok) throw new Error(response?.error || '无法读取当前选区。');
@@ -751,6 +760,7 @@ async function loadCache(){
 }
 async function runModern(message,post,signal,manualSession,waitForUnfinishedReview=null){
  await loadCache();const config=await engineConfig();
+ message={...message,forceRegenerate:await cacheBypassEnabled(message.forceRegenerate)};
  const {uiSettings:cacheSettings={}}=await chrome.storage.local.get('uiSettings');
  const counts=cacheCounts(cache);
  const cacheDiagnostic=(message,detail,level='info')=>post({type:'DIAGNOSTIC',operationId:operationIdForCache,diagnostic:{stage:'cache',level,message,detail:JSON.stringify(detail)}});

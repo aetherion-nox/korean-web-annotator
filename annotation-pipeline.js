@@ -313,7 +313,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   smartSegmentation?'id-review-v21-single-pass-segmentation-repair':
    experimental?'id-review-v20-literal-origin-choice':'id-review-v17-chunk-context',
   config.reviewPosFilter!==false,
-  ...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword]:[])
+  ...(experimental?[!!config.experimentalHanja,!!config.experimentalLoanword,...(config.experimentalHanja===true?['person-origin-policy-v2']:[])]:[])
  ]);
  const articleLookup=config&&!bypassCache ?
   createArticleReviewLookup(work,await articleCacheScope(message.articleCacheIdentity),cache):null;

@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.13.3-folded-panels-manual-cache';
+  const VERSION = '1.1.14-session-cache-person-origin';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -1189,7 +1189,7 @@
   // Cheap, read-only child-frame preflight. Do not build prompts or mutate DOM
   // for empty/hidden tracker frames. The actual annotation pass still performs
   // its own complete source/selection validation.
-  function probeKoreanFrame() {
+  function probeKoreanFrame(includeOwned=false) {
     if(!document.body)return {ok:true,eligible:false,reason:'no-body'};
     try{
       if(window!==window.top&&
@@ -1221,6 +1221,10 @@
         // Enough evidence to start analysis; no need to walk all ad scripts.
         return {ok:true,eligible:true,reason:'visible-korean',checked,hidden,eligibleNodes:eligible};
       }
+    }
+    if(includeOwned)for(const root of roots)for(const node of root.querySelectorAll(OWN_RUBY)){
+      if(!visibilityReason(node.parentElement)&&/[가-힣]/u.test(node.dataset.kraOriginal||''))
+        return {ok:true,eligible:true,reason:'existing-korean-annotation',checked,hidden,eligibleNodes:1};
     }
     return {ok:true,eligible:false,reason:'no-visible-korean',checked,hidden,eligibleNodes:0};
   }
@@ -1907,7 +1911,7 @@
         const originRules=originTypes.length?
           'OPEN-ENDED ORIGIN AUDIT remains enabled for '+originTypes.join(' and ')+
           '. Prefer a genuinely matching pooled p ID listed in the current target options array. If no offered sense matches, a reliably known authentic source spelling of an ENABLED type can be written directly in c. '+
-          'For Hanja verify Korean readings and word boundaries; never translate the meaning into Chinese characters. Do not guess personal-name Hanja. For loanwords use authentic Latin source spellings, not invented romanizations. '+
+          'For Hanja verify Korean readings and word boundaries; never translate the meaning into Chinese characters. For a personal name, write genuine Hanja only if its exact identity and spelling are reliably known; never infer characters from pronunciation alone. For loanwords use authentic Latin source spellings, not invented romanizations. '+
           'Return actual JSON null for native words, unknown identities or uncertain origins. Only the original enabled types are allowed.\n':
           'DICTIONARY-ONLY CORRECTION: c must be a pooled p ID listed in the current target options array with matching meaning, or actual JSON null. Never write a direct Hanja/Latin spelling.\n';
         return intro+originRules+JSON.stringify({...old,
@@ -3138,7 +3142,7 @@
       case 'KRA_PING': respond({ ok: true, version: VERSION }); break;
       case 'KRA_CONTEXT_STATE': respond(contextState()); break;
       case 'KRA_HISTORY_STATE': respond(latestUndoState()); break;
-      case 'KRA_FRAME_PROBE': respond(probeKoreanFrame()); break;
+      case 'KRA_FRAME_PROBE': respond(probeKoreanFrame(message.forceRegenerate===true)); break;
       case 'KRA_MANUAL_OFFLINE_FRAME':
         applyMergedOfflineFrame(message).then(respond,error=>respond({ok:false,error:String(error.message||error)}));
         return true;

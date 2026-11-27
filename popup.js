@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.13.3-folded-panels-manual-cache';
+const CONTENT_SCRIPT_VERSION = '1.1.14-session-cache-person-origin';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');
@@ -7,6 +7,21 @@ const copyModes=Array.from(document.querySelectorAll('input[name=copyMode]'));
 const selectedCopyMode=()=>copyModes.find(input=>input.checked)?.value||'hangul';
 const reviewSelectionButton=document.querySelector('#reviewSelectionButton');
 const forceRegenerate = document.querySelector('#forceRegenerate');
+const persistentForceRegenerate=document.querySelector('#persistentForceRegenerate');
+const persistentForceRow=document.querySelector('#persistentForceRow');
+const effectiveForceRegenerate=()=>forceRegenerate.checked||persistentForceRegenerate.checked;
+function syncCacheBypassUi(){
+ forceRegenerate.disabled=persistentForceRegenerate.checked;
+ persistentForceRow.hidden=!effectiveForceRegenerate();
+}
+forceRegenerate.addEventListener('change',()=>{
+ syncCacheBypassUi();
+ chrome.storage.session.set({sessionForceRegenerate:forceRegenerate.checked}).catch(showError);
+});
+persistentForceRegenerate.addEventListener('change',()=>{
+ syncCacheBypassUi();
+ chrome.storage.local.set({persistentForceRegenerate:persistentForceRegenerate.checked}).catch(showError);
+});
 const stopAutoAfterPageComplete=document.querySelector('#stopAutoAfterPageComplete');
 const restoreExistingAnnotations=document.querySelector('#restoreExistingAnnotations');
 const hideToolbarOnFirstManual=document.querySelector('#hideToolbarOnFirstManual');
@@ -88,6 +103,13 @@ function syncToolbarOptions(changed){
  toolbarDisplay.disabled=toolbarBallOnly.checked;
 }
 
+for(const [lang,labels] of Object.entries({
+ 'zh-CN':['忽略缓存，重新分析文本','本次选项持续到退出浏览器；下方选项跨浏览器会话保留。'],
+ 'zh-TW':['忽略快取，重新分析文字','本次選項持續到退出瀏覽器；下方選項跨瀏覽器工作階段保留。'],
+ en:['Ignore cache and analyze text again (persistent)','The session option lasts until browser exit; the persistent option survives restarts.'],
+ ja:['キャッシュを無視して再解析（永続）','今回の設定はブラウザー終了まで、永続設定は再起動後も有効です。'],
+ ko:['캐시 무시 및 텍스트 다시 분석 (영구)','이번 세션 설정은 브라우저 종료까지, 영구 설정은 재시작 후에도 유지됩니다.']
+}))Object.assign(STRINGS[lang],{persistentForceRegenerate:labels[0],forceRegenerateHint:labels[1]});
 let locale = 'zh-CN';
 const t = key => STRINGS[locale]?.[key] || STRINGS.en[key] || key;
 
@@ -103,7 +125,13 @@ async function init() {
   hanjaMode.checked = uiSettings.hanjaMode ?? true;
   loanwordMode.checked = uiSettings.loanwordMode ?? true;
   for(const input of copyModes)input.checked=input.value===uiSettings.copyMode;
-  forceRegenerate.checked = false;
+  const [sessionBypass,persistentBypass]=await Promise.all([
+    chrome.storage.session?.get('sessionForceRegenerate')??{},
+    chrome.storage.local.get('persistentForceRegenerate')
+  ]);
+  forceRegenerate.checked=sessionBypass.sessionForceRegenerate===true;
+  persistentForceRegenerate.checked=persistentBypass.persistentForceRegenerate===true;
+  syncCacheBypassUi();
   mobileSelectionToolbar.checked = uiSettings.mobileSelectionToolbar ?? true;
   floatingBallEnabled.checked = uiSettings.floatingBallEnabled !== false;
   toolbarBallOnly.checked=uiSettings.toolbarBallOnly===true;
@@ -195,7 +223,7 @@ runButton.addEventListener('click', async () => {
     // Transfer ownership before awaiting storage, script checks or engine work.
     const response=await chrome.runtime.sendMessage({
       type:'KRA_START_PAGE_FROM_POPUP',modes,deepAnalysis:true,
-      requestConcurrency:FIXED_CONCURRENCY,forceRegenerate:forceRegenerate.checked,
+      requestConcurrency:FIXED_CONCURRENCY,forceRegenerate:effectiveForceRegenerate(),
       uiSettings:currentUiSettings()
     });
     if(!response?.ok)throw new Error(response?.error||t('scriptFailed'));
@@ -270,7 +298,7 @@ async function saveAndGetRunSettings() {
   syncToolbarOptions();
   const modes = { hanja: hanjaMode.checked, loanword: loanwordMode.checked };
   if (!modes.hanja && !modes.loanword) throw new Error(t('chooseMode'));
-  const settings = { modes, deepAnalysis: true, requestConcurrency: FIXED_CONCURRENCY, forceRegenerate: forceRegenerate.checked };
+  const settings = { modes, deepAnalysis: true, requestConcurrency: FIXED_CONCURRENCY, forceRegenerate: effectiveForceRegenerate() };
   const {uiSettings:stored={}}=await chrome.storage.local.get('uiSettings');
   const nextUiSettings = { ...stored, hanjaMode: modes.hanja, loanwordMode: modes.loanword, copyMode:selectedCopyMode(), deepAnalysis: true, hideToolbarOnCompletion:hideToolbarOnCompletion.checked,toolbarBallOnly:toolbarBallOnly.checked,floatingBallEnabled:floatingBallEnabled.checked, mobileSelectionToolbar: mobileSelectionToolbar.checked, toolbarDisplay:toolbarDisplay.value, toolbarHangulOnly:toolbarHangulOnly.checked, stopAutoAfterPageComplete:stopAutoAfterPageComplete.checked, restoreExistingAnnotations:restoreExistingAnnotations.checked,hideToolbarOnFirstManual:hideToolbarOnFirstManual.checked, clearCacheOnExit:clearCacheOnExit.checked, uiLocale: locale };
   await chrome.storage.local.set({ uiSettings: nextUiSettings });
