@@ -6,6 +6,8 @@
 // included in the replacement, and mismatched Hangul/Hanja lengths are rejected.
 const PAREN=/([(\uFF08])(\p{Script=Han}{1,24})(?:[^\p{Script=Han}()（）\r\n][^()（）\r\n]{0,95})?([)\uFF09])/gu;
 const PRECEDING=/([가-힣]{1,24})([ \t\u00a0\u3000’”'"「」『』〈〉《》【】〔〕［］\[\]{}()（）,，、:：;；·⋅—–-]{0,12})$/u;
+const EARLIER_WORD=/([가-힣]{1,24})[ \t\u00a0\u3000]{1,12}$/u;
+const WORD_CHARACTER=/[가-힣A-Za-z0-9]/u;
 const MAX_EXCERPT=180;
 
 function excerpt(text,start,end){
@@ -34,6 +36,25 @@ function overlaps(ordered,start,end){
  return pos>0&&ordered[pos-1][1]>start;
 }
 
+function alignWords(text,start,surface,hanja){
+ const characters=Array.from(hanja);
+ const words=[];
+ let remaining=characters.length;
+ while(true){
+  if((start>0&&WORD_CHARACTER.test(text[start-1]))||surface.length>remaining)return [];
+  const end=remaining;
+  remaining-=surface.length;
+  words.push({start,end:start+surface.length,surface,hanja:characters.slice(remaining,end).join('')});
+  if(!remaining)return words.reverse();
+  // Only whole words separated by short horizontal whitespace can extend a pair.
+  const before=text.slice(Math.max(0,start-36),start);
+  const previous=EARLIER_WORD.exec(before);
+  if(!previous)return [];
+  start-=previous[0].length;
+  surface=previous[1];
+ }
+}
+
 export function extractInlineHanjaPairs(text){
  if(typeof text!=='string'||!text)return [];
  const found=[];
@@ -44,22 +65,21 @@ export function extractInlineHanjaPairs(text){
   const before=text.slice(Math.max(0,match.index-48),match.index);
   const preceding=PRECEDING.exec(before);
   if(!preceding)continue;
-  // Only a *short* stretch of whitespace/quotation/bracket punctuation
-  // may intervene. Never skip a word, number, sentence end or line break.
-  // A complete matching Hangul token and a leading Hanja run remain required.
+  // Only a short stretch of whitespace or punctuation may be between the
+  // final Hangul word and the parentheses.
   if(/[.!?。！？\r\n]/u.test(preceding[2]))continue;
-  const hangul=preceding[1],start=match.index-before.length+preceding.index;
-  const end=start+hangul.length;
-  if(start>0&&/[가-힣A-Za-z0-9]/u.test(text[start-1]))continue;
-  // Each Hanja maps to exactly one Hangul syllable. Keep the *original*
-  // compatible Hanja glyph (e.g. 靈), do not NFKC-normalize.
-  if(Array.from(hangul).length!==Array.from(hanja).length)continue;
-  const evidence={start,end,surface:hangul,hanja,
-   // The source becomes available only after the closing parenthesis.
-   parenthesisEnd:match.index+full.length,
-   citation:excerpt(text,start,match.index+full.length)};
-  if(found.some(pair=>pair.start===start&&pair.end===end))continue;
-  found.push(evidence);
+  const start=match.index-before.length+preceding.index;
+  const words=alignWords(text,start,preceding[1],hanja);
+  if(!words.length)continue;
+  // Each word shares the full citation and becomes available after the same
+  // closing parenthesis. Slicing by code point preserves original Hanja glyphs.
+  const parenthesisEnd=match.index+full.length;
+  let citation=excerpt(text,words[0].start,parenthesisEnd);
+  if(words.length>1) citation+='（'+words.map(word=>`${word.surface} → ${word.hanja}`).join('，')+'）';
+  for(const word of words){
+   if(found.some(pair=>pair.start===word.start&&pair.end===word.end))continue;
+   found.push({...word,parenthesisEnd,citation});
+  }
  }
  return found;
 }
