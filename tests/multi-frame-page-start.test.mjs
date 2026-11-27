@@ -8,27 +8,30 @@ import {createMergedFrameReviewCoordinator} from '../merged-frame-review.js';
 const src=fs.readFileSync(new URL('../service-worker.js',import.meta.url),'utf8');
 const block=src.slice(src.indexOf('// User-initiated multi-frame dispatch.'),
  src.indexOf('\nasync function ensureContextMenu()'));
-const load=({frames,probe,denied=[],main={ok:true,started:false}})=>{
- const launches=[],diagnostics=[],injections=[],timers=[],listeners={};
+const toolbarHandler=src.slice(src.indexOf("  if(message?.type==='KRA_START_PAGE_FROM_TOOLBAR')"),
+ src.indexOf("  if(message?.type==='KRA_CONTEXT_UPDATE')"));
+const load=({frames,probe,session={},local={},denied=[],main={ok:true,started:false}})=>{
+ const launches=[],diagnostics=[],injections=[],timers=[],listeners={},merged=[];
  const chrome={
   tabs:{
    query:async()=>[{id:77}],
    sendMessage:async(tabId,message,options={})=>{
     const frameId=options.frameId??0;
-    if(message.type==='KRA_FRAME_PROBE')return probe(frameId);
+    if(message.type==='KRA_FRAME_PROBE')return probe(frameId,message.forceRegenerate);
     if(message.type==='START_ANNOTATION'){
      launches.push({frameId,type:message.type,modes:message.modes,
-       mergeGroupId:message.mergeGroupId,mergeHost:message.mergeHost});
+       mergeGroupId:message.mergeGroupId,mergeHost:message.mergeHost,forceRegenerate:message.forceRegenerate});
      return frameId===0?main:{ok:true,started:true};
     }
     if(message.type==='KRA_FRAME_DISPATCH_DIAGNOSTIC'){diagnostics.push(message);return {ok:true};}
     return {ok:true};
    }
   },
-  storage:{local:{
-   get:async()=>({uiSettings:{}}),
-   set:async()=>{}
-  }},
+  runtime:{id:'annotator'},
+  storage:{
+   session:{get:async key=>({[key]:session[key]})},
+   local:{get:async key=>({uiSettings:{},[key]:local[key]}),set:async()=>{}}
+  },
   webNavigation:{
    getAllFrames:async()=>frames,
    onDOMContentLoaded:{addListener:fn=>listeners.DOMLoaded=fn},
@@ -39,7 +42,7 @@ const load=({frames,probe,denied=[],main={ok:true,started:false}})=>{
   setTimeout:fn=>{timers.push(fn);return timers.length;},
   clearTimeout:()=>{},sanitizeUiSettings:x=>x||{},
   createMergedFrameReviewCoordinator,
-  runStreamingAnnotation:async()=>{},
+  runStreamingAnnotation:async message=>{merged.push(message);},
   createManualReviewSession:()=>({submit:()=>true}),
   ensureContentScriptInFrame:async(_tabId,frameId)=>{
    injections.push(frameId);
@@ -47,7 +50,10 @@ const load=({frames,probe,denied=[],main={ok:true,started:false}})=>{
   },
   dispatchChildFrameBatch,FRAME_COLLECTION_MAX_MS,FRAME_NAVIGATION_DEBOUNCE_MS,nextFrameCollectionDelay};
  vm.createContext(c);vm.runInContext(block,c);
- return {c,launches,diagnostics,injections,timers,listeners};
+ vm.runInContext('function toolbarMessage(message,sender,sendResponse){'+toolbarHandler+'}',c);
+ const toolbar=(message={})=>new Promise(resolve=>c.toolbarMessage(
+  {type:'KRA_START_PAGE_FROM_TOOLBAR',...message},{id:'annotator',frameId:0,tab:{id:77}},resolve));
+ return {c,launches,diagnostics,injections,timers,listeners,merged,toolbar};
 };
 test('popup whole-page starts main and independently eligible Korean iframe, not trackers',async()=>{
  const f=load({
@@ -101,4 +107,35 @@ test('navigation away cancels bounded discovery and avoids starting a previous-p
  f.listeners.DOMLoaded({tabId:77,frameId:2});
  assert.equal(vm.runInContext('activeFrameScans.size',f.c),0);
  assert.deepEqual(f.launches.map(x=>x.frameId),[0]);
+});
+
+test('toolbar applies session and persistent bypass to existing Korean annotations in child frames',async()=>{
+ const session={},local={};
+ const f=load({frames:[{frameId:0},{frameId:1}],session,local,
+  probe:(_id,force)=>({ok:true,eligible:force})});
+ assert.equal((await f.toolbar()).frameSummary.started,0);
+ session.sessionForceRegenerate=true;
+ assert.equal((await f.toolbar()).frameSummary.started,1);
+ assert.deepEqual(f.launches.slice(-2).map(x=>x.forceRegenerate),[true,true]);
+ delete session.sessionForceRegenerate;
+ local.persistentForceRegenerate=true;
+ assert.equal((await f.toolbar()).frameSummary.started,1);
+ assert.deepEqual(f.launches.slice(-2).map(x=>x.forceRegenerate),[true,true]);
+ assert.equal((await f.toolbar({autoResume:true})).frameSummary.started,0);
+ assert.equal(f.launches.at(-1).forceRegenerate,false);
+});
+
+test('merged analysis keeps the bypass decision used for scanning, independent of frame messages',async()=>{
+ const session={sessionForceRegenerate:true};
+ const f=load({frames:[{frameId:0},{frameId:1}],session,
+  probe:(_id,force)=>({ok:true,eligible:force})});
+ assert.equal((await f.toolbar()).frameSummary.started,1);
+ delete session.sessionForceRegenerate;
+ const coordinator=vm.runInContext('mergedFrameReviews',f.c);
+ const groupId=f.launches[0].mergeGroupId;
+ // The forced task can finish collection after the user turns off the setting.
+ coordinator.join(groupId,{tabId:77,frameId:1,operationId:'child',port:{postMessage(){}},
+  message:{modes:{hanja:true,loanword:true},sentences:[{id:'p0',text:'한국어'}],forceRegenerate:false}});
+ await coordinator.finalize(groupId);
+ assert.equal(f.merged[0].forceRegenerate,true);
 });

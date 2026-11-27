@@ -1,4 +1,4 @@
-const CONTENT_SCRIPT_VERSION = '1.1.15-session-cache-person-origin';
+const CONTENT_SCRIPT_VERSION = '1.1.15-whole-page-cache-policy';
 const FIXED_CONCURRENCY = 4;
 const uiLocale = document.querySelector('#uiLocale');
 const hanjaMode = document.querySelector('#hanjaMode');

@@ -28,7 +28,6 @@ test('popup persistent control is conditional, disables temporary control and sa
  assert.match(src,/persistentForceRow\.hidden=!effectiveForceRegenerate\(\)/);
  assert.match(src,/storage\.session\.set\(\{sessionForceRegenerate:/);
  assert.match(src,/storage\.local\.set\(\{persistentForceRegenerate:/);
- assert.match(read('service-worker.js'),/forceRegenerate:await cacheBypassEnabled\(message\.forceRegenerate\)/);
 });
 test('protected-person target generation and repair guards remain in place',()=>{
  assert.match(read('python/backend/analysis.py'),/overlaps_proper_noun\(a,b,protected_names\+dictionary_names\+suspect_ranges\+conflicting_ranges\):continue/);

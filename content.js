@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.15-session-cache-person-origin';
+  const VERSION = '1.1.15-whole-page-cache-policy';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;
@@ -1202,6 +1202,9 @@
     }catch{
       // Cross-origin frames may not expose frameElement: check the own DOM.
     }
+    // A shadow root attached to an indexed host does not notify the observer.
+    // Explicit reanalysis must discover the same roots as the collection pass.
+    if(includeOwned)ensureTextIndex(true);
     let checked=0,hidden=0,eligible=0;
     const roots=openTextRoots();
     const visibilityReason=createTextVisibilityFilter(roots);
@@ -1271,7 +1274,7 @@
     toolbar.querySelector('.kra-mobile-page').addEventListener('click', () => {
       void send({type:'KRA_START_PAGE_FROM_TOOLBAR',
         modes:{hanja:uiSettings.hanjaMode??true,loanword:uiSettings.loanwordMode??true},
-        uiSettings,forceRegenerate:false}).then(reply=>{
+        uiSettings}).then(reply=>{
         if(!reply?.ok)status(reply?.error||'整页跨框架标注启动失败',0);
       });
     });

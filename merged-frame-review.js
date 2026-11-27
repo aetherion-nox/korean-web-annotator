@@ -5,10 +5,10 @@ import {modelCheckpointWriter} from './stream-result-journal.js';
 export function createMergedFrameReviewCoordinator({run,createSession,renderReportTimeoutMs=5000}){
  const groups=new Map();
  const key=(part,id)=>'f'+part.frameId+'_s'+id;
- function open(id,tabId){
+ function open(id,tabId,forceRegenerate=false){
   if(typeof id!=='string'||!id||!Number.isInteger(tabId)||groups.has(id))
    throw Error('Invalid or duplicate merged-frame review group');
-  const group={id,tabId,parts:[],closed:false,controller:new AbortController(),
+  const group={id,tabId,forceRegenerate,parts:[],closed:false,controller:new AbortController(),
    session:null,runPromise:null,finished:false,detachedPorts:new Set()};
   groups.set(id,group);return group;
  }
@@ -138,7 +138,7 @@ export function createMergedFrameReviewCoordinator({run,createSession,renderRepo
    }
   }
   group.owners=owners;
-  return {...group.parts[0].message,operationId:group.id,
+  return {...group.parts[0].message,operationId:group.id,forceRegenerate:group.forceRegenerate,
    articleCacheIdentity:group.parts.find(part=>part.frameId===0)?.message.articleCacheIdentity,
    sentences,context:contextPieces.join('\n\n')};
  }

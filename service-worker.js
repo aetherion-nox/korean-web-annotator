@@ -23,7 +23,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.15-session-cache-person-origin';
+const CONTENT_SCRIPT_VERSION='1.1.15-whole-page-cache-policy';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.
@@ -162,7 +162,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     startWholePageForTab(sender.tab.id,{
       modes:{hanja:message.modes?.hanja!==false,loanword:message.modes?.loanword!==false},
-      forceRegenerate:message.forceRegenerate===true,
       uiSettings:message.uiSettings||{},trigger:'toolbar',autoResume:message.autoResume===true
     }).then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));
     return true;
@@ -483,20 +482,23 @@ async function cacheBypassEnabled(explicit=false){
 async function startWholePageForTab(tabId,settings){
  const uiSettings=sanitizeUiSettings(settings.uiSettings);
  const analysisSettingsStamp=await wholePageAnalysisStamp();
+ const autoResume=settings.autoResume===true;
+ // Use one policy for frame collection and the eventual merged review.
+ const bypassCache=await cacheBypassEnabled(settings.forceRegenerate);
  const groupId='frame-group-'+tabId+'-'+crypto.randomUUID();
  const startedAt=Date.now();
  const run={groupId,until:startedAt+FRAME_DISCOVERY_GRACE_MS,
   collectionDeadline:startedAt+FRAME_COLLECTION_MAX_MS,
   lastFrameEventAt:0,lastFrameReport:null,started:new Set(),
   serial:Promise.resolve(),timer:null,finalizer:null,finalizing:false,modes:settings.modes,
-  forceRegenerate:settings.autoResume===true?false:await cacheBypassEnabled(settings.forceRegenerate),autoResume:settings.autoResume===true,uiSettings,analysisSettingsStamp,
+  forceRegenerate:!autoResume&&bypassCache,autoResume,uiSettings,analysisSettingsStamp,
   trigger:settings.trigger||'popup'};
  const previous=activeFrameScans.get(tabId);
  if(previous){
   clearTimeout(previous.timer);clearTimeout(previous.finalizer);
   mergedFrameReviews.abort(previous.groupId,'新一轮整页标注开始，已取消上一轮合并审核。');
  }
- mergedFrameReviews.open(groupId,tabId);
+ mergedFrameReviews.open(groupId,tabId,bypassCache);
  try{await ensureContentScriptInFrame(tabId,0);}
  catch(error){mergedFrameReviews.abort(groupId,error.message);throw error;}
  const main=await chrome.tabs.sendMessage(tabId,{
@@ -760,7 +762,6 @@ async function loadCache(){
 }
 async function runModern(message,post,signal,manualSession,waitForUnfinishedReview=null){
  await loadCache();const config=await engineConfig();
- message={...message,forceRegenerate:await cacheBypassEnabled(message.forceRegenerate)};
  const {uiSettings:cacheSettings={}}=await chrome.storage.local.get('uiSettings');
  const counts=cacheCounts(cache);
  const cacheDiagnostic=(message,detail,level='info')=>post({type:'DIAGNOSTIC',operationId:operationIdForCache,diagnostic:{stage:'cache',level,message,detail:JSON.stringify(detail)}});
@@ -865,7 +866,8 @@ async function recoverMergedManualBatch(tabId,message){
 }
 async function handleAnnotateBatch(message){
  const final=new Map();let stats;
- await runStreamingAnnotation(message,event=>{stats=event.stats;if(event.type==='RESULTS')for(const r of event.results)final.set(r.id,[...(final.get(r.id)||[]),...r.annotations]);});
+ const forceRegenerate=await cacheBypassEnabled(message.forceRegenerate);
+ await runStreamingAnnotation({...message,forceRegenerate},event=>{stats=event.stats;if(event.type==='RESULTS')for(const r of event.results)final.set(r.id,[...(final.get(r.id)||[]),...r.annotations]);});
  return {results:Array.from(final,([id,annotations])=>({id,annotations})),stats};
 }
 function handleStreamingPort(port){
@@ -941,7 +943,8 @@ function handleStreamingPort(port){
    return;
   }
   manualSession=createManualReviewSession({operationId,post,signal:controller.signal});
-  runStreamingAnnotation({...message,operationId},post,controller.signal,manualSession,waitForUnfinishedReview)
+  cacheBypassEnabled(message.forceRegenerate).then(forceRegenerate=>
+   runStreamingAnnotation({...message,operationId,forceRegenerate},post,controller.signal,manualSession,waitForUnfinishedReview))
    .catch(error=>{if(!controller.signal.aborted)post({type:'ERROR',operationId,error:error.message});});
  });
 }
