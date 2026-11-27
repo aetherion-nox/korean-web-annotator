@@ -108,7 +108,7 @@ export function validateSegmentationRepairsCore(targets,response,config={}){
   }
   const protectedRange=(scope.protected_ranges||[]).some(([a,b])=>start<b&&a<end)||
    old.some(t=>t.proper_noun===true||t.suspected_person_name===true||
-    t.dictionary_person_name===true||t.dictionary_name_homograph===true);
+    t.dictionary_person_name===true||t.dictionary_name_homograph===true||t.dictionary_name_overlap===true);
   if(choice_id!==null&&protectedRange){
    fail(index,'protected name or proper noun',row);continue;
   }

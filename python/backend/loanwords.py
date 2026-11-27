@@ -41,7 +41,7 @@ def nonconversion_options(surface, records, *, definitions_by_entry=None, **mode
             options.append(dict(choice_id=f'n{len(options)}',type='nonconversion',replacement=surface,entry_id=entry,definitions=[definition] if definition else []))
     return options
 
-def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True, review_ranges=(), pos_filter=True) -> dict:
+def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, force_review=False, hanja_enabled=True, review_ranges=(), pos_filter=True, excluded_entries=None) -> dict:
     """Return UTF-16 annotations/targets; input token and occupied offsets are Python indices.
 
     Mixed origins belong to the validated whole-entry segmentation path.
@@ -89,7 +89,9 @@ def collect(text: str, tokens: list, entries: dict, occupied_ranges: list, *, fo
             elif any(start<b and a<end for a,b in occupied_added):
                 # Retain the original result for custom, unsorted tokenizers.
                 continue
-        records=[r for r in entries.get(form,[]) if not pos_filter or DisambiguationService()._pos_matches(token.tag,r.get('part_of_speech')) is not False]
+        excluded=(excluded_entries or {}).get((start,end),())
+        records=[r for r in entries.get(form,[]) if r.get('id') not in excluded and
+                 (not pos_filter or DisambiguationService()._pos_matches(token.tag,r.get('part_of_speech')) is not False)]
         # Every mixed origin requires validated segmentation; never revive a
         # failed mixed spelling as one undifferentiated foreign replacement.
         loans=[r for r in records if classify_origin(r.get('origin_raw'))=='loanword' and not CJK.search(r.get('origin_raw') or '')]

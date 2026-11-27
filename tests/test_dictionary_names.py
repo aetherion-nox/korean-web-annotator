@@ -117,4 +117,42 @@ class DictionaryNames(unittest.IsolatedAsyncioTestCase):
    'hanja':True,'loanword':True,'experimentalLoanwordAudit':True})
   self.assertFalse(any(x.get('experimental_loanword_audit') for x in result['targets']))
 
+ async def test_person_only_fragments_do_not_block_or_replace_the_neighboring_word(self):
+  from backend.analysis import Engine
+  for parts in [[('이수민','NNG'),('학교','NNG')],[('학교','NNG'),('이수민','NNG')]]:
+   with self.subTest(parts=parts):
+    text=''.join(form for form,_ in parts)
+    start=0
+    tokens=[]
+    for form,tag in parts:
+     tokens.append(types.SimpleNamespace(form=form,tag=tag,start=start,len=len(form)))
+     start+=len(form)
+    t=tokenizer()
+    t._kiwi=types.SimpleNamespace(tokenize=lambda _:tokens)
+    for review in [False,True]:
+     r=await Engine(self.path,tokenizer=t).analyze(text,dict(
+         hanja=True,loanword=True,nameProtection=True,reviewAll=review))
+     self.assertEqual(r['stats']['protected_names'],0)
+     self.assertEqual([v['surface'] for v in r['annotations']+r['targets']],['학교'])
+
+ async def test_target_overlapping_dictionary_name_does_not_inherit_identity(self):
+  from backend.analysis import Engine
+  self.add('수민','受民','명사','일반 명사 뜻.')
+  tokens=[
+   types.SimpleNamespace(form='😀',tag='SW',start=0,len=1),
+   types.SimpleNamespace(form='이',tag='NNG',start=1,len=1),
+   types.SimpleNamespace(form='수민',tag='NNG',start=2,len=2),
+   types.SimpleNamespace(form='이',tag='JKS',start=4,len=1),
+  ]
+  t=tokenizer()
+  t._kiwi=types.SimpleNamespace(tokenize=lambda _:tokens)
+  r=await Engine(self.path,tokenizer=t).analyze('😀이수민이',dict(
+      hanja=True,nameProtection=False,filterDictionaryPeople=True,reviewAll=True))
+  partial=next(x for x in r['targets'] if x['surface']=='수민')
+  self.assertEqual((partial['start'],partial['end']),(3,5))
+  self.assertTrue(partial['dictionary_name_overlap'])
+  self.assertNotIn('dictionary_person_name',partial)
+  self.assertNotIn('dictionary_name_homograph',partial)
+  self.assertNotIn('proper_noun',partial)
+
 if __name__=='__main__':unittest.main(verbosity=2)

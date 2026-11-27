@@ -74,4 +74,16 @@ class NameBoundaryRegression(unittest.IsolatedAsyncioTestCase):
    include_person_hanja=True,spans=[(0,3,'이수민')])
   self.assertEqual(names,[(0,3)])
 
+ async def test_person_only_fragment_requires_nnp_within_its_range(self):
+  async def lookup(forms):
+   return {form:[dict(entry_id=1,subject_category='인명')] for form in forms}
+  for forms,expected in [
+   ([token('김',0),token('정',1),token('은',2)],[]),
+   ([token('김',0,'NNP'),token('정',1),token('은',2)],[(0,2)]),
+   ([token('김',0),token('정',1),token('은',2,'NNP')],[]),
+   ([token('김',0),token('정',1),token('은',2,'JX')],[(0,2)]),
+  ]:
+   names,_=await dictionary_name_evidence('김정은',forms,lookup,spans=[(0,2,'김정')])
+   self.assertEqual(names,expected,forms)
+
 if __name__=='__main__':unittest.main(verbosity=2)
