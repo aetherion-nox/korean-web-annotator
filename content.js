@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.14-session-cache-person-origin';
+  const VERSION = '1.1.15-session-cache-person-origin';
   if (globalThis.__KRA_CONTENT_SCRIPT_VERSION__ === VERSION) return;
   globalThis.__KRA_CONTENT_SCRIPT_VERSION__ = VERSION;
   globalThis.__KOREAN_RUBY_ANNOTATOR_LOADED__ = true;

@@ -13,15 +13,13 @@ const targets=[
   dictionary_person_name:true,options:[keep(surface2)]}
 ];
 
-test('unsupported Hangul string and blocked historical personal Hanja leave original Korean',()=>{
+test('identical Hangul preserves source and existing person target accepts enabled aligned Hanja',()=>{
  const resp={results:[{t:'person-korean',c:'한동훈'},{t:'protected-person',c:'李承晩'}]};
  const v=validateExperimentalChoices(targets,resp,{experimentalHanja:true,discardInvalidReviewResults:true});
  assert.equal(v.unresolved.length,0);
- assert.deepEqual(v.accepted.map(x=>x.option.type),['keep','keep']);
- assert.equal(v.experimentalRejected,2);
- assert.equal(v.rejectionCounts.unsupported_choice_id,1);
- assert.equal(v.rejectionCounts.person_name_hanja_blocked,1);
- assert.deepEqual(v.rejectionSamples.map(x=>x.target_id),targets.map(t=>t.target_id));
+ assert.deepEqual(v.accepted.map(x=>x.option.type),['keep','hanja']);
+ assert.equal(v.experimentalRejected,0);
+ assert.equal(v.experimentalAccepted,1);
 });
 
 test('fallback applies without experimental modes, but never converts unauthorized Hanja',()=>{
@@ -82,7 +80,7 @@ test('manual full batch with rejected individual origins completes without a ret
   text:JSON.stringify({batch_id:ask.requestId,results:[
    {t:'t0',c:'한동훈'},{t:'t1',c:'李承晩'}]})}),true);
  assert.deepEqual((await done).results,[
-  {t:'person-korean',c:null},{t:'protected-person',c:null}
+  {t:'person-korean',c:null},{t:'protected-person',c:'李承晩'}
  ]);
  assert.equal(events.filter(x=>x.type==='MANUAL_REVIEW_ERROR').length,0);
 });
@@ -92,5 +90,5 @@ test('streaming preview only shows source-kept words for rejected per-target ori
  const parser=experimentalChoicePreviewParser(targets,{experimentalHanja:true},callback);
  parser(JSON.stringify({results:[
   {t:'person-korean',c:'한동훈'},{t:'protected-person',c:'李承晩'}]}));
- assert.deepEqual(events.at(-1),[]);
+ assert.deepEqual(events.at(-1),['keep','hanja']);
 });

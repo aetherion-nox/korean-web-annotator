@@ -78,9 +78,13 @@ export function protectRepeatedArticleNames(text,analysis){
       t.verified_person_hanja.includes(o.replacement);
     return sourced||verified;
    })));
-  if(permitted.length===t.options.length)return t;
+  // Mark existing targets that split or cross a corroborated name. A raw
+  // Hanja answer must not bypass the complete-name guard. Do not add targets.
+  const protected_name_boundary=!ranges.some(([a,b])=>a===t.start&&b===t.end);
+  if(permitted.length===t.options.length&&!protected_name_boundary)return t;
   protectedCount++;
-  return {...t,suspected_person_name:true,article_name_evidence:true,options:permitted};
+  return {...t,suspected_person_name:true,article_name_evidence:true,
+   ...(protected_name_boundary?{protected_name_boundary:true}:{}),options:permitted};
  });
  if(!protectedCount)return {analysis,protectedCount:0,names:[...names]};
  return {analysis:{...analysis,targets,

@@ -23,7 +23,7 @@ import {createMergedFrameReviewCoordinator} from './merged-frame-review.js';
 import {partitionMergedManualRecovery} from './manual-merged-recovery.js';
 import {modelCheckpointWriter,recoverModelCheckpoints,clearModelCheckpoints} from './stream-result-journal.js';
 import {undoTabAnnotations,redoTabAnnotations,restoreTabAnnotations,tabAnnotationHistoryState,invalidateRedoInTab} from './tab-annotation-history.js';
-const CONTENT_SCRIPT_VERSION='1.1.14-session-cache-person-origin';
+const CONTENT_SCRIPT_VERSION='1.1.15-session-cache-person-origin';
 const UNDO_LAST_MENU_ID='kra-undo-last';
 // Serialize history-changing requests in each tab so rapid Undo/Redo clicks
 // cannot observe or consume the same step twice.

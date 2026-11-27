@@ -37,7 +37,7 @@ export function canProposeExperimentalOption(target,type){
  // remain the authoritative local guards for literal origins.
  if(!/[가-힣]/u.test(surface)||/\s/u.test(surface)||target.scan_only===true)return false;
  if(type==='loanword')return true;
- if(type==='hanja')return true;
+ if(type==='hanja')return target.protected_name_boundary!==true;
  return false;
 }
 

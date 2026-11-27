@@ -56,8 +56,9 @@ test('diagnostics distinguish accepted Hanja from phonological conflict, geometr
  assert.equal(length.rejected,1);
  assert.equal(length.reasons.hanja_alignment_or_boundary,1);
  const name=audit(target('t2','한국',{suspected_person_name:true}),'韓國');
- assert.equal(name.rejected,1);
- assert.equal(name.reasons.person_name_hanja_blocked,1);
+ assert.equal(name.accepted,1);
+ const fragment=audit(target('t3','한국',{suspected_person_name:true,protected_name_boundary:true}),'韓國');
+ assert.equal(fragment.rejected,1);
  assert.equal(audit(word,'美國',{hanjaReadingCheck:false}).accepted,1,
   'diagnostics must reflect the configured reading check, without modifying it');
 });

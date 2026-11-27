@@ -37,20 +37,20 @@ test('person with EXACT local dictionary Hanja may be converted by c0 or raw spe
  // This is a dictionary conversion, not free generation; the ordinary
  // c/n selection path must also allow an exact known spelling.
  assert.equal(choice(name,'李承晩',false).accepted[0].option.entry_id,712);
- assert.equal(canProposeExperimentalOption(name,'hanja'),false);
- assert.equal(literalOriginOption(name,'李承晩',{experimentalHanja:true}),null);
+ assert.equal(canProposeExperimentalOption(name,'hanja'),true);
+ assert.equal(literalOriginOption(name,'李承晩',{experimentalHanja:true}).origin_source,'model-unverified');
 });
 
-test('missing dictionary proof, incorrect characters, or wrong span stay null as in v25',()=>{
+test('missing dictionary proof permits unverified origins only when enabled and geometry is valid',()=>{
  for(const t of [
    {...name,verified_person_hanja:undefined},
    {...name,verified_person_hanja:[]},
    {...name,options:[name.options[0]],verified_person_hanja:['李承晩']},
    {...name,suspected_person_name:true,dictionary_person_name:undefined}
  ]){
-  assert.equal(choice(t,'李承晩',true,true).accepted[0].option.type,'keep');
+  assert.equal(choice(t,'李承晩',true,true).accepted[0].option.origin_source,'model-unverified');
  }
- for(const raw of ['李承晚','李承滿','韓東勳','이승만']){
+ for(const raw of ['李承','李承晩人','이승만']){
   const answer=choice(name,raw,true,true);
   assert.equal(answer.accepted[0].option.type,'keep',raw);
  }
@@ -62,9 +62,9 @@ test('verified-person evidence reaches both pooled and direct review payloads',(
  const payload=buildReviewPayload(full,converted,{experimentalHanja:true}).payload;
  assert.deepEqual(payload.targets[0].verified_person_hanja,['李承晩']);
  assert.equal(payload.targets[0].dictionary_person_name,true);
- assert.equal(payload.targets[0].options.c0,'p0');
+ assert.deepEqual(payload.targets[0].options,['p0']);
  const prompt=buildManualPrompt(full,converted,'batch',{experimentalHanja:true});
- assert.match(prompt,/A personal name may use ONLY a matching dictionary c key/);
+ assert.match(prompt,/exact person's identity/);
  assert.match(prompt,/verified_person_hanja/);
 });
 
@@ -89,9 +89,9 @@ test('manual chat accepts verified literal name and saves canonical c key',async
  assert.equal(events.some(e=>e.type==='MANUAL_REVIEW_ERROR'),false);
 });
 
-test('personal Hanja remains protected even if multiple other origin modes are enabled',()=>{
+test('only explicit partial-name boundary remains a Hanja veto',()=>{
  const t={...name,options:[name.options[0]],verified_person_hanja:undefined,
-   suspected_person_name:true};
+   suspected_person_name:true,protected_name_boundary:true};
  for(const raw of ['李承晩','韓東勳']){
   assert.equal(choice(t,raw,true,true).accepted[0].option.type,'keep');
  }
