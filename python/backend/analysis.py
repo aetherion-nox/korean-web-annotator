@@ -16,7 +16,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-dictionary-name-boundaries-v1'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-dictionary-name-boundaries-v1:spaced-phrase-v1'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 
 class _SpanIndex:
@@ -470,6 +470,12 @@ class Engine:
         phase('loanwords','done',targetCount=len(targets))
         phase('audits','start')
         targets=sorted(targets+mixed['targets']+homograph_targets+suspect_targets,key=lambda t:(t['start'],t['end']))
+        if (self.dictionary is not None and modes.get('hanja',True)
+                and hasattr(self.dictionary,'batch_lookup_entries') and type(self.dictionary) is DictionaryService):
+            from backend.spaced_phrases import add_spaced_hanja_candidates
+            await add_spaced_hanja_candidates(self,text,tokens,shared_spans,targets,annotations,
+                proper_ranges+blocked_for_local)
+            targets.sort(key=lambda t:(t['start'],t['end']))
         # Only opt-in experimental Latin review gets additional proper-name
         # targets. Keep local person protection: these have only null/no-conversion options,
         # never an automatic conversion or a speculative Hanja reading.
@@ -586,6 +592,8 @@ class Engine:
                 if option['type']=='keep':continue
                 option={**option,**option_metadata.get(option['entry_id'],{})}
                 definitions=option_definitions.get(option['entry_id'],option['definitions'])
+                if option.get('phrase_origin'):
+                    definitions=[f"Complete dictionary phrase: {option['phrase_origin']}",*definitions]
                 if filter_dictionary_people and is_dictionary_person({**option,'definitions':definitions}):
                     removed_person_sense=True
                     continue

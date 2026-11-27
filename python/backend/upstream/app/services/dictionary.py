@@ -102,7 +102,7 @@ class DictionaryService:
                 sources[alias].append(form)
         return sources
 
-    async def batch_lookup_entries(self, forms, db=None):
+    async def batch_lookup_entries(self, forms, db=None, *, exact=False):
         """Exact index probes for dictionary records including spelling aliases."""
         unique=list(dict.fromkeys(forms))
         result={form:[] for form in unique}
@@ -110,7 +110,7 @@ class DictionaryService:
         close_db=db is None
         if close_db:db=await self.get_connection()
         try:
-            sources=self._alias_sources(unique)
+            sources={form:[form] for form in unique} if exact else self._alias_sources(unique)
             aliases=list(sources)
             seen={form:set() for form in unique}
             for start in range(0,len(aliases),300):

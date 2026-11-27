@@ -123,5 +123,34 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows['이산화\n탄소'],[])
         self.assertTrue(rows['이산화 탄소'])
 
+
+    async def test_spaced_hanja_phrase_supplies_independent_review_candidates(self):
+        entry=self.add('일산화^탄소','一酸化炭素',None,'일산화 탄소의 설명.')
+        source='일산화 탄소'
+        t=self.tokenizer_for([('일산화','NNG',0),('탄소','NNG',4)])
+        result=await Engine(self.path,tokenizer=t).analyze(source,
+            dict(hanja=True,loanword=False,nameProtection=False))
+        self.assertEqual([t['surface'] for t in result['targets']],['일산화','탄소'])
+        for target,expected in zip(result['targets'],['一酸化','炭素']):
+            option=next(o for o in target['options'] if o.get('entry_id')==entry)
+            self.assertEqual(option['replacement'],expected)
+            self.assertEqual(option['phrase_origin'],'일산화 탄소 (一酸化炭素)')
+            self.assertIn('一酸化炭素',option['definitions'][0])
+            self.assertIn('일산화 탄소의 설명.',option['definitions'])
+        self.assertEqual(result['annotations'],[])
+
+    async def test_spaced_phrase_before_particle_and_not_across_punctuation(self):
+        entry=self.add('일산화 탄소','一酸化炭素',None,'화학 용어.')
+        for source,parts,expected in [
+            ('일산화 탄소는',[('일산화','NNG',0),('탄소','NNG',4),('는','JX',6)],True),
+            ('일산화, 탄소',[('일산화','NNG',0),('탄소','NNG',5)],False),
+            ('일산화\\n탄소',[('일산화','NNG',0),('탄소','NNG',4)],False)]:
+            source=source.replace('\\n','\n')
+            result=await Engine(self.path,tokenizer=self.tokenizer_for(parts)).analyze(source,
+                dict(hanja=True,loanword=False,nameProtection=False))
+            options=[o for t in result['targets'] for o in t['options'] if o.get('entry_id')==entry]
+            self.assertEqual(bool(options),expected,(source,result))
+            self.assertFalse(any(' ' in t['surface'] for t in result['targets']))
+
 if __name__=='__main__':
     unittest.main(verbosity=2)
