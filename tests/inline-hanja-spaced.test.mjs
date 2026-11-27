@@ -30,6 +30,27 @@ test('alignment never consumes a partial word or crosses a newline or separator'
  assert.deepEqual(extractInlineHanjaPairs('한자 문화권(文化圈)').map(p=>p.surface),['문화권']);
 });
 
+test('common paired title delimiters allow explicit inline Hanja, including spaced titles',()=>{
+ for(const [open,close] of [['<','>'],['＜','＞'],['<<','>>'],['≪','≫'],['«','»'],['‹','›'],
+  ['〈','〉'],['《','》'],['「','」'],['『','』'],['“','”']]){
+  const text=`${open}옥수${close}(玉睡), ${open}한자 문화권${close} (漢字文化圈)`;
+  const analysis=applyInlineHanjaAnnotations(text,emptyAnalysis()).analysis;
+  assert.deepEqual(analysis.annotations.map(a=>[text.slice(a.start,a.end),a.replacement]),[
+   ['옥수','玉睡'],['한자','漢字'],['문화권','文化圈']],text);
+ }
+ const title='<옥수>(玉睡)';
+ const prior={start:1,end:3,surface:'옥수',type:'hanja',replacement:'玉水'};
+ const analysis={...emptyAnalysis(),annotations:[prior]};
+ assert.equal(applyInlineHanjaAnnotations(title,analysis).analysis.annotations[0].replacement,'玉睡');
+});
+
+test('an unmatched or mismatched angle delimiter does not look like a book title',()=>{
+ for(const text of ['옥수>(玉睡)','<옥수＞(玉睡)','<<옥수>(玉睡)','＜옥수>>(玉睡)',
+  '옥수 > (玉睡)','<앞말 옥수>(玉睡)']){
+  assert.deepEqual(extractInlineHanjaPairs(text),[],text);
+ }
+});
+
 test('the existing reading rule applies separately to each glossary entry',()=>{
  const rare='𱁬';
  assert.ok(!primaryHangulReading(rare));

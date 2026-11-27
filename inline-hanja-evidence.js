@@ -5,9 +5,10 @@
 // continue with dates, explanations, or other metadata. The suffix is NEVER
 // included in the replacement, and mismatched Hangul/Hanja lengths are rejected.
 const PAREN=/([(\uFF08])(\p{Script=Han}{1,24})(?:[^\p{Script=Han}()（）\r\n][^()（）\r\n]{0,95})?([)\uFF09])/gu;
-const PRECEDING=/([가-힣]{1,24})([ \t\u00a0\u3000’”'"「」『』〈〉《》【】〔〕［］\[\]{}()（）,，、:：;；·⋅—–-]{0,12})$/u;
+const PRECEDING=/([가-힣]{1,24})([ \t\u00a0\u3000’”'"「」『』〈〉《》>＞≫»›【】〔〕［］\[\]{}()（）,，、:：;；·⋅—–-]{0,12})$/u;
 const EARLIER_WORD=/([가-힣]{1,24})[ \t\u00a0\u3000]{1,12}$/u;
 const WORD_CHARACTER=/[가-힣A-Za-z0-9]/u;
+const TITLE_OPENERS=new Map([['>','<'],['>>','<<'],['＞','＜'],['≫','≪'],['»','«'],['›','‹']]);
 const MAX_EXCERPT=180;
 
 function excerpt(text,start,end){
@@ -34,6 +35,14 @@ function lowerBound(ordered,value){
 function overlaps(ordered,start,end){
  const pos=lowerBound(ordered,end);
  return pos>0&&ordered[pos-1][1]>start;
+}
+
+function hasMatchingTitleDelimiter(text,start,gap){
+ if(!/[>＞≫»›]/u.test(gap))return true;
+ const close=/^[ \t\u00a0\u3000]*([>＞≫»›]+)[^>＞≫»›]*$/u.exec(gap)?.[1];
+ const before=text.slice(Math.max(0,start-14),start);
+ const open=/(<<|<|＜|≪|«|‹)[ \t\u00a0\u3000]{0,12}$/u.exec(before)?.[1];
+ return open!==undefined&&TITLE_OPENERS.get(close)===open;
 }
 
 function alignWords(text,start,surface,hanja){
@@ -71,10 +80,14 @@ export function extractInlineHanjaPairs(text){
   const start=match.index-before.length+preceding.index;
   const words=alignWords(text,start,preceding[1],hanja);
   if(!words.length)continue;
+  // Require a matching opening delimiter for angle symbols such as >,
+  // which can also appear as comparison operators.
+  const firstWordStart=words[0].start;
+  if(!hasMatchingTitleDelimiter(text,firstWordStart,preceding[2]))continue;
   // Each word shares the full citation and becomes available after the same
   // closing parenthesis. Slicing by code point preserves original Hanja glyphs.
   const parenthesisEnd=match.index+full.length;
-  let citation=excerpt(text,words[0].start,parenthesisEnd);
+  let citation=excerpt(text,firstWordStart,parenthesisEnd);
   if(words.length>1) citation+='（'+words.map(word=>`${word.surface} → ${word.hanja}`).join('，')+'）';
   for(const word of words){
    if(found.some(pair=>pair.start===word.start&&pair.end===word.end))continue;
