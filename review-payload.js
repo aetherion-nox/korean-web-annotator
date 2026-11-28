@@ -209,7 +209,7 @@ export function buildReviewPayload(context,targets,config={}){
   const senses=[...poolSenses.get(candidate.candidate_id).values()];
   const forms=[...poolForms.get(candidate.candidate_id)];
   if(senses.length>1){
-   for(const key of ['entry_id','definitions','written_form','part_of_speech','subject_category','semantic_category'])
+   for(const key of ['entry_id','definitions','written_form','part_of_speech','subject_category','semantic_category','phrase_origin'])
     delete candidate[key];
    candidate.senses=senses;
   }

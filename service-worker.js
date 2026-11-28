@@ -655,7 +655,7 @@ async function getApiConfig() {
   await migrateLegacyApiKeyStorage();
   const { PROFILE_STORAGE_KEY, ACTIVE_PROFILE_KEY, SESSION_KEYS_KEY, normalizeProfiles } = globalThis.KRA_API_PROFILES;
   const [localState, sessionState] = await Promise.all([
-    chrome.storage.local.get([PROFILE_STORAGE_KEY, ACTIVE_PROFILE_KEY]),
+    chrome.storage.local.get([PROFILE_STORAGE_KEY, ACTIVE_PROFILE_KEY, 'progressiveAnnotation']),
     chrome.storage.session.get(SESSION_KEYS_KEY)
   ]);
   const profiles = normalizeProfiles(localState[PROFILE_STORAGE_KEY]);
@@ -702,7 +702,7 @@ async function getApiConfig() {
     minConfidence,
     disableThinking,
     provider, modelCapability,
-    stream: profile.providerStream ?? reference?.defaults.stream ?? false,
+    stream: localState.progressiveAnnotation===true,
     localReasoningMode: profile.localReasoningMode,
     localReasoningValue: profile.localReasoningValue,
     routerMode: profile.routerMode,

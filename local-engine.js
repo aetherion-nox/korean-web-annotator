@@ -69,9 +69,10 @@ export function validateAnalysis(text,data){
   if(typeof t.target_id!=='string'||ids.has(t.target_id)||!Number.isInteger(t.start)||!Number.isInteger(t.end)||t.start<0||t.end<=t.start||text.slice(t.start,t.end)!==t.surface||(t.context!==undefined&&t.context!==text)||!Array.isArray(t.options))throw Error('Invalid engine target');
   ids.add(t.target_id);const choices=new Set(),validOptions=[];
   for(const o of t.options){
-   if(Object.keys(o).some(k=>!['choice_id','type','replacement','entry_id','definitions','segments','written_form','part_of_speech','subject_category','semantic_category'].includes(k)))throw Error('Invalid engine option fields');
+   if(Object.keys(o).some(k=>!['choice_id','type','replacement','entry_id','definitions','segments','written_form','part_of_speech','subject_category','semantic_category','phrase_origin'].includes(k)))throw Error('Invalid engine option fields');
    if(o.written_form!==undefined&&typeof o.written_form!=='string'||o.part_of_speech!==undefined&&o.part_of_speech!==null&&typeof o.part_of_speech!=='string')throw Error('Invalid dictionary metadata');
    for(const key of ['subject_category','semantic_category'])if(o[key]!==undefined&&o[key]!==null&&typeof o[key]!=='string')throw Error('Invalid dictionary category');
+   if(o.phrase_origin!==undefined&&(o.type!=='hanja'||typeof o.phrase_origin!=='string'||!o.phrase_origin.trim()||/[<>\x00-\x1f\x7f]/u.test(o.phrase_origin)))throw Error('Invalid phrase origin metadata');
    // Null is the only internal identity for the no-conversion option.
    // The Latin string "KEEP" is never a control token or a reserved option ID.
    if((o.type==='keep'?o.choice_id!==null:typeof o.choice_id!=='string')||

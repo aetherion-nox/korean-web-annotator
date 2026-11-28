@@ -419,7 +419,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
   const {owners,targets,repairScopes,manualBindings,manualPrepared}=preparedBatches[batchIndex];
   const firstReview=await reviewTargets({...config,rejectedChoiceHistory,rejectedChoiceFeedback,retryHistoryFeedback:true,
    firstPassOnly:config.manualReview!==true&&config.discardInvalidReviewResults!==true,
-   repairScopes,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||600000,enableModelReview:true,context:batch.context,
+   repairScopes,manualBindings,manualPrepared,batchNumber:batchIndex+1,batchTotal:batches.length,batchBudget:batch.budget,operationId:message.operationId,stream:progressive,timeoutMs:config.timeoutMs||600000,enableModelReview:true,context:batch.context,
    onPreview:progressive&&!config.manualReview?previewModelResults(owners,batch.items):undefined,
    onReviewTargetsSubmitted:wire=>{
     for(const t of wire)if(t.experimental_hanja_audit===true){
@@ -565,7 +565,7 @@ export async function runSentencePipeline(message,post,{signal,analyze=analyzeLo
     pooledRetry:!manual,userForcedRetry:userForced,
     context:group.context,manualBindings,manualPrepared,
     operationId:message.operationId,batchBudget:group.budget,
-    stream:progressive?true:config.stream,timeoutMs:config.timeoutMs||600000,
+    stream:progressive,timeoutMs:config.timeoutMs||600000,
     onPreview:progressive&&!manual?previewModelResults(owners,group.items):undefined,
     onAccepted:async accepted=>{
      const changed=new Set();

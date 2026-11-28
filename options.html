@@ -75,7 +75,7 @@
     </section>
     <section class="profile-panel" aria-labelledby="featureHeading">
       <h2 id="featureHeading" data-feature-i18n="title">显示与请求日志</h2>
-      <label class="inline"><input id="progressiveAnnotation" type="checkbox"><span data-feature-i18n="progressive">边完成边标注（本地及大模型）</span></label>
+      <label class="inline"><input id="progressiveAnnotation" type="checkbox"><span data-feature-i18n="progressive">边完成边标注（流式标注）</span></label>
       <p class="profile-note" data-feature-i18n="displayHint"></p>
       <label class="inline"><input id="requestLoggingEnabled" type="checkbox"><span data-feature-i18n="logging">启用大模型请求日志</span></label>
       <p class="profile-note" data-feature-i18n="logHint"></p>
@@ -144,7 +144,6 @@
       <label id="localReasoningValueRow" hidden><span data-i18n="localReasoningSetting">思考开关或强度</span><select id="localReasoningValue"></select></label>
       <p class="profile-note" data-i18n="localReasoningHint">请按服务版本和模型模板选择参数。默认沿用服务端设置。</p>
     </div>
-    <label id="newProviderStreamRow" class="inline" hidden><input id="newProviderStream" type="checkbox"><span data-i18n="providerStreaming">流式输出</span></label>
     <label><span data-i18n="endpoint">接口完整地址</span><input id="endpoint" type="url" placeholder="https://api.example.com/v1/chat/completions"></label>
     <label id="customModelRow"><span data-i18n="model">模型名</span><input id="model" type="text" placeholder="your-model-name"></label>
     <label><span data-i18n="apiKey">API Key</span><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="sk-..."></label>

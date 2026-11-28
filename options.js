@@ -96,12 +96,12 @@ const DIRECTORY_STRINGS = {
   en:{localReasoningProtocol:'Reasoning parameter format',localReasoningSetting:'Reasoning setting',localReasoningHint:'Choose a format supported by the server version and model template.',localReasoningOff:'Off',localReasoningOn:'On',reasoningControlsUnknown:'This model supports reasoning. Its controls are unverified; the server default applies.',modelDeveloper:'Model developer',allDevelopers:'All developers',currentModel:'Current model',reasoningCapability:'Reasoning',reasoningSupported:'Supported',reasoningRequired:'Required',reasoningUnavailable:'Unavailable',refreshModelsDev:'Refresh Models.dev metadata',modelsDevReference:'Models.dev reference · account access unverified',noEndpoint:'No endpoint configured',serverDefault:'Server default',routerAdvanced:'OpenRouter advanced parameters',routerAdvancedHint:'JSON · only parameters advertised by the model are sent',providerReference:'Model reference configuration',providerReferenceUrl:'HTTPS configuration URL',updateProviderReference:'Update reference configuration',rollbackProviderReference:'Roll back configuration',remoteReference:'Remote reference · account access unverified',routerThinking:'Reasoning support varies by endpoint; some models cannot disable it.',refreshProviderModels:'Refresh current channel',refreshRouterProviders:'Refresh inference providers',refreshAllModels:'Refresh all models',modelSearch:'Search model name or ID',routerMode:'OpenRouter routing',
     routeBalanced:'Balanced',routePrice:'Lowest price',routeThroughput:'Fastest generation',routeLatency:'Lowest latency',routeOnly:'Specific provider',
     routerSearch:'Search inference providers',routerProvider:'Inference provider',localServiceHint:'API Key is optional. For a service on another device, enter that device’s private network address.',
-    ollamaDetails:'Load Ollama model details',providerStreaming:'Stream output',loadingDirectory:'Refreshing…',unknown:'Unknown',chooseProvider:'Select a provider',
+    ollamaDetails:'Load Ollama model details',loadingDirectory:'Refreshing…',unknown:'Unknown',chooseProvider:'Select a provider',
     serviceSource:'Service API',publicSource:'Public API',referenceSource:'Bundled reference · account access unverified',directoryFailure:'Refresh failed',resultsLimited:'Showing up to 200 matching models',contextLength:'Context',supportedParameters:'Parameters',price:'Price',capabilities:'Capabilities'},
   'zh-CN':{localReasoningProtocol:'思考参数格式',localReasoningSetting:'思考开关或强度',localReasoningHint:'按服务版本和模型模板选择参数。默认沿用服务端设置。',localReasoningOff:'关闭',localReasoningOn:'开启',reasoningControlsUnknown:'该模型支持思考，开关和强度参数尚未确认，使用服务端默认设置。',modelDeveloper:'模型厂商',allDevelopers:'全部厂商',currentModel:'当前模型',reasoningCapability:'思考能力',reasoningSupported:'支持',reasoningRequired:'必需',reasoningUnavailable:'不支持',refreshModelsDev:'更新 Models.dev 补充信息',modelsDevReference:'Models.dev 参考 · 未核验账户权限',noEndpoint:'未配置接口地址',serverDefault:'服务端默认',routerAdvanced:'OpenRouter 高级参数',routerAdvancedHint:'JSON（仅发送模型目录支持的参数）',providerReference:'模型参考配置',providerReferenceUrl:'HTTPS 配置地址',updateProviderReference:'更新参考配置',rollbackProviderReference:'回滚配置',remoteReference:'远程参考 · 未核验账户权限',routerThinking:'思考能力取决于推理端点，部分模型无法关闭思考。',refreshProviderModels:'刷新当前渠道',refreshRouterProviders:'刷新推理供应商',refreshAllModels:'刷新全部模型',modelSearch:'搜索模型名称或 ID',routerMode:'OpenRouter 路由',
     routeBalanced:'均衡',routePrice:'最低价格',routeThroughput:'最快生成',routeLatency:'最低延迟',routeOnly:'指定供应商',
     routerSearch:'搜索推理供应商',routerProvider:'推理供应商',localServiceHint:'API Key 可留空。若服务运行在另一台设备上，请填写该设备的局域网地址。',
-    ollamaDetails:'读取 Ollama 模型详情',providerStreaming:'流式输出',loadingDirectory:'正在刷新…',unknown:'未知',chooseProvider:'请选择供应商',
+    ollamaDetails:'读取 Ollama 模型详情',loadingDirectory:'正在刷新…',unknown:'未知',chooseProvider:'请选择供应商',
     serviceSource:'服务端 API',publicSource:'公开 API',referenceSource:'内置参考 · 未核验账户权限',directoryFailure:'刷新失败',resultsLimited:'最多显示 200 个匹配模型',contextLength:'上下文',supportedParameters:'支持参数',price:'价格',capabilities:'能力'}
 };
 for (const [language,strings] of Object.entries(DIRECTORY_STRINGS)) Object.assign(STRINGS[language],strings);
@@ -202,7 +202,6 @@ function loadActiveProfileIntoForm() {
     element('routerMode').value = profile.routerMode;
     element('routerAdvanced').value = Object.keys(profile.routerAdvanced||{}).length ? JSON.stringify(profile.routerAdvanced) : '';
     element('routerSearch').value = '';
-    element('newProviderStream').checked = profile.providerStream ?? false;
     routerProviderParameters=profile.routerProviderParameters;
     resetRouterProviders(profile.routerProviderModel === profile.model ? profile.routerProvider : '');
     syncProviderControls();
@@ -531,10 +530,9 @@ async function readFormForSave(requireUsableKey = false) {
   const retainedProvider=previous?.routerProviderModel===model && previous.routerProvider===routerSelection;
   if(routerMode==='only' && !(routerModel===model && routerOptions.some(item=>item.id===routerSelection)) &&
      !(retainedProvider && !verifiedRouterProviders && !requireUsableKey))throw Error(t('chooseProvider'));
-  const providerStream=registry && (provider==='openrouter'||registry.local(provider)) ? element('newProviderStream').checked : previous?.providerStream;
   const routerParameters=routerMode==='only' ? routerOptions.find(item=>item.id===routerSelection)?.parameters ??
     (retainedProvider ? routerProviderParameters : null) : null;
-  return { localReasoningMode:element('localReasoningMode')?.value||'',localReasoningValue:element('localReasoningValue')?.value||'',routerMode, routerAdvanced, routerProviderParameters:routerParameters, routerProvider:routerMode==='only'?routerSelection:'', routerProviderModel:routerMode==='only'?model:'',providerStream,endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, originChanged };
+  return { localReasoningMode:element('localReasoningMode')?.value||'',localReasoningValue:element('localReasoningValue')?.value||'',routerMode, routerAdvanced, routerProviderParameters:routerParameters, routerProvider:routerMode==='only'?routerSelection:'', routerProviderModel:routerMode==='only'?model:'',endpoint:url.href, model, apiKey, typedApiKey, keyStorageMode, passphrase, shouldEncrypt, disableThinking, provider, reasoningEffort, originChanged };
 }
 
 async function requestEndpointPermission(endpoint) {
@@ -561,7 +559,6 @@ async function saveConfig(config) {
     reasoningEffort: config.reasoningEffort,
     routerMode:config.routerMode, routerAdvanced:config.routerAdvanced, routerProviderParameters:config.routerProviderParameters, routerProvider:config.routerProvider, routerProviderModel:config.routerProviderModel,
     localReasoningMode:config.localReasoningMode,localReasoningValue:config.localReasoningValue,
-    providerStream:config.providerStream,
   }, activeProfileId, name);
 
   if(config.originChanged){delete sessionKeys[activeProfileId];next.localApiKey='';next.encryptedApiKey=null;}
@@ -699,7 +696,6 @@ function syncProviderControls() {
   element('routerProvidersRow').hidden=element('routerMode').value!=='only';
   element('localSettings').hidden=!registry.local(id);
   element('ollamaModelDetails').hidden=id!=='ollama';
-  element('newProviderStreamRow').hidden=id!=='openrouter'&&!registry.local(id);
   endpointInput.readOnly=id==='openrouter';
 }
 function directorySummary(entry) {

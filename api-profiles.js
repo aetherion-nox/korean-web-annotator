@@ -18,7 +18,6 @@
       provider: String(source.provider || ''),
       localReasoningMode: String(source.localReasoningMode || ''),
       localReasoningValue: String(source.localReasoningValue || ''),
-      providerStream: typeof source.providerStream==='boolean' ? source.providerStream : undefined,
       routerMode: ['price','throughput','latency','only'].includes(source.routerMode) ? source.routerMode : 'balanced',
       routerAdvanced: source.routerAdvanced && typeof source.routerAdvanced==='object' && !Array.isArray(source.routerAdvanced) ? source.routerAdvanced : {},
       routerProviderParameters: Array.isArray(source.routerProviderParameters) ? source.routerProviderParameters.filter(value=>typeof value==='string') : null,
