@@ -149,8 +149,36 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
             result=await Engine(self.path,tokenizer=self.tokenizer_for(parts)).analyze(source,
                 dict(hanja=True,loanword=False,nameProtection=False))
             options=[o for t in result['targets'] for o in t['options'] if o.get('entry_id')==entry]
-            self.assertEqual(bool(options),expected,(source,result))
+            self.assertTrue(options,(source,result))  # Orphans may now use the same phrase evidence.
             self.assertFalse(any(' ' in t['surface'] for t in result['targets']))
+            self.assertFalse(any(' ' in t['surface'] for t in result['targets']))
+
+    async def test_orphan_component_index_and_existing_standalone(self):
+        entry=self.add('일산화^탄소','一酸化炭素',None,'화학 용어.')
+        engine=Engine(self.path,tokenizer=self.tokenizer_for([('일산화','NNG',0)]))
+        modes=dict(hanja=True,loanword=False,nameProtection=False)
+        result=await engine.analyze('일산화',modes)
+        self.assertEqual(result['annotations'],[])
+        self.assertTrue(any(o.get('entry_id')==entry and o['replacement']=='一酸化' for t in result['targets'] for o in t['options']))
+        index=await engine.dictionary.load_phrase_index()
+        self.assertIs(index,await engine.dictionary.load_phrase_index())
+        self.add('일산화',None,'명사','다른 뜻.')
+        other=await Engine(self.path,tokenizer=self.tokenizer_for([('일산화','NNG',0)])).analyze('일산화',modes)
+        self.assertFalse(any(o.get('entry_id')==entry for t in other['targets'] for o in t['options']))
+
+    async def test_foreign_and_mixed_phrase_components(self):
+        from backend.spaced_phrases import align_phrase
+        self.assertIsNone(align_phrase('아이스^크림','icecream'))
+        self.assertEqual(align_phrase('아이스^크림','ice cream')[1][0][0]['replacement'],'ice')
+        self.assertEqual(align_phrase('인터넷^방송','internet放送')[1][1][0]['replacement'],'放送')
+        entry=self.add('인터넷^방송','internet放送',None,'방송의 한 종류.')
+        result=await Engine(self.path,tokenizer=self.tokenizer_for([('인터넷','NNG',0)])).analyze('인터넷',
+            dict(hanja=False,loanword=True,nameProtection=False))
+        self.assertEqual(result['annotations'],[])
+        self.assertTrue(any(o.get('entry_id')==entry and o['type']=='loanword' and o['replacement']=='internet' for t in result['targets'] for o in t['options']))
+        result=await Engine(self.path,tokenizer=self.tokenizer_for([('방송','NNG',0)])).analyze('방송',
+            dict(hanja=True,loanword=False,nameProtection=False))
+        self.assertTrue(any(o.get('entry_id')==entry and o['replacement']=='放送' for t in result['targets'] for o in t['options']))
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

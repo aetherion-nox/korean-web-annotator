@@ -19,6 +19,7 @@ class DictionaryService:
         self._candidate_cache = OrderedDict()
         self._max_cache = 20000
         self._stats = None
+        self._phrase_index = None
         self._collocations: Dict[Tuple[str, str], str] = {}
         self._cjk_re = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -91,6 +92,21 @@ class DictionaryService:
         finally:
             if close_db:
                 await self.release_connection(db)
+
+    async def load_phrase_index(self):
+        """Scan explicit phrase headwords once per loaded dictionary."""
+        if self._phrase_index is not None:return self._phrase_index
+        from backend.spaced_phrases import PhraseIndex
+        db=await self.get_connection()
+        try:
+            async with db.execute("""SELECT id,written_form,origin_raw,subject_category,semantic_category
+                FROM entries WHERE origin_raw IS NOT NULL
+                AND (instr(written_form,' ')>0 OR instr(written_form,'^')>0)
+                ORDER BY id""") as cursor:
+                self._phrase_index=PhraseIndex(dict(row) for row in await cursor.fetchall())
+            return self._phrase_index
+        finally:
+            await self.release_connection(db)
 
     @staticmethod
     def _alias_sources(forms):
