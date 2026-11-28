@@ -180,5 +180,29 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
             dict(hanja=True,loanword=False,nameProtection=False))
         self.assertTrue(any(o.get('entry_id')==entry and o['replacement']=='放送' for t in result['targets'] for o in t['options']))
 
+    async def test_hyphen_dictionary_components_are_review_only(self):
+        from backend.spaced_phrases import align_phrase
+        entry=self.add('사산화-물','四酸化物',None,'화학 용어.')
+        modes=dict(hanja=True,loanword=False,nameProtection=False)
+        for source,tokens,wanted in [
+            ('사산화',[('사산화','NNG',0)],{'사산화':'四酸化'}),
+            ('물',[('물','NNG',0)],{'물':'物'}),
+            ('사산화 물',[('사산화','NNG',0),('물','NNG',4)],{'사산화':'四酸化','물':'物'}),
+        ]:
+            result=await Engine(self.path,tokenizer=self.tokenizer_for(tokens)).analyze(source,modes)
+            self.assertEqual(result['annotations'],[])
+            actual={t['surface']:o['replacement'] for t in result['targets']
+                    for o in t['options'] if o.get('entry_id')==entry}
+            self.assertEqual(actual,wanted,(source,result))
+            self.assertFalse(any(' ' in t['surface'] for t in result['targets']))
+        self.assertEqual(align_phrase('인터넷-방송','internet放送')[1][0][0]['replacement'],'internet')
+        self.assertEqual(align_phrase('아이스-크림','ice cream')[1][1][0]['replacement'],'cream')
+        self.assertIsNone(align_phrase('아이스-크림','icecream'))
+        for title in ['-사산화','사산화-','사산화--물','사산화 -물']:
+            self.assertIsNone(align_phrase(title,'四酸化物'))
+        self.add('물',None,'명사','물의 다른 뜻.')
+        result=await Engine(self.path,tokenizer=self.tokenizer_for([('물','NNG',0)])).analyze('물',modes)
+        self.assertFalse(any(o.get('entry_id')==entry for t in result['targets'] for o in t['options']))
+
 if __name__=='__main__':
     unittest.main(verbosity=2)

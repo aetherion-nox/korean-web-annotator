@@ -101,7 +101,7 @@ class DictionaryService:
         try:
             async with db.execute("""SELECT id,written_form,origin_raw,subject_category,semantic_category
                 FROM entries WHERE origin_raw IS NOT NULL
-                AND (instr(written_form,' ')>0 OR instr(written_form,'^')>0)
+                AND (instr(written_form,' ')>0 OR instr(written_form,'^')>0 OR instr(written_form,'-')>0)
                 ORDER BY id""") as cursor:
                 self._phrase_index=PhraseIndex(dict(row) for row in await cursor.fetchall())
             return self._phrase_index

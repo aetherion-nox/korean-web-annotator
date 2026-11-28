@@ -65,8 +65,8 @@ def _slice_parts(parts,word,start,end):
 def align_phrase(title,origin):
     if not isinstance(title,str) or not isinstance(origin,str) or not origin.strip():return None
     if any(ord(c)<32 or ord(c)==127 or c in '<>' for c in origin):return None
-    if not re.fullmatch(r'[가-힣]+(?:[ ^][가-힣]+){1,3}',title):return None
-    words=tuple(re.split('[ ^]',title))
+    if not re.fullmatch(r'[가-힣]+(?:[ ^-][가-힣]+){1,3}',title):return None
+    words=tuple(re.split('[ ^-]',title))
     surface=''.join(words)
     if len(surface)>16:return None
     # Explicit foreign word boundaries may establish a one-to-one ordered
