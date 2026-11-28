@@ -5,6 +5,7 @@ independently alignable Hanja segments and display 二酸化 炭素.
 Do not invent how Latin words split across a space or join source ranges.
 """
 import re
+import unicodedata
 from backend.offsets import to_utf16
 from backend.loanwords import CJK
 
@@ -62,13 +63,26 @@ def _slice_parts(parts,word,start,end):
                            type=part['type'],replacement=replacement))
     return result
 
+# One internal non-Hangul code point between each pair of Hangul runs.
+# Unicode punctuation and space separators, plus the legacy dictionary caret
+# (Sk) are accepted; letters, digits, other symbols and control codes are not.
+TITLE_PARTS = re.compile(r'[가-힣]+(?:[^가-힣][가-힣]+){1,3}')
+def split_dictionary_title(title):
+    if not isinstance(title,str) or not TITLE_PARTS.fullmatch(title):
+        return None
+    if any(c!='^' and not unicodedata.category(c).startswith('P')
+           and unicodedata.category(c)!='Zs'
+           for c in title if not '가'<=c<='힣'):
+        return None
+    words=tuple(re.split(r'[^가-힣]',title))
+    return words if sum(map(len,words))<=16 else None
+
 def align_phrase(title,origin):
     if not isinstance(title,str) or not isinstance(origin,str) or not origin.strip():return None
     if any(ord(c)<32 or ord(c)==127 or c in '<>' for c in origin):return None
-    if not re.fullmatch(r'[가-힣]+(?:[ ^-][가-힣]+){1,3}',title):return None
-    words=tuple(re.split('[ ^-]',title))
+    words=split_dictionary_title(title)
+    if words is None:return None
     surface=''.join(words)
-    if len(surface)>16:return None
     # Explicit foreign word boundaries may establish a one-to-one ordered
     # component map. Without boundaries, a Latin run is indivisible.
     chunks=origin.split()

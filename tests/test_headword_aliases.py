@@ -204,5 +204,28 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         result=await Engine(self.path,tokenizer=self.tokenizer_for([('물','NNG',0)])).analyze('물',modes)
         self.assertFalse(any(o.get('entry_id')==entry for t in result['targets'] for o in t['options']))
 
+    async def test_unicode_dictionary_boundaries(self):
+        from backend.spaced_phrases import align_phrase,split_dictionary_title
+        from app.services.dictionary import DictionaryService
+        valid=[' ','^','-','·','・','‧','ㆍ','–','—','/','、','\u00a0','\u3000']
+        # U+318D HANGUL LETTER ARAEA is a letter, not a separator.
+        valid.remove('ㆍ')
+        for sep in valid:
+            self.assertEqual(split_dictionary_title('사산화'+sep+'물'),('사산화','물'),repr(sep))
+            entry=self.add('사산화'+sep+'물','四酸化物',None,'화학 용어.')
+            index=await DictionaryService(str(self.path)).load_phrase_index()
+            self.assertTrue(any(e==entry for e,_,_ in index.children['사산화']),repr(sep))
+        for sep in ['2','A','漢','ㆍ','--','··',' -','\t','\n','\u200b','+','😀']:
+            self.assertIsNone(split_dictionary_title('사산화'+sep+'물'),repr(sep))
+        for title in ['·사산화','사산화·','사·산·화·물·질']:
+            self.assertIsNone(split_dictionary_title(title))
+        self.assertEqual(align_phrase('아이스·크림','ice cream')[1][1][0]['replacement'],'cream')
+        self.assertEqual(align_phrase('인터넷・방송','internet放送')[1][0][0]['replacement'],'internet')
+        self.assertIsNone(align_phrase('아이스‧크림','icecream'))
+        result=await Engine(self.path,tokenizer=self.tokenizer_for([('사산화','NNG',0)])).analyze('사산화',
+            dict(hanja=True,loanword=False,nameProtection=False))
+        self.assertEqual(result['annotations'],[])
+        self.assertTrue(any(o['replacement']=='四酸化' for t in result['targets'] for o in t['options']))
+
 if __name__=='__main__':
     unittest.main(verbosity=2)
