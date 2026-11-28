@@ -204,5 +204,18 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         result=await Engine(self.path,tokenizer=self.tokenizer_for([('물','NNG',0)])).analyze('물',modes)
         self.assertFalse(any(o.get('entry_id')==entry for t in result['targets'] for o in t['options']))
 
+    async def test_middle_dot_dictionary_components(self):
+        from backend.spaced_phrases import align_phrase
+        entry=self.add('사산화·물','四酸化物',None,'화학 용어.')
+        result=await Engine(self.path,tokenizer=self.tokenizer_for([('사산화','NNG',0)])).analyze('사산화',
+            dict(hanja=True,loanword=False,nameProtection=False))
+        self.assertEqual(result['annotations'],[])
+        self.assertTrue(any(o.get('entry_id')==entry and o['replacement']=='四酸化'
+                            for t in result['targets'] for o in t['options']))
+        self.assertEqual(align_phrase('아이스·크림','ice cream')[1][1][0]['replacement'],'cream')
+        self.assertEqual(align_phrase('인터넷·방송','internet放送')[1][0][0]['replacement'],'internet')
+        self.assertIsNone(align_phrase('아이스·크림','icecream'))
+        self.assertIsNone(align_phrase('사산화··물','四酸化物'))
+
 if __name__=='__main__':
     unittest.main(verbosity=2)
