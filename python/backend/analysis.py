@@ -16,7 +16,7 @@ from app.services.dictionary import DictionaryService
 from app.services.disambiguation import DisambiguationService
 from app.database import validate_database
 
-ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-dictionary-name-boundaries-v1:spaced-phrase-v4-unicode-boundaries'
+ENGINE_VERSION = '34fd08a7d03706a21a2c2e1b00571f2d838cd508:kra-dictionary-name-boundaries-v1:spaced-phrase-v5-edge-aliases'
 DEFAULT_DB = Path(__file__).resolve().parent / 'hanja_dict.db'
 
 class _SpanIndex:

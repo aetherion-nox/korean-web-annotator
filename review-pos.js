@@ -76,7 +76,7 @@ function optionTags(target,option,wholeTags){
  // An exact single NNB token has an unambiguous grammatical review span.
  if(wholeTags.length===1&&wholeTags[0]==='NNB'&&target.morphology.length===1)return wholeTags;
  if(typeof option.written_form!=='string'||!option.written_form.trim())return wholeTags;
- const word=option.written_form.trim().replace(/^[-－]+|[-－]+$/g,'');
+ const word=option.written_form.replace(/^[\p{P}\p{Zs}^]|[\p{P}\p{Zs}^]$/gu,'');
  if(word===target.surface)return wholeTags;
  if(word===target.surface+'다'&&wholeTags.some(tag=>['VV','VA','VX'].includes(tag)))return wholeTags;
  // A merged target can contain options for smaller spans. Use a unique

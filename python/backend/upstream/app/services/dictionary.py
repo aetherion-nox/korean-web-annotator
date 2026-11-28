@@ -20,6 +20,7 @@ class DictionaryService:
         self._max_cache = 20000
         self._stats = None
         self._phrase_index = None
+        self._edge_alias_index = None
         self._collocations: Dict[Tuple[str, str], str] = {}
         self._cjk_re = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
 
@@ -109,6 +110,35 @@ class DictionaryService:
         finally:
             await self.release_connection(db)
 
+    async def _load_edge_alias_index(self,db):
+        """Read marked titles once, including native/nonconversion entries."""
+        if self._edge_alias_index is not None:return self._edge_alias_index
+        from backend.orthographic_aliases import edge_headword
+        result=defaultdict(list)
+        async with db.execute("""SELECT DISTINCT written_form FROM entries
+            WHERE length(written_form) BETWEEN 2 AND 21
+            AND (written_form GLOB '[^가-힣][가-힣]*'
+                 OR written_form GLOB '*[가-힣][^가-힣]')""") as cursor:
+            for row in await cursor.fetchall():
+                title=row['written_form'];key=edge_headword(title)
+                if key:result[key].append(title)
+        self._edge_alias_index=result
+        return result
+
+    async def _lookup_alias_sources(self,forms,db):
+        from backend.orthographic_aliases import canonical_headword,edge_headword,HANGUL
+        sources=self._alias_sources(forms)
+        index=await self._load_edge_alias_index(db)
+        for form in dict.fromkeys(forms):
+            key=edge_headword(form) or canonical_headword(form) or (form if HANGUL.fullmatch(form) and len(form)==1 else '')
+            if not key:continue
+            # The importer may have stored a hyphen-stripped candidate key.
+            if edge_headword(form) and form not in sources[key]:sources[key].append(form)
+            for title in index.get(key,()):
+                for alias in (title,title.strip('-')):
+                    if form not in sources[alias]:sources[alias].append(form)
+        return sources
+
     @staticmethod
     def _alias_sources(forms):
         """Map indexed exact title keys back to the requested spelling."""
@@ -127,7 +157,7 @@ class DictionaryService:
         close_db=db is None
         if close_db:db=await self.get_connection()
         try:
-            sources={form:[form] for form in unique} if exact else self._alias_sources(unique)
+            sources={form:[form] for form in unique} if exact else await self._lookup_alias_sources(unique,db)
             aliases=list(sources)
             seen={form:set() for form in unique}
             for start in range(0,len(aliases),300):
@@ -160,7 +190,7 @@ class DictionaryService:
 
     async def batch_lookup_candidates(self, written_forms, db=None):
         """Indexed exact+alias probes without changing the on-disk dictionary."""
-        from backend.orthographic_aliases import aligned_hanja_alias
+        from backend.orthographic_aliases import aligned_hanja_alias,edge_headword
         result={}
         missing=[]
         for form in dict.fromkeys(written_forms):
@@ -174,7 +204,7 @@ class DictionaryService:
         close_db=db is None
         if close_db:db=await self.get_connection()
         try:
-            sources=self._alias_sources(missing)
+            sources=await self._lookup_alias_sources(missing,db)
             aliases=list(sources)
             seen={form:set() for form in missing}
             from app.services.quantity import UNIT_DEFINITION
@@ -183,6 +213,7 @@ class DictionaryService:
                 marks=','.join('?' for _ in part)
                 query=f'''
                     SELECT cc.id as candidate_id, cc.entry_id, cc.written_form,
+                           e.written_form as original_written_form,
                            cc.origin_raw, cc.replacement, cc.replacement_type,
                            cc.is_reliable,
                            e.part_of_speech,e.vocabulary_level,e.homonym_number,e.subject_category,e.semantic_category
@@ -191,6 +222,7 @@ class DictionaryService:
                     WHERE cc.written_form IN ({marks})
                     UNION ALL
                     SELECT NULL as candidate_id,e.id as entry_id,e.written_form,
+                           e.written_form as original_written_form,
                            e.origin_raw,NULL as replacement,NULL as replacement_type,
                            0 as is_reliable,
                            e.part_of_speech,e.vocabulary_level,e.homonym_number,e.subject_category,e.semantic_category
@@ -219,7 +251,10 @@ class DictionaryService:
                     row['unit_usage']=row['entry_id'] in unit_ids
                     row['surname_usage']=row['entry_id'] in surname_ids
                     row['dictionary_person']=row['entry_id'] in person_ids
-                    for form in sources.get(row['written_form'],()):
+                    lookup_form=row['written_form']
+                    original=row.pop('original_written_form')
+                    if edge_headword(original):row['written_form']=original
+                    for form in sources.get(lookup_form,()):
                         key=(row['candidate_id'],row['entry_id'])
                         if key in seen[form]:continue
                         seen[form].add(key)

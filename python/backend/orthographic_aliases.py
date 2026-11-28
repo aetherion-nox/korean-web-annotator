@@ -6,12 +6,32 @@ separators, not letters to insert into the page or into Hanja alignments.
 Only exact indexed spelling variants are queried; no LIKE/REPLACE table scans.
 """
 import re
+import unicodedata
 from itertools import product
 
 HANGUL = re.compile(r'^[가-힣]+$')
 SEPARATORS = ' -^'
 MAX_LETTERS = 16
 MAX_ALIASES = 96
+
+def is_dictionary_separator(char):
+    return char=='^' or unicodedata.category(char).startswith('P') or unicodedata.category(char)=='Zs'
+
+def edge_headword(value):
+    """Strip exactly one permitted marker from either edge of a Hangul title.
+
+    Preserve the stored title and POS. Do not remove internal letters, digits,
+    control characters or repeated markers. A single syllable is also valid.
+    """
+    if not isinstance(value,str) or len(value)<2:return ''
+    start=int(is_dictionary_separator(value[0]))
+    end=int(is_dictionary_separator(value[-1]))
+    if not (start or end):return ''
+    core=value[start:len(value)-end]
+    if not re.fullmatch(r'[가-힣]+(?:[^가-힣][가-힣]+){0,3}',core):return ''
+    if any(not is_dictionary_separator(c) for c in core if not '가'<=c<='힣'):return ''
+    clean=''.join(c for c in core if '가'<=c<='힣')
+    return clean if 1<=len(clean)<=MAX_LETTERS else ''
 
 def canonical_headword(value):
     if not isinstance(value,str):
@@ -63,9 +83,11 @@ def aligned_hanja_alias(query,record):
     """
     origin=record.get('origin_raw')
     original=record.get('written_form')
-    if not canonical_headword(query) or canonical_headword(query)!=canonical_headword(original):
+    source=edge_headword(query) or canonical_headword(query) or (query if isinstance(query,str) and HANGUL.fullmatch(query) and len(query)==1 else '')
+    title=edge_headword(original) or canonical_headword(original)
+    if not source or source!=title:
         return record
-    if not isinstance(origin,str) or len(origin)!=len(canonical_headword(query)):
+    if not isinstance(origin,str) or len(origin)!=len(source):
         return record
     if not all('\u3400'<=ch<='\u9fff' for ch in origin):
         return record

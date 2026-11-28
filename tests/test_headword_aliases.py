@@ -227,5 +227,47 @@ class HeadwordAliases(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['annotations'],[])
         self.assertTrue(any(o['replacement']=='四酸化' for t in result['targets'] for o in t['options']))
 
+    async def test_edge_aliases_include_native_and_original_pos(self):
+        from backend.orthographic_aliases import edge_headword
+        from app.services.dictionary import DictionaryService
+        entries={}
+        for title in ['-라면','라면-','-라면-','·라면','라면・','‧라면^',' 라면 ']:
+            entries[title]=self.add(title,None,'어미','문법 형태.')
+            self.assertEqual(edge_headword(title),'라면')
+        plain=self.add('라면','ramen','명사','음식.')
+        for title in ['--라면','라면··','2라면','라면A','라면\t','+라면']:
+            self.add(title,None,'어미','잘못된 경계.')
+            self.assertEqual(edge_headword(title),'')
+        d=DictionaryService(str(self.path))
+        records=await d.lookup_by_written_form('라면')
+        self.assertEqual({r['id'] for r in records},set(entries.values())|{plain})
+        self.assertTrue(all(r['part_of_speech']=='어미' for r in records if r['id']!=plain))
+        candidates=await d.lookup_candidates('라면')
+        self.assertEqual({r['entry_id'] for r in candidates},set(entries.values())|{plain})
+        self.assertEqual({r['written_form'] for r in candidates},set(entries)|{'라면'})
+        self.assertEqual([r['id'] for r in (await d.batch_lookup_entries(['라면'],exact=True))['라면']],[plain])
+        # Grammatical homographs do not become the same dictionary sense.
+        result=await Engine(self.path,tokenizer=self.tokenizer_for([('라면','NNG',0)])).analyze('라면',
+            dict(hanja=True,loanword=True,nameProtection=False))
+        self.assertTrue(any(a['replacement']=='ramen' for a in result['annotations']) or
+                        any(o['replacement']=='ramen' for t in result['targets'] for o in t['options']))
+
+    async def test_edge_hanja_candidates_retain_original_title_and_one_syllable(self):
+        from app.services.dictionary import DictionaryService
+        # Official importer strips '-' from the conversion candidate key,
+        # while other imported formats may keep the original marked title.
+        entry=self.add('-적','的','접사','접미사.')
+        with sqlite3.connect(self.path) as db:
+            db.execute("INSERT INTO conversion_candidates(written_form,entry_id,origin_raw,replacement,replacement_type,is_reliable) VALUES ('적',?,'的','的','pure_hanja',1)",(entry,))
+        other=self.add('·화','化','접사','접미사.')
+        d=DictionaryService(str(self.path))
+        for word,title,id_,origin in [('적','-적',entry,'的'),('화','·화',other,'化')]:
+            records=await d.lookup_candidates(word)
+            row=next(r for r in records if r['entry_id']==id_)
+            self.assertEqual((row['written_form'],row['replacement'],row['part_of_speech']),(title,origin,'접사'))
+            self.assertTrue(row['is_reliable'])
+        for title in ['라면-','-라면','-라면-']:
+            self.assertIsNone(__import__('backend.spaced_phrases',fromlist=['split_dictionary_title']).split_dictionary_title(title))
+
 if __name__=='__main__':
     unittest.main(verbosity=2)

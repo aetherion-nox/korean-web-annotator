@@ -5,7 +5,7 @@ independently alignable Hanja segments and display 二酸化 炭素.
 Do not invent how Latin words split across a space or join source ranges.
 """
 import re
-import unicodedata
+from backend.orthographic_aliases import is_dictionary_separator
 from backend.offsets import to_utf16
 from backend.loanwords import CJK
 
@@ -70,9 +70,7 @@ TITLE_PARTS = re.compile(r'[가-힣]+(?:[^가-힣][가-힣]+){1,3}')
 def split_dictionary_title(title):
     if not isinstance(title,str) or not TITLE_PARTS.fullmatch(title):
         return None
-    if any(c!='^' and not unicodedata.category(c).startswith('P')
-           and unicodedata.category(c)!='Zs'
-           for c in title if not '가'<=c<='힣'):
+    if any(not is_dictionary_separator(c) for c in title if not '가'<=c<='힣'):
         return None
     words=tuple(re.split(r'[^가-힣]',title))
     return words if sum(map(len,words))<=16 else None
